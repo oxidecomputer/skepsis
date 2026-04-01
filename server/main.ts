@@ -1,5 +1,6 @@
 import { getDiff, resolveSessionKey } from './diff.ts'
 import { loadViewed, markViewed, unmarkViewed } from './viewed.ts'
+import { insertComment, removeComment } from './comment.ts'
 
 const revset = process.argv[2] || '@'
 const port = Number(process.env['PORT']) || 3742
@@ -38,6 +39,38 @@ const server = Bun.serve({
       }
       await unmarkViewed(cwd, sessionKey, file)
       return Response.json({ ok: true })
+    }
+
+    if (url.pathname === '/api/comment' && req.method === 'POST') {
+      try {
+        const { file, afterLine, text } = (await req.json()) as {
+          file: string
+          afterLine: number
+          text: string
+        }
+        if (typeof file !== 'string' || typeof afterLine !== 'number' || typeof text !== 'string') {
+          return Response.json({ error: 'file, afterLine, and text required' }, { status: 400 })
+        }
+        await insertComment(cwd, file, afterLine, text)
+        return Response.json({ ok: true })
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        return Response.json({ error: message }, { status: 500 })
+      }
+    }
+
+    if (url.pathname === '/api/comment' && req.method === 'DELETE') {
+      try {
+        const { file, line } = (await req.json()) as { file: string; line: number }
+        if (typeof file !== 'string' || typeof line !== 'number') {
+          return Response.json({ error: 'file and line required' }, { status: 400 })
+        }
+        await removeComment(cwd, file, line)
+        return Response.json({ ok: true })
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        return Response.json({ error: message }, { status: 500 })
+      }
     }
 
     return new Response('Not found', { status: 404 })

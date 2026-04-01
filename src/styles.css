@@ -173,3 +173,122 @@ body {
   border-radius: 2px;
   transition: width 0.2s ease;
 }
+
+/* Gutter "+" button for adding comments */
+.add-comment-button {
+  width: 22px;
+  height: 22px;
+  background: #1f6feb;
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+}
+
+.add-comment-button:hover {
+  background: #388bfd;
+}
+
+/* Comment form (composing annotation) */
+.comment-form {
+  padding: 8px 12px;
+  background: #1c2128;
+  border-top: 1px solid #30363d;
+}
+
+.comment-form textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #e6edf3;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 13px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.comment-form textarea:focus {
+  outline: none;
+  border-color: #1f6feb;
+}
+
+.comment-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.comment-cancel {
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #8b949e;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.comment-cancel:hover {
+  border-color: #484f58;
+  color: #e6edf3;
+}
+
+.comment-submit {
+  padding: 4px 12px;
+  background: #238636;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.comment-submit:hover {
+  background: #2ea043;
+}
+
+.comment-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Resolve button (existing REVIEW comment annotation) */
+.review-annotation {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px;
+  background: #1c2128;
+  border-top: 1px solid #30363d;
+}
+
+.resolve-button {
+  padding: 2px 10px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #8b949e;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.resolve-button:hover {
+  border-color: #484f58;
+  color: #e6edf3;
+}

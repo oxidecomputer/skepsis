@@ -30,7 +30,7 @@ from richer rendering (Shiki syntax highlighting, flexible layout).
 ## Stack
 
 - **Runtime:** Bun
-- **Diff rendering:** `@pierre/diffs` (React components with Shiki highlighting)
+- **Diff rendering:** `@pierre/diffs` (React components with Shiki highlighting, docs in `/tmp/diffs-docs.txt`)
 - **Frontend:** React SPA (Vite + React)
 - **Server:** Bun's built-in HTTP server (`Bun.serve`)
 - **Data flow:** Server shells out to `jj diff` to get unified diff, serves it

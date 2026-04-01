@@ -5,10 +5,10 @@ import {
   useMutation,
   useQueryClient,
 } from '@tanstack/react-query'
-import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
-import type { FileDiffMetadata } from '@pierre/diffs'
+import type { DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs'
 
 const queryClient = new QueryClient()
 
@@ -36,6 +36,38 @@ interface DiffData {
   viewed: ViewedMap
 }
 
+// --- Review comment types and detection ---
+
+type AnnotationMeta =
+  | { type: 'review'; line: number; text: string; file: string }
+  | { type: 'composing'; file: string }
+
+const REVIEW_PATTERN =
+  /^\s*(?:\/\/|#|--|\/\*|<!--)\s*REVIEW:\s*(.*?)(?:\s*(?:\*\/|-->))?\s*$/
+
+/** Walk the addition side of a diff and find lines matching // REVIEW: ... */
+function detectReviewComments(
+  fileDiff: FileDiffMetadata,
+  fileName: string,
+): DiffLineAnnotation<AnnotationMeta>[] {
+  const annotations: DiffLineAnnotation<AnnotationMeta>[] = []
+  for (const hunk of fileDiff.hunks) {
+    for (let i = 0; i < hunk.additionCount; i++) {
+      const lineText = fileDiff.additionLines[hunk.additionLineIndex + i]
+      const match = lineText?.match(REVIEW_PATTERN)
+      if (match) {
+        const line = hunk.additionStart + i
+        annotations.push({
+          side: 'additions',
+          lineNumber: line,
+          metadata: { type: 'review', line, text: match[1]!.trim(), file: fileName },
+        })
+      }
+    }
+  }
+  return annotations
+}
+
 function getFileStats(fileDiff: FileDiffMetadata) {
   let additions = 0
   let deletions = 0
@@ -52,29 +84,95 @@ const fileDiffStyle = {
   '--diffs-bg-separator-override': '#1c2333',
 } as React.CSSProperties
 
-/** Memoized wrapper so FileDiff doesn't re-render when only viewed/collapse state changes */
-const MemoizedFileDiff = memo(function MemoizedFileDiff({
-  fileDiff,
-  isWide,
+// --- Comment form ---
+
+function CommentForm({
+  onSubmit,
+  onCancel,
 }: {
-  fileDiff: FileDiffMetadata
-  isWide: boolean
+  onSubmit: (text: string) => void
+  onCancel: () => void
 }) {
+  const [text, setText] = useState('')
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    ref.current?.focus()
+  }, [])
+
   return (
-    <FileDiff
-      style={fileDiffStyle}
-      fileDiff={fileDiff}
-      options={{
-        theme: 'github-dark-default',
-        diffStyle: isWide ? 'split' : 'unified',
-        diffIndicators: 'classic',
-        hunkSeparators: 'line-info-basic',
-        overflow: 'wrap',
-        disableFileHeader: true,
-      }}
-    />
+    <div className="comment-form" onClick={(e) => e.stopPropagation()}>
+      <textarea
+        ref={ref}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && text.trim()) {
+            e.preventDefault()
+            onSubmit(text.trim())
+          }
+          if (e.key === 'Escape') onCancel()
+        }}
+        placeholder="Leave a review comment... (Cmd+Enter to submit)"
+        rows={3}
+      />
+      <div className="comment-form-actions">
+        <button className="comment-cancel" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          className="comment-submit"
+          disabled={!text.trim()}
+          onClick={() => text.trim() && onSubmit(text.trim())}
+        >
+          Comment
+        </button>
+      </div>
+    </div>
   )
-})
+}
+
+// --- Diff rendering with annotation support ---
+
+const MemoizedFileDiff = memo(
+  function MemoizedFileDiff({
+    fileDiff,
+    isWide,
+    lineAnnotations,
+    renderAnnotation,
+    onGutterUtilityClick,
+  }: {
+    fileDiff: FileDiffMetadata
+    isWide: boolean
+    lineAnnotations: DiffLineAnnotation<AnnotationMeta>[]
+    renderAnnotation: (a: DiffLineAnnotation<AnnotationMeta>) => React.ReactNode
+    onGutterUtilityClick: (range: { start: number; end: number; side?: string }) => void
+  }) {
+    return (
+      <FileDiff<AnnotationMeta>
+        style={fileDiffStyle}
+        fileDiff={fileDiff}
+        options={{
+          theme: 'github-dark-default',
+          diffStyle: isWide ? 'split' : 'unified',
+          diffIndicators: 'classic',
+          hunkSeparators: 'line-info-basic',
+          overflow: 'wrap',
+          disableFileHeader: true,
+          enableGutterUtility: true,
+          onGutterUtilityClick,
+        }}
+        lineAnnotations={lineAnnotations}
+        renderAnnotation={renderAnnotation}
+      />
+    )
+  },
+  (prev, next) =>
+    prev.fileDiff === next.fileDiff &&
+    prev.isWide === next.isWide &&
+    prev.lineAnnotations === next.lineAnnotations,
+)
+
+// --- FileCard ---
 
 function FileCard({
   fileDiff,
@@ -83,8 +181,13 @@ function FileCard({
   isStale,
   isWide,
   collapsed,
+  composing,
   onToggleCollapse,
   onToggleViewed,
+  onStartComment,
+  onSubmitComment,
+  onResolveComment,
+  onCancelComment,
 }: {
   fileDiff: FileDiffMetadata
   hash: string | undefined
@@ -92,10 +195,66 @@ function FileCard({
   isStale: boolean
   isWide: boolean
   collapsed: boolean
+  composing: { line: number } | null
   onToggleCollapse: () => void
   onToggleViewed: () => void
+  onStartComment: (line: number) => void
+  onSubmitComment: (line: number, text: string) => void
+  onResolveComment: (line: number) => void
+  onCancelComment: () => void
 }) {
   const { additions, deletions } = getFileStats(fileDiff)
+  const name = fileDiff.name
+
+  // Build annotation list: detected REVIEW comments + composing form
+  const lineAnnotations = useMemo(() => {
+    const annotations = detectReviewComments(fileDiff, name)
+    if (composing) {
+      annotations.push({
+        side: 'additions' as const,
+        lineNumber: composing.line,
+        metadata: { type: 'composing' as const, file: name },
+      })
+    }
+    return annotations
+  }, [fileDiff, name, composing])
+
+  const renderAnnotation = useCallback(
+    (annotation: DiffLineAnnotation<AnnotationMeta>) => {
+      const meta = annotation.metadata
+      if (meta.type === 'review') {
+        return (
+          <div className="review-annotation">
+            <button
+              className="resolve-button"
+              onClick={() => onResolveComment(meta.line)}
+            >
+              Resolve
+            </button>
+          </div>
+        )
+      }
+      if (meta.type === 'composing') {
+        return (
+          <CommentForm
+            onSubmit={(text) => onSubmitComment(annotation.lineNumber, text)}
+            onCancel={onCancelComment}
+          />
+        )
+      }
+      return null
+    },
+    [onResolveComment, onSubmitComment, onCancelComment],
+  )
+
+  const onGutterUtilityClick = useCallback(
+    (range: { start: number; end: number; side?: string }) => {
+      if (range.side === 'additions') {
+        onStartComment(range.start)
+      }
+    },
+    [onStartComment],
+  )
 
   return (
     <div className="file-card">
@@ -103,7 +262,7 @@ function FileCard({
         <span className={'collapse-chevron' + (collapsed ? ' collapsed' : '')}>
           {'\u25B6'}
         </span>
-        <span className="file-header-name">{fileDiff.name}</span>
+        <span className="file-header-name">{name}</span>
         <span className="file-header-stats">
           {additions > 0 && <span className="stat-add">+{additions}</span>}
           {deletions > 0 && <span className="stat-del">-{deletions}</span>}
@@ -128,7 +287,13 @@ function FileCard({
         </button>
       </div>
       <div style={collapsed ? { display: 'none' } : undefined}>
-        <MemoizedFileDiff fileDiff={fileDiff} isWide={isWide} />
+        <MemoizedFileDiff
+          fileDiff={fileDiff}
+          isWide={isWide}
+          lineAnnotations={lineAnnotations}
+          renderAnnotation={renderAnnotation}
+          onGutterUtilityClick={onGutterUtilityClick}
+        />
       </div>
     </div>
   )
@@ -166,6 +331,7 @@ function ProgressBar({
 function DiffView() {
   const isWide = useIsWide()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [composing, setComposing] = useState<{ file: string; line: number } | null>(null)
   const seededFromInitialLoad = useRef(false)
   const { data, error, isLoading } = useQuery<DiffData>({
     queryKey: ['diff'],
@@ -193,6 +359,26 @@ function DiffView() {
         method: mark ? 'POST' : 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mark ? { file, hash } : { file }),
+      }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
+  })
+
+  const commentMutation = useMutation({
+    mutationFn: ({ file, afterLine, text }: { file: string; afterLine: number; text: string }) =>
+      fetch('/api/comment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file, afterLine, text }),
+      }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
+  })
+
+  const resolveMutation = useMutation({
+    mutationFn: ({ file, line }: { file: string; line: number }) =>
+      fetch('/api/comment', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file, line }),
       }),
     onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
   })
@@ -232,6 +418,8 @@ function DiffView() {
         const isViewed = hash != null && viewedHash === hash
         const isStale = viewedHash != null && hash != null && viewedHash !== hash
         const isCollapsed = collapsed[name] ?? false
+        const fileComposing =
+          composing?.file === name ? { line: composing.line } : null
 
         return (
           <FileCard
@@ -242,6 +430,7 @@ function DiffView() {
             isStale={isStale}
             isWide={isWide}
             collapsed={isCollapsed}
+            composing={fileComposing}
             onToggleCollapse={() =>
               setCollapsed((prev) => ({ ...prev, [name]: !isCollapsed }))
             }
@@ -252,6 +441,15 @@ function DiffView() {
                 markMutation.mutate({ file: name, hash, mark })
               }
             }}
+            onStartComment={(line) => setComposing({ file: name, line })}
+            onSubmitComment={(line, text) => {
+              commentMutation.mutate({ file: name, afterLine: line, text })
+              setComposing(null)
+            }}
+            onResolveComment={(line) =>
+              resolveMutation.mutate({ file: name, line })
+            }
+            onCancelComment={() => setComposing(null)}
           />
         )
       })}
