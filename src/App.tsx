@@ -1,10 +1,25 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { useSyncExternalStore } from "react";
 import { parsePatchFiles } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 
 const queryClient = new QueryClient();
 
+const wideQuery = "(min-width: 1200px)";
+
+function useIsWide(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const mql = window.matchMedia(wideQuery);
+      mql.addEventListener("change", cb);
+      return () => mql.removeEventListener("change", cb);
+    },
+    () => window.matchMedia(wideQuery).matches,
+  );
+}
+
 function DiffView() {
+  const isWide = useIsWide();
   const { data, error, isLoading } = useQuery({
     queryKey: ["diff"],
     queryFn: () => fetch("/api/diff").then((r) => r.json()),
@@ -26,7 +41,7 @@ function DiffView() {
           fileDiff={fileDiff}
           options={{
             theme: "github-dark",
-            diffStyle: "unified",
+            diffStyle: isWide ? "split" : "unified",
           }}
         />
       ))}

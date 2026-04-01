@@ -1,7 +1,7 @@
 import { getDiff } from "./diff.ts";
 
 const revset = process.argv[2] || "@";
-const port = 3742;
+const port = Number(process.env["PORT"]) || 3742;
 
 const server = Bun.serve({
   port,
@@ -22,4 +22,4 @@ const server = Bun.serve({
   },
 });
 
-console.log(`local-review serving on http://localhost:${port} (revset: ${revset})`);
+console.log(`local-review API on http://localhost:${port} (revset: ${revset})`);

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "start": "bun run server/main.ts"
+    "start": "bun run cli.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
