@@ -194,27 +194,6 @@ function DiffView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mark ? { file, hash } : { file }),
       }),
-    onMutate: async ({ file, hash, mark }) => {
-      await qc.cancelQueries({ queryKey: ['diff'] })
-      const previous = qc.getQueryData<DiffData>(['diff'])
-      qc.setQueryData<DiffData>(['diff'], (old) => {
-        if (!old) return old
-        const newViewed = { ...old.viewed }
-        if (mark) {
-          newViewed[file] = hash
-        } else {
-          delete newViewed[file]
-        }
-        return { ...old, viewed: newViewed }
-      })
-      setCollapsed((prev) => ({ ...prev, [file]: mark }))
-      return { previous }
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.previous) {
-        qc.setQueryData(['diff'], context.previous)
-      }
-    },
     onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
   })
 
@@ -225,12 +204,23 @@ function DiffView() {
     [patch],
   )
 
+  // Derive optimistic viewed state from pending mutation
+  const viewed = useMemo(() => {
+    const base = { ...(data?.viewed ?? {}) }
+    if (markMutation.isPending && markMutation.variables) {
+      const { file, hash, mark } = markMutation.variables
+      if (mark) base[file] = hash
+      else delete base[file]
+    }
+    return base
+  }, [data, markMutation.isPending, markMutation.variables])
+
   if (isLoading) return <div style={{ padding: 20 }}>Loading...</div>
   if (error) return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
   if (data!.error) return <pre style={{ color: 'red', padding: 20 }}>{data!.error}</pre>
   if (!patch) return <div style={{ padding: 20 }}>No changes in {data!.revset}</div>
 
-  const { fileHashes, viewed } = data!
+  const { fileHashes } = data!
 
   return (
     <div className="diff-container">
@@ -256,7 +246,11 @@ function DiffView() {
               setCollapsed((prev) => ({ ...prev, [name]: !isCollapsed }))
             }
             onToggleViewed={() => {
-              if (hash) markMutation.mutate({ file: name, hash, mark: !isViewed })
+              if (hash) {
+                const mark = !isViewed
+                setCollapsed((prev) => ({ ...prev, [name]: mark }))
+                markMutation.mutate({ file: name, hash, mark })
+              }
             }}
           />
         )

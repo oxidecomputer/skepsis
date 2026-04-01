@@ -147,6 +147,12 @@ of silently replacing everything.
 
 ### Phase 5: Polish
 
-- Keyboard shortcuts (j/k navigate files, v mark viewed, c comment)
 - Sticky file headers
 - Better context display (change description, author)
+- Keyboard shortcuts:
+  - `n`/`p` — jump between files
+  - `j`/`k` — scroll line-by-line within current file
+  - `v` — toggle viewed on focused file
+  - `e` — toggle collapse on focused file
+  - `s` — toggle split/unified diff
+  - `c` — add comment on focused line
