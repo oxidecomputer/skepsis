@@ -38,12 +38,18 @@ function DiffView() {
       {files.map((fileDiff, i) => (
         <div key={fileDiff.name ?? i} className="file-card">
           <FileDiff
-            style={{ '--diffs-font-size': '12px' } as React.CSSProperties}
+            style={
+              {
+                '--diffs-font-size': '12px',
+                '--diffs-bg-separator-override': '#1c2333',
+              } as React.CSSProperties
+            }
             fileDiff={fileDiff}
             options={{
               theme: 'github-dark-default',
               diffStyle: isWide ? 'split' : 'unified',
               diffIndicators: 'classic',
+              hunkSeparators: 'line-info-basic',
               overflow: 'wrap',
               unsafeCSS: `
 [data-diffs-header] {
