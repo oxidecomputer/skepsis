@@ -18,3 +18,126 @@ body {
   border-radius: 8px;
   overflow: clip;
 }
+
+/* Custom file header */
+.file-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 13px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.file-header-name {
+  font-weight: 600;
+  color: #e6edf3;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-header-stats {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+.stat-add {
+  color: #3fb950;
+}
+
+.stat-del {
+  color: #f85149;
+}
+
+.viewed-checkbox {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #484f58;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.viewed-checkbox:checked {
+  background: #238636;
+  border-color: #238636;
+}
+
+.viewed-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.viewed-checkbox.stale {
+  border-color: #d29922;
+}
+
+.viewed-checkbox.stale:checked {
+  background: #9e6a03;
+  border-color: #9e6a03;
+}
+
+.viewed-label {
+  font-size: 12px;
+  color: #8b949e;
+  cursor: pointer;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.viewed-label.stale {
+  color: #d29922;
+}
+
+/* Progress counter */
+.progress-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 13px;
+  color: #8b949e;
+}
+
+.progress-track {
+  flex: 1;
+  height: 4px;
+  background: #21262d;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #238636;
+  border-radius: 2px;
+  transition: width 0.2s ease;
+}
