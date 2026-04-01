@@ -40,7 +40,8 @@ function DiffView() {
           <FileDiff
             style={
               {
-                '--diffs-font-size': '12px',
+                '--diffs-font-size': '13px',
+                '--diffs-font-family': 'monospace',
                 '--diffs-bg-separator-override': '#1c2333',
               } as React.CSSProperties
             }

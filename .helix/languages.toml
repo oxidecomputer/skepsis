@@ -1,0 +1,21 @@
+[[language]]
+name = "typescript"
+formatter = { command = "node_modules/.bin/oxfmt", args = ["--stdin-filepath", "x.ts"] }
+language-servers = ["tsgo-lsp", "vscode-eslint-language-server"]
+auto-format = true
+
+[[language]]
+name = "javascript"
+formatter = { command = "node_modules/.bin/oxfmt", args = ["--stdin-filepath", "x.js"] }
+auto-format = true
+
+[[language]]
+name = "tsx"
+formatter = { command = "node_modules/.bin/oxfmt", args = ["--stdin-filepath", "x.tsx"] }
+language-servers = ["tsgo-lsp", "tailwindcss-ls", "vscode-eslint-language-server"]
+auto-format = true
+block-comment-tokens = ["{/*", "*/}"]
+
+[[language]]
+name = "html"
+formatter = { command = "node_modules/.bin/oxfmt", args = ["--stdin-filepath", "x.html"] }
