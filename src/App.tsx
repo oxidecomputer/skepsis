@@ -42,6 +42,7 @@ function DiffView() {
           options={{
             theme: "github-dark",
             diffStyle: isWide ? "split" : "unified",
+            unsafeCSS: `[data-diffs-header] { position: sticky; top: 0; z-index: 10; }`,
           }}
         />
       ))}
