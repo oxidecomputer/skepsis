@@ -36,15 +36,19 @@ function DiffView() {
   return (
     <div>
       {files.map((fileDiff, i) => (
-        <FileDiff
-          key={fileDiff.name ?? i}
-          fileDiff={fileDiff}
-          options={{
-            theme: "github-dark",
-            diffStyle: isWide ? "split" : "unified",
-            unsafeCSS: `[data-diffs-header] { position: sticky; top: 0; z-index: 10; }`,
-          }}
-        />
+        <div key={fileDiff.name ?? i}>
+          {i > 0 && <div className="file-gap" />}
+          <FileDiff
+            fileDiff={fileDiff}
+            options={{
+              theme: "github-dark-default",
+              diffStyle: isWide ? "split" : "unified",
+              diffIndicators: "bars",
+              overflow: "wrap",
+              unsafeCSS: `[data-diffs-header] { position: sticky; top: 0; z-index: 10; }`,
+            }}
+          />
+        </div>
       ))}
     </div>
   );
