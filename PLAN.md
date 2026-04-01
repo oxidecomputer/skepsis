@@ -1,9 +1,13 @@
 # local-review
 
-Local diff review UI. Run a command, get a browser-based review interface for
-a jj diff. File collapse, mark-as-viewed, keyboard navigation. Comments are
-source code comments with a `// REVIEW:` prefix — no external storage, no
-anchoring problem.
+Local diff review UI. Run a command, get a browser-based review interface
+for a jj diff. File collapse, mark-as-viewed, keyboard navigation.
+
+Two kinds of persistent state, stored in ways that match their nature:
+- **Comments** — `// REVIEW:` comments in the source code, versioned by jj
+- **Viewed state** — content-hashed file map in `.local-review/`, gitignored
+
+Everything else is ephemeral UI state.
 
 ## Usage
 
@@ -14,6 +18,13 @@ local-review -r 'trunk()..@' # review range
 ```
 
 Opens a browser tab with the diff. Server stays alive until killed.
+
+## Why web, not TUI
+
+A TUI covers other terminal panes — the original problem with delta. A web
+UI lives in a separate browser window alongside the terminal. This matters
+more when reviewing agent-generated diffs, which tend to be large and benefit
+from richer rendering (Shiki syntax highlighting, flexible layout).
 
 ## Stack
 
@@ -54,26 +65,26 @@ background, callout style, etc.) but remain in the normal diff flow
 rather than being pulled out as overlays. Exact styling TBD based on
 what `@pierre/diffs` customization hooks allow.
 
-The natural workflow: review the diff, leave `// REVIEW:` comments on
-things to fix, go fix them, delete the comment as you address it. If
-any survive to the PR, they're just TODOs.
+The workflow: review the diff, leave `// REVIEW:` comments on things to
+fix, go fix them, delete the comment as you address it. Agents can read
+review comments directly in the source. Comments that survive to the PR
+are just TODOs — not a problem.
 
-This also means agents can see review comments directly in the source
-without needing to read a separate data store.
+## Viewed state
 
-## File state (mark as viewed)
-
-Content-addressed viewed state. When you mark a file as viewed, store a
-hash of its current content (or diff hunk). To check status, hash the
-current content and look it up:
+Content-addressed. When you mark a file as viewed, store a hash of its
+diff hunk content. To check status, hash the current diff hunk and look
+it up:
 - Hash matches → viewed
 - Hash absent → unreviewed
 - Hash present but doesn't match current → changed since viewed (automatic)
 
 No explicit invalidation logic — staleness falls out of the data model.
+Self-validating regardless of rebases, time passing, or session restarts.
 
-Persists to disk in `.local-review/viewed.json` (a map of file paths to
-content hashes), independent of the server lifetime.
+Persists to disk in `.local-review/viewed.json` (map of file paths to
+content hashes). Gitignored. Does not need version control because the
+content hash is the source of truth, not the timeline.
 
 ## API
 
@@ -117,9 +128,10 @@ of silently replacing everything.
 4. Staleness guard
 
 ### Phase 3: File state
-1. Viewed/collapsed toggle per file, stored in localStorage
+1. Content-hashed viewed toggle per file
 2. "Changed since viewed" indicator
 3. File list with viewed progress (3/12 files viewed)
+4. Persist to `.local-review/viewed.json`
 
 ### Phase 4: Review comments
 1. Click a line to add a `// REVIEW:` comment — UI writes to source file
