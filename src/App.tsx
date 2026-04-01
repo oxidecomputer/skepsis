@@ -1,4 +1,8 @@
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { parsePatchFiles } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
@@ -26,26 +30,38 @@ function DiffView() {
   });
 
   if (isLoading) return <div style={{ padding: 20 }}>Loading...</div>;
-  if (error) return <pre style={{ color: "red", padding: 20 }}>{String(error)}</pre>;
-  if (data.error) return <pre style={{ color: "red", padding: 20 }}>{data.error}</pre>;
-  if (!data.patch) return <div style={{ padding: 20 }}>No changes in {data.revset}</div>;
+  if (error)
+    return <pre style={{ color: "red", padding: 20 }}>{String(error)}</pre>;
+  if (data.error)
+    return <pre style={{ color: "red", padding: 20 }}>{data.error}</pre>;
+  if (!data.patch)
+    return <div style={{ padding: 20 }}>No changes in {data.revset}</div>;
 
   const patches = parsePatchFiles(data.patch);
   const files = patches.flatMap((p) => p.files);
 
   return (
-    <div>
+    <div className="diff-container">
       {files.map((fileDiff, i) => (
-        <div key={fileDiff.name ?? i}>
-          {i > 0 && <div className="file-gap" />}
+        <div key={fileDiff.name ?? i} className="file-card">
           <FileDiff
+            style={{ "--diffs-font-size": "12px" } as React.CSSProperties}
             fileDiff={fileDiff}
             options={{
               theme: "github-dark-default",
               diffStyle: isWide ? "split" : "unified",
               diffIndicators: "bars",
               overflow: "wrap",
-              unsafeCSS: `[data-diffs-header] { position: sticky; top: 0; z-index: 10; }`,
+              unsafeCSS: `
+[data-diffs-header] {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #161b22;
+  padding: 10px 16px;
+  font-weight: 600;
+  border-bottom: 1px solid #30363d;
+}`,
             }}
           />
         </div>
