@@ -16,5 +16,5 @@ body {
 .file-card {
   border: 1px solid #30363d;
   border-radius: 8px;
-  overflow: hidden;
+  overflow: clip;
 }
