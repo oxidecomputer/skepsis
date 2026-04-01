@@ -5,7 +5,7 @@ import {
   useMutation,
   useQueryClient,
 } from '@tanstack/react-query'
-import { useSyncExternalStore } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { FileDiffMetadata } from '@pierre/diffs'
@@ -46,57 +46,90 @@ function getFileStats(fileDiff: FileDiffMetadata) {
   return { additions, deletions }
 }
 
-function FileHeader({
+const fileDiffStyle = {
+  '--diffs-font-size': '13px',
+  '--diffs-font-family': 'monospace',
+  '--diffs-bg-separator-override': '#1c2333',
+} as React.CSSProperties
+
+/** Memoized wrapper so FileDiff doesn't re-render when only viewed/collapse state changes */
+const MemoizedFileDiff = memo(function MemoizedFileDiff({
   fileDiff,
-  fileHashes,
-  viewed,
+  isWide,
 }: {
   fileDiff: FileDiffMetadata
-  fileHashes: FileHashes
-  viewed: ViewedMap
+  isWide: boolean
 }) {
-  const qc = useQueryClient()
-  const name = fileDiff.name
-  const hash = fileHashes[name]
-  const viewedHash = viewed[name]
-  const isViewed = hash != null && viewedHash === hash
-  const isStale = viewedHash != null && hash != null && viewedHash !== hash
+  return (
+    <FileDiff
+      style={fileDiffStyle}
+      fileDiff={fileDiff}
+      options={{
+        theme: 'github-dark-default',
+        diffStyle: isWide ? 'split' : 'unified',
+        diffIndicators: 'classic',
+        hunkSeparators: 'line-info-basic',
+        overflow: 'wrap',
+        disableFileHeader: true,
+      }}
+    />
+  )
+})
+
+function FileCard({
+  fileDiff,
+  hash,
+  isViewed,
+  isStale,
+  isWide,
+  collapsed,
+  onToggleCollapse,
+  onToggleViewed,
+}: {
+  fileDiff: FileDiffMetadata
+  hash: string | undefined
+  isViewed: boolean
+  isStale: boolean
+  isWide: boolean
+  collapsed: boolean
+  onToggleCollapse: () => void
+  onToggleViewed: () => void
+}) {
   const { additions, deletions } = getFileStats(fileDiff)
 
-  const markMutation = useMutation({
-    mutationFn: (mark: boolean) =>
-      mark
-        ? fetch('/api/viewed', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file: name, hash }),
-          })
-        : fetch('/api/viewed', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file: name }),
-          }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['diff'] }),
-  })
-
-  const toggle = () => markMutation.mutate(!isViewed)
-
   return (
-    <div className="file-header">
-      <span className="file-header-name">{name}</span>
-      <span className="file-header-stats">
-        {additions > 0 && <span className="stat-add">+{additions}</span>}
-        {deletions > 0 && <span className="stat-del">-{deletions}</span>}
-      </span>
-      <label className={'viewed-label' + (isStale ? ' stale' : '')} onClick={toggle}>
-        {isStale ? 'Changed' : 'Viewed'}
-      </label>
-      <input
-        type="checkbox"
-        className={'viewed-checkbox' + (isStale ? ' stale' : '')}
-        checked={isViewed}
-        onChange={toggle}
-      />
+    <div className="file-card">
+      <div className="file-header" onClick={onToggleCollapse}>
+        <span className={'collapse-chevron' + (collapsed ? ' collapsed' : '')}>
+          {'\u25B6'}
+        </span>
+        <span className="file-header-name">{fileDiff.name}</span>
+        <span className="file-header-stats">
+          {additions > 0 && <span className="stat-add">+{additions}</span>}
+          {deletions > 0 && <span className="stat-del">-{deletions}</span>}
+        </span>
+        <button
+          className={
+            'viewed-button' + (isStale ? ' stale' : '') + (isViewed ? ' checked' : '')
+          }
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleViewed()
+          }}
+        >
+          <input
+            type="checkbox"
+            className={'viewed-checkbox' + (isStale ? ' stale' : '')}
+            checked={isViewed}
+            readOnly
+            tabIndex={-1}
+          />
+          {isStale ? 'Changed' : 'Viewed'}
+        </button>
+      </div>
+      <div style={collapsed ? { display: 'none' } : undefined}>
+        <MemoizedFileDiff fileDiff={fileDiff} isWide={isWide} />
+      </div>
     </div>
   )
 }
@@ -130,48 +163,104 @@ function ProgressBar({
   )
 }
 
-const diffStyle = {
-  '--diffs-font-size': '13px',
-  '--diffs-font-family': 'monospace',
-  '--diffs-bg-separator-override': '#1c2333',
-} as React.CSSProperties
-
 function DiffView() {
   const isWide = useIsWide()
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const seededFromInitialLoad = useRef(false)
   const { data, error, isLoading } = useQuery<DiffData>({
     queryKey: ['diff'],
     queryFn: () => fetch('/api/diff').then((r) => r.json()),
   })
 
+  // Seed collapse state from the first successful fetch: viewed files start collapsed
+  useEffect(() => {
+    if (seededFromInitialLoad.current || !data?.fileHashes) return
+    seededFromInitialLoad.current = true
+    const initial: Record<string, boolean> = {}
+    for (const [file, hash] of Object.entries(data.fileHashes)) {
+      if (data.viewed[file] === hash) {
+        initial[file] = true
+      }
+    }
+    setCollapsed(initial)
+  }, [data])
+
+  const qc = useQueryClient()
+
+  const markMutation = useMutation({
+    mutationFn: ({ file, hash, mark }: { file: string; hash: string; mark: boolean }) =>
+      fetch('/api/viewed', {
+        method: mark ? 'POST' : 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mark ? { file, hash } : { file }),
+      }),
+    onMutate: async ({ file, hash, mark }) => {
+      await qc.cancelQueries({ queryKey: ['diff'] })
+      const previous = qc.getQueryData<DiffData>(['diff'])
+      qc.setQueryData<DiffData>(['diff'], (old) => {
+        if (!old) return old
+        const newViewed = { ...old.viewed }
+        if (mark) {
+          newViewed[file] = hash
+        } else {
+          delete newViewed[file]
+        }
+        return { ...old, viewed: newViewed }
+      })
+      setCollapsed((prev) => ({ ...prev, [file]: mark }))
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        qc.setQueryData(['diff'], context.previous)
+      }
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
+  })
+
+  // Memoize patch parsing so it doesn't re-run on viewed state changes
+  const patch = data?.patch
+  const files = useMemo(
+    () => (patch ? parsePatchFiles(patch).flatMap((p) => p.files) : []),
+    [patch],
+  )
+
   if (isLoading) return <div style={{ padding: 20 }}>Loading...</div>
   if (error) return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
   if (data!.error) return <pre style={{ color: 'red', padding: 20 }}>{data!.error}</pre>
-  if (!data!.patch) return <div style={{ padding: 20 }}>No changes in {data!.revset}</div>
+  if (!patch) return <div style={{ padding: 20 }}>No changes in {data!.revset}</div>
 
   const { fileHashes, viewed } = data!
-  const patches = parsePatchFiles(data!.patch!)
-  const files = patches.flatMap((p) => p.files)
 
   return (
     <div className="diff-container">
       <ProgressBar fileHashes={fileHashes} viewed={viewed} />
-      {files.map((fileDiff, i) => (
-        <div key={fileDiff.name ?? i} className="file-card">
-          <FileHeader fileDiff={fileDiff} fileHashes={fileHashes} viewed={viewed} />
-          <FileDiff
-            style={diffStyle}
+      {files.map((fileDiff, i) => {
+        const name = fileDiff.name
+        const hash = fileHashes[name]
+        const viewedHash = viewed[name]
+        const isViewed = hash != null && viewedHash === hash
+        const isStale = viewedHash != null && hash != null && viewedHash !== hash
+        const isCollapsed = collapsed[name] ?? false
+
+        return (
+          <FileCard
+            key={name ?? i}
             fileDiff={fileDiff}
-            options={{
-              theme: 'github-dark-default',
-              diffStyle: isWide ? 'split' : 'unified',
-              diffIndicators: 'classic',
-              hunkSeparators: 'line-info-basic',
-              overflow: 'wrap',
-              disableFileHeader: true,
+            hash={hash}
+            isViewed={isViewed}
+            isStale={isStale}
+            isWide={isWide}
+            collapsed={isCollapsed}
+            onToggleCollapse={() =>
+              setCollapsed((prev) => ({ ...prev, [name]: !isCollapsed }))
+            }
+            onToggleViewed={() => {
+              if (hash) markMutation.mutate({ file: name, hash, mark: !isViewed })
             }}
           />
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

@@ -1,9 +1,10 @@
-import { getDiff } from './diff.ts'
+import { getDiff, resolveSessionKey } from './diff.ts'
 import { loadViewed, markViewed, unmarkViewed } from './viewed.ts'
 
 const revset = process.argv[2] || '@'
 const port = Number(process.env['PORT']) || 3742
 const cwd = process.cwd()
+const sessionKey = await resolveSessionKey(revset)
 
 const server = Bun.serve({
   port,
@@ -13,7 +14,7 @@ const server = Bun.serve({
     if (url.pathname === '/api/diff') {
       try {
         const { patch, fileHashes } = await getDiff(revset)
-        const viewed = await loadViewed(cwd)
+        const viewed = await loadViewed(cwd, sessionKey)
         return Response.json({ patch, revset, fileHashes, viewed })
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
@@ -26,7 +27,7 @@ const server = Bun.serve({
       if (typeof file !== 'string' || typeof hash !== 'string') {
         return Response.json({ error: 'file and hash required' }, { status: 400 })
       }
-      await markViewed(cwd, file, hash)
+      await markViewed(cwd, sessionKey, file, hash)
       return Response.json({ ok: true })
     }
 
@@ -35,7 +36,7 @@ const server = Bun.serve({
       if (typeof file !== 'string') {
         return Response.json({ error: 'file required' }, { status: 400 })
       }
-      await unmarkViewed(cwd, file)
+      await unmarkViewed(cwd, sessionKey, file)
       return Response.json({ ok: true })
     }
 

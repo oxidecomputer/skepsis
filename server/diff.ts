@@ -1,4 +1,5 @@
 import { $ } from 'bun'
+import { createHash } from 'crypto'
 
 export type FileHashes = Record<string, string>
 
@@ -11,6 +12,18 @@ export async function getDiff(
   }
   const patch = result.stdout.toString()
   return { patch, fileHashes: extractFileHashes(patch) }
+}
+
+/** Resolve a revset to a stable session key by hashing its change IDs. */
+export async function resolveSessionKey(revset: string): Promise<string> {
+  const result = await $`jj log -r ${revset} --no-graph -T 'change_id ++ "\n"'`
+    .quiet()
+    .nothrow()
+  if (result.exitCode !== 0) {
+    throw new Error(`jj log failed: ${result.stderr.toString()}`)
+  }
+  const ids = result.stdout.toString().trim().split('\n').filter(Boolean).sort()
+  return createHash('sha256').update(ids.join('\n')).digest('hex').slice(0, 16)
 }
 
 /**

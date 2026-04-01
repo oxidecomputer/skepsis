@@ -11,33 +11,42 @@ function repoDir(cwd: string): string {
   return join(BASE_DIR, hash)
 }
 
-function viewedPath(cwd: string): string {
-  return join(repoDir(cwd), 'viewed.json')
+function viewedPath(cwd: string, sessionKey: string): string {
+  return join(repoDir(cwd), `viewed-${sessionKey}.json`)
 }
 
-export async function loadViewed(cwd: string): Promise<ViewedMap> {
+export async function loadViewed(cwd: string, sessionKey: string): Promise<ViewedMap> {
   try {
-    const raw = await readFile(viewedPath(cwd), 'utf-8')
+    const raw = await readFile(viewedPath(cwd, sessionKey), 'utf-8')
     return JSON.parse(raw)
   } catch {
     return {}
   }
 }
 
-export async function saveViewed(cwd: string, data: ViewedMap): Promise<void> {
+async function saveViewed(cwd: string, sessionKey: string, data: ViewedMap): Promise<void> {
   const dir = repoDir(cwd)
   await mkdir(dir, { recursive: true })
-  await writeFile(viewedPath(cwd), JSON.stringify(data, null, 2) + '\n')
+  await writeFile(viewedPath(cwd, sessionKey), JSON.stringify(data, null, 2) + '\n')
 }
 
-export async function markViewed(cwd: string, file: string, hash: string): Promise<void> {
-  const data = await loadViewed(cwd)
+export async function markViewed(
+  cwd: string,
+  sessionKey: string,
+  file: string,
+  hash: string,
+): Promise<void> {
+  const data = await loadViewed(cwd, sessionKey)
   data[file] = hash
-  await saveViewed(cwd, data)
+  await saveViewed(cwd, sessionKey, data)
 }
 
-export async function unmarkViewed(cwd: string, file: string): Promise<void> {
-  const data = await loadViewed(cwd)
+export async function unmarkViewed(
+  cwd: string,
+  sessionKey: string,
+  file: string,
+): Promise<void> {
+  const data = await loadViewed(cwd, sessionKey)
   delete data[file]
-  await saveViewed(cwd, data)
+  await saveViewed(cwd, sessionKey, data)
 }
