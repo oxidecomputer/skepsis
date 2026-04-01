@@ -4,6 +4,7 @@ Local diff review UI. Run a command, get a browser-based review interface
 for a jj diff. File collapse, mark-as-viewed, keyboard navigation.
 
 Two kinds of persistent state, stored in ways that match their nature:
+
 - **Comments** — `// REVIEW:` comments in the source code, versioned by jj
 - **Viewed state** — content-hashed file map in `.local-review/`, gitignored
 
@@ -53,7 +54,7 @@ src/
 
 Comments live in the source code as `// REVIEW:` comments (or `# REVIEW:`
 etc. depending on language). No separate storage, no anchoring problem —
-they move with the code because they *are* the code.
+they move with the code because they _are_ the code.
 
 Adding a comment through the UI opens a text input on that line (like
 GitHub's comment box). On submit, it inserts a `// REVIEW:` line into
@@ -75,6 +76,7 @@ are just TODOs — not a problem.
 Content-addressed. When you mark a file as viewed, store a hash of its
 diff hunk content. To check status, hash the current diff hunk and look
 it up:
+
 - Hash matches → viewed
 - Hash absent → unreviewed
 - Hash present but doesn't match current → changed since viewed (automatic)
@@ -103,6 +105,7 @@ re-run `jj diff`, push the new diff over WebSocket. After each re-diff,
 update the watch list to match the new set of files.
 
 Frontend reconciliation on update:
+
 - Preserve scroll position
 - Preserve viewed/collapsed state
 - If a viewed file changed, mark it "changed since viewed"
@@ -114,6 +117,7 @@ of silently replacing everything.
 ## Plan of attack
 
 ### Phase 1: Minimal diff viewer
+
 1. Set up project: `bun init`, Vite + React, install `@pierre/diffs`
 2. `cli.ts` — parse argv for optional revset, default to `@`
 3. `diff.ts` — run `jj diff -r <revset> --git` to get unified diff
@@ -122,23 +126,27 @@ of silently replacing everything.
 6. Open browser on server start
 
 ### Phase 2: Live updating
+
 1. `watcher.ts` — watch diff files for writes, debounce, re-diff
 2. WebSocket endpoint, push new diff to connected clients
 3. Frontend reconciliation (preserve scroll, viewed state)
 4. Staleness guard
 
 ### Phase 3: File state
+
 1. Content-hashed viewed toggle per file
 2. "Changed since viewed" indicator
 3. File list with viewed progress (3/12 files viewed)
 4. Persist to `.local-review/viewed.json`
 
 ### Phase 4: Review comments
+
 1. Click a line to add a `// REVIEW:` comment — UI writes to source file
 2. Display existing REVIEW comments with distinct styling in the diff
 3. Delete comment through UI (removes line from source file)
 
 ### Phase 5: Polish
+
 - Keyboard shortcuts (j/k navigate files, v mark viewed, c comment)
 - Sticky file headers
 - Better context display (change description, author)
