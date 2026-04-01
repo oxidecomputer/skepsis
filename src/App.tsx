@@ -82,6 +82,7 @@ const fileDiffStyle = {
   '--diffs-font-size': '13px',
   '--diffs-font-family': 'monospace',
   '--diffs-bg-separator-override': '#1c2333',
+  '--diffs-modified-color-override': '#1f6feb',
 } as React.CSSProperties
 
 // --- Comment form ---
