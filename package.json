@@ -1,0 +1,25 @@
+{
+  "name": "local-review",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "start": "bun run server/main.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@vitejs/plugin-react": "^6.0.1",
+    "vite": "^8.0.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@pierre/diffs": "^1.1.8",
+    "@tanstack/react-query": "^5.96.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  }
+}
