@@ -5,10 +5,19 @@ import {
   useMutation,
   useQueryClient,
 } from '@tanstack/react-query'
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs'
+import type { DiffResponse, ViewedMap, FileHashes } from '../shared/types.ts'
 
 const queryClient = new QueryClient()
 
@@ -23,17 +32,6 @@ function useIsWide(): boolean {
     },
     () => window.matchMedia(wideQuery).matches,
   )
-}
-
-type ViewedMap = Record<string, string>
-type FileHashes = Record<string, string>
-
-interface DiffData {
-  patch?: string
-  revset: string
-  error?: string
-  fileHashes: FileHashes
-  viewed: ViewedMap
 }
 
 // --- Review comment types and detection ---
@@ -226,10 +224,7 @@ function FileCard({
       if (meta.type === 'review') {
         return (
           <div className="review-annotation">
-            <button
-              className="resolve-button"
-              onClick={() => onResolveComment(meta.line)}
-            >
+            <button className="resolve-button" onClick={() => onResolveComment(meta.line)}>
               Resolve
             </button>
           </div>
@@ -334,7 +329,7 @@ function DiffView() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [composing, setComposing] = useState<{ file: string; line: number } | null>(null)
   const seededFromInitialLoad = useRef(false)
-  const { data, error, isLoading } = useQuery<DiffData>({
+  const { data, error, isLoading } = useQuery<DiffResponse>({
     queryKey: ['diff'],
     queryFn: () => fetch('/api/diff').then((r) => r.json()),
   })
@@ -365,7 +360,15 @@ function DiffView() {
   })
 
   const commentMutation = useMutation({
-    mutationFn: ({ file, afterLine, text }: { file: string; afterLine: number; text: string }) =>
+    mutationFn: ({
+      file,
+      afterLine,
+      text,
+    }: {
+      file: string
+      afterLine: number
+      text: string
+    }) =>
       fetch('/api/comment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -419,8 +422,7 @@ function DiffView() {
         const isViewed = hash != null && viewedHash === hash
         const isStale = viewedHash != null && hash != null && viewedHash !== hash
         const isCollapsed = collapsed[name] ?? false
-        const fileComposing =
-          composing?.file === name ? { line: composing.line } : null
+        const fileComposing = composing?.file === name ? { line: composing.line } : null
 
         return (
           <FileCard
@@ -447,9 +449,7 @@ function DiffView() {
               commentMutation.mutate({ file: name, afterLine: line, text })
               setComposing(null)
             }}
-            onResolveComment={(line) =>
-              resolveMutation.mutate({ file: name, line })
-            }
+            onResolveComment={(line) => resolveMutation.mutate({ file: name, line })}
             onCancelComment={() => setComposing(null)}
           />
         )

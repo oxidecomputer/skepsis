@@ -1,7 +1,15 @@
 import { Hono } from 'hono'
+import { zValidator } from '@hono/zod-validator'
 import { getDiff, resolveSessionKey } from './diff.ts'
 import { loadViewed, markViewed, unmarkViewed } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
+import {
+  viewedRequestSchema,
+  viewedDeleteSchema,
+  commentRequestSchema,
+  commentDeleteSchema,
+} from '../shared/types.ts'
+import type { DiffResponse, OkResponse, ErrorResponse } from '../shared/types.ts'
 
 const revset = process.argv[2] || '@'
 const port = Number(process.env['PORT']) || 3742
@@ -13,51 +21,35 @@ const app = new Hono()
 app.get('/api/diff', async (c) => {
   const { patch, fileHashes } = await getDiff(revset)
   const viewed = await loadViewed(cwd, sessionKey)
-  return c.json({ patch, revset, fileHashes, viewed })
+  return c.json({ patch, revset, fileHashes, viewed } satisfies DiffResponse)
 })
 
-app.post('/api/viewed', async (c) => {
-  const { file, hash } = await c.req.json()
-  if (typeof file !== 'string' || typeof hash !== 'string') {
-    return c.json({ error: 'file and hash required' }, 400)
-  }
+app.post('/api/viewed', zValidator('json', viewedRequestSchema), async (c) => {
+  const { file, hash } = c.req.valid('json')
   await markViewed(cwd, sessionKey, file, hash)
-  return c.json({ ok: true })
+  return c.json({ ok: true } satisfies OkResponse)
 })
 
-app.delete('/api/viewed', async (c) => {
-  const { file } = await c.req.json()
-  if (typeof file !== 'string') {
-    return c.json({ error: 'file required' }, 400)
-  }
+app.delete('/api/viewed', zValidator('json', viewedDeleteSchema), async (c) => {
+  const { file } = c.req.valid('json')
   await unmarkViewed(cwd, sessionKey, file)
-  return c.json({ ok: true })
+  return c.json({ ok: true } satisfies OkResponse)
 })
 
-app.post('/api/comment', async (c) => {
-  const { file, afterLine, text } = await c.req.json()
-  if (
-    typeof file !== 'string' ||
-    typeof afterLine !== 'number' ||
-    typeof text !== 'string'
-  ) {
-    return c.json({ error: 'file, afterLine, and text required' }, 400)
-  }
+app.post('/api/comment', zValidator('json', commentRequestSchema), async (c) => {
+  const { file, afterLine, text } = c.req.valid('json')
   await insertComment(cwd, file, afterLine, text)
-  return c.json({ ok: true })
+  return c.json({ ok: true } satisfies OkResponse)
 })
 
-app.delete('/api/comment', async (c) => {
-  const { file, line } = await c.req.json()
-  if (typeof file !== 'string' || typeof line !== 'number') {
-    return c.json({ error: 'file and line required' }, 400)
-  }
+app.delete('/api/comment', zValidator('json', commentDeleteSchema), async (c) => {
+  const { file, line } = c.req.valid('json')
   await removeComment(cwd, file, line)
-  return c.json({ ok: true })
+  return c.json({ ok: true } satisfies OkResponse)
 })
 
 app.onError((err, c) => {
-  return c.json({ error: err.message }, 500)
+  return c.json({ error: err.message } satisfies ErrorResponse, 500)
 })
 
 export default {

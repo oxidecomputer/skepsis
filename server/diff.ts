@@ -1,7 +1,6 @@
 import { $ } from 'bun'
 import { createHash } from 'crypto'
-
-export type FileHashes = Record<string, string>
+import type { FileHashes } from '../shared/types.ts'
 
 export async function getDiff(
   revset: string,

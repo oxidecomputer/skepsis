@@ -1,8 +1,7 @@
 import { join } from 'path'
 import { createHash } from 'crypto'
 import { mkdir, readFile, writeFile } from 'fs/promises'
-
-type ViewedMap = Record<string, string>
+import type { ViewedMap } from '../shared/types.ts'
 
 const BASE_DIR = join(process.env['HOME'] ?? '~', '.local', 'share', 'local-review')
 
