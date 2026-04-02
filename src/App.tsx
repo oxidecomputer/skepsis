@@ -354,7 +354,7 @@ function DiffView() {
       fetch('/api/viewed', {
         method: mark ? 'POST' : 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mark ? { file, hash } : { file }),
+        body: JSON.stringify({ file, hash }),
       }),
     onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
   })

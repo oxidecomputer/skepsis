@@ -1,5 +1,4 @@
 import { $ } from 'bun'
-import { createHash } from 'crypto'
 import type { FileHashes } from '../shared/types.ts'
 
 export async function getDiff(
@@ -13,14 +12,12 @@ export async function getDiff(
   return { patch, fileHashes: extractFileHashes(patch) }
 }
 
-/** Resolve diff args to a stable session key. Validates the args against jj. */
-export async function resolveSessionKey(diffArgs: string[]): Promise<string> {
-  // Run jj diff --stat as a cheap validation that the args are valid
+/** Validate diff args against jj at startup. */
+export async function validateDiffArgs(diffArgs: string[]): Promise<void> {
   const result = await $`jj diff ${diffArgs} --stat`.quiet().nothrow()
   if (result.exitCode !== 0) {
     throw new Error(`jj diff failed: ${result.stderr.toString()}`)
   }
-  return createHash('sha256').update(diffArgs.join('\0')).digest('hex').slice(0, 16)
 }
 
 /**

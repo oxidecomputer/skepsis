@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { join } from 'path'
-import { getDiff, resolveSessionKey } from './diff.ts'
+import { getDiff, validateDiffArgs } from './diff.ts'
 import { loadViewed, markViewed, unmarkViewed } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
 import {
@@ -16,13 +16,13 @@ const diffArgs = process.argv.slice(2)
 if (diffArgs.length === 0) diffArgs.push('-r', '@')
 const port = Number(process.env['PORT']) || 3742
 const cwd = process.cwd()
-const sessionKey = await resolveSessionKey(diffArgs)
+await validateDiffArgs(diffArgs)
 
 const app = new Hono()
 
 app.get('/api/diff', async (c) => {
   const { patch, fileHashes } = await getDiff(diffArgs)
-  const viewed = await loadViewed(cwd, sessionKey)
+  const viewed = await loadViewed(cwd, fileHashes)
   return c.json({
     patch,
     revset: diffArgs.join(' '),
@@ -33,13 +33,13 @@ app.get('/api/diff', async (c) => {
 
 app.post('/api/viewed', zValidator('json', viewedRequestSchema), async (c) => {
   const { file, hash } = c.req.valid('json')
-  await markViewed(cwd, sessionKey, file, hash)
+  await markViewed(cwd, file, hash)
   return c.json({ ok: true } satisfies OkResponse)
 })
 
 app.delete('/api/viewed', zValidator('json', viewedDeleteSchema), async (c) => {
-  const { file } = c.req.valid('json')
-  await unmarkViewed(cwd, sessionKey, file)
+  const { file, hash } = c.req.valid('json')
+  await unmarkViewed(cwd, file, hash)
   return c.json({ ok: true } satisfies OkResponse)
 })
 

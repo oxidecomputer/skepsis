@@ -9,6 +9,7 @@ export const viewedRequestSchema = z.object({
 
 export const viewedDeleteSchema = z.object({
   file: z.string(),
+  hash: z.string(),
 })
 
 export const commentRequestSchema = z.object({
