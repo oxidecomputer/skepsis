@@ -42,12 +42,23 @@ if (opts.dev) {
   process.on('SIGINT', cleanup)
   process.on('SIGTERM', cleanup)
 } else {
-  // Production mode: API server serves dist/ (TODO: Phase 5)
-  setTimeout(() => {
+  // Production mode: build frontend, API server serves dist/
+  const build = spawn('bunx', ['vite', 'build'], {
+    cwd: projectRoot,
+    stdio: 'ignore',
+  })
+
+  build.on('exit', (code) => {
+    if (code !== 0) {
+      console.error('vite build failed')
+      api.kill()
+      process.exit(1)
+    }
     spawn('open', [`http://localhost:${apiPort}`])
-  }, 500)
+  })
 
   function cleanup() {
+    build.kill()
     api.kill()
     process.exit()
   }

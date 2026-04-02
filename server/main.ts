@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
+import { join } from 'path'
 import { getDiff, resolveSessionKey } from './diff.ts'
 import { loadViewed, markViewed, unmarkViewed } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
@@ -46,6 +47,16 @@ app.delete('/api/comment', zValidator('json', commentDeleteSchema), async (c) =>
   const { file, line } = c.req.valid('json')
   await removeComment(cwd, file, line)
   return c.json({ ok: true } satisfies OkResponse)
+})
+
+// Serve built frontend assets in production mode
+const distDir = join(import.meta.dirname, '..', 'dist')
+app.get('*', async (c) => {
+  const path = new URL(c.req.url).pathname
+  const file = Bun.file(join(distDir, path))
+  if (await file.exists()) return new Response(file)
+  // SPA fallback
+  return new Response(Bun.file(join(distDir, 'index.html')))
 })
 
 app.onError((err, c) => {
