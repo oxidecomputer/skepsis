@@ -1,9 +1,10 @@
+import { createServer } from 'net'
 import { spawn } from 'child_process'
 import { resolve } from 'path'
 import { Command } from '@commander-js/extra-typings'
 
 const program = new Command()
-  .name('local-review')
+  .name('skepsis')
   .description('Local diff review UI for jj')
   .option('-r, --revisions <revsets>', 'show changes in these revisions')
   .option('-f, --from <revset>', 'show changes from this revision')
@@ -25,8 +26,23 @@ if (opts.from || opts.to) {
 
 const cwd = opts.directory ? resolve(opts.directory) : process.cwd()
 
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer()
+    srv.listen(0, () => {
+      const addr = srv.address()
+      if (addr && typeof addr !== 'string') {
+        srv.close(() => resolve(addr.port))
+      } else {
+        reject(new Error('failed to get free port'))
+      }
+    })
+    srv.on('error', reject)
+  })
+}
+
 const projectRoot = import.meta.dirname
-const apiPort = 3742
+const apiPort = await getFreePort()
 const children: ReturnType<typeof spawn>[] = []
 
 function cleanup(code = 0) {
@@ -53,6 +69,7 @@ if (opts.dev) {
   const vite = spawn('bunx', ['vite', '--open'], {
     cwd: projectRoot,
     stdio: 'inherit',
+    env: { ...process.env, API_PORT: String(apiPort) },
   })
   children.push(vite)
 } else {
