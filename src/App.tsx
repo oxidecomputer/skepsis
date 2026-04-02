@@ -9,6 +9,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -74,6 +75,72 @@ function getFileStats(fileDiff: FileDiffMetadata) {
     deletions += hunk.deletionLines
   }
   return { additions, deletions }
+}
+
+// --- Keyboard navigation helpers ---
+
+/** Query shadow DOM for navigable diff lines in a file card */
+function getFileLines(fileIdx: number) {
+  const cards = document.querySelectorAll('.file-card')
+  const card = cards[fileIdx]
+  if (!card) return []
+
+  const container = card.querySelector('diffs-container')
+  const pre = (container as HTMLElement | null)?.shadowRoot?.querySelector('pre')
+  if (!pre) return []
+
+  const results: Array<{
+    gutterEl: HTMLElement
+    contentEl: HTMLElement
+    lineNumber: number
+    lineType: string
+  }> = []
+
+  for (const col of Array.from(pre.children)) {
+    if (!(col instanceof HTMLElement) || !col.hasAttribute('data-code')) continue
+    // In split mode skip deletions column; navigate additions only
+    if (col.hasAttribute('data-deletions')) continue
+
+    const gutter = col.querySelector('[data-gutter]')
+    const content = col.querySelector('[data-content]')
+    if (!gutter || !content) continue
+
+    for (let i = 0; i < gutter.children.length && i < content.children.length; i++) {
+      const g = gutter.children[i] as HTMLElement
+      const c = content.children[i] as HTMLElement
+      if (!g.hasAttribute('data-column-number')) continue
+      results.push({
+        gutterEl: g,
+        contentEl: c,
+        lineNumber: parseInt(g.getAttribute('data-column-number')!, 10),
+        lineType: g.getAttribute('data-line-type') || '',
+      })
+    }
+    break // one column is enough
+  }
+  return results
+}
+
+function clearCursorHighlight() {
+  for (const container of document.querySelectorAll('.file-card diffs-container')) {
+    const sr = (container as HTMLElement).shadowRoot
+    if (!sr) continue
+    for (const el of sr.querySelectorAll('[data-selected-line]')) {
+      el.removeAttribute('data-selected-line')
+    }
+  }
+}
+
+/** Inject cursor-line CSS into a shadow root (idempotent) */
+function ensureCursorStyles(sr: ShadowRoot) {
+  if (sr.querySelector('style[data-cursor-css]')) return
+  const style = document.createElement('style')
+  style.setAttribute('data-cursor-css', '')
+  // The library only styles change lines with data-selected-line;
+  // this covers context lines too.
+  style.textContent =
+    '[data-selected-line][data-line] { background-color: var(--diffs-bg-selection); }'
+  sr.appendChild(style)
 }
 
 const fileDiffStyle = {
@@ -181,6 +248,7 @@ function FileCard({
   isWide,
   collapsed,
   composing,
+  focused,
   onToggleCollapse,
   onToggleViewed,
   onStartComment,
@@ -195,6 +263,7 @@ function FileCard({
   isWide: boolean
   collapsed: boolean
   composing: { line: number } | null
+  focused: boolean
   onToggleCollapse: () => void
   onToggleViewed: () => void
   onStartComment: (line: number) => void
@@ -253,7 +322,7 @@ function FileCard({
   )
 
   return (
-    <div className="file-card">
+    <div className={'file-card' + (focused ? ' focused' : '')}>
       <div className="file-header" onClick={onToggleCollapse}>
         <span className={'collapse-chevron' + (collapsed ? ' collapsed' : '')}>
           {'\u25B6'}
@@ -319,6 +388,73 @@ function ProgressBar({
           className="progress-fill"
           style={{ width: `${(viewedCount / total) * 100}%` }}
         />
+      </div>
+    </div>
+  )
+}
+
+function HelpModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (e.key === 'Escape' || e.key === '?') {
+        e.preventDefault()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  return (
+    <div className="help-overlay" onClick={onClose}>
+      <div className="help-modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Keyboard Shortcuts</h3>
+        <table>
+          <tbody>
+            <tr>
+              <td>
+                <kbd>j</kbd> / <kbd>k</kbd>
+              </td>
+              <td>Next / previous line</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>n</kbd> / <kbd>p</kbd>
+              </td>
+              <td>Next / previous file</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>v</kbd>
+              </td>
+              <td>Toggle viewed</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>e</kbd>
+              </td>
+              <td>Expand / collapse file</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>c</kbd>
+              </td>
+              <td>Comment on line</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Esc</kbd>
+              </td>
+              <td>Close / cancel</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>?</kbd>
+              </td>
+              <td>Toggle this help</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -405,6 +541,182 @@ function DiffView() {
     return base
   }, [data, markMutation.isPending, markMutation.variables])
 
+  // --- Keyboard navigation ---
+  const [focusedFileIdx, setFocusedFileIdx] = useState(0)
+  const [cursorIdx, setCursorIdx] = useState(0)
+  const [showHelp, setShowHelp] = useState(false)
+  const scrollRef = useRef<'file' | 'line' | null>(null)
+
+  // Mutable snapshot for the keyboard handler (avoids re-creating the listener)
+  const navRef = useRef({
+    focusedFileIdx: 0,
+    cursorIdx: 0,
+    showHelp: false,
+    composing: null as typeof composing,
+    files: [] as FileDiffMetadata[],
+    collapsed: {} as Record<string, boolean>,
+    fileHashes: {} as Record<string, string>,
+    viewed: {} as ViewedMap,
+    markMutate: markMutation.mutate,
+  })
+  navRef.current = {
+    focusedFileIdx,
+    cursorIdx,
+    showHelp,
+    composing,
+    files,
+    collapsed,
+    fileHashes: data?.fileHashes ?? {},
+    viewed,
+    markMutate: markMutation.mutate,
+  }
+
+  // Apply cursor highlight after state or DOM changes
+  useLayoutEffect(() => {
+    clearCursorHighlight()
+
+    const target = scrollRef.current
+    scrollRef.current = null
+
+    if (target === 'file') {
+      const cards = document.querySelectorAll('.file-card')
+      cards[focusedFileIdx]?.scrollIntoView({ block: 'start' })
+    }
+
+    const file = files[focusedFileIdx]
+    if (!file || (collapsed[file.name] ?? false)) return
+
+    const lines = getFileLines(focusedFileIdx)
+    const idx = Math.min(cursorIdx, Math.max(lines.length - 1, 0))
+    const line = lines[idx]
+    if (!line) return
+
+    // Inject cursor CSS into this file's shadow root
+    const sr = line.gutterEl.getRootNode() as ShadowRoot
+    if (sr instanceof ShadowRoot) ensureCursorStyles(sr)
+
+    line.gutterEl.setAttribute('data-selected-line', 'single')
+    line.contentEl.setAttribute('data-selected-line', 'single')
+
+    if (target === 'line') {
+      line.contentEl.scrollIntoView({ block: 'nearest' })
+    }
+  }, [focusedFileIdx, cursorIdx, patch, composing, collapsed, files])
+
+  // Keyboard handler (stable — reads mutable ref)
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement)
+        return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+
+      const s = navRef.current
+
+      switch (e.key) {
+        case '?':
+          e.preventDefault()
+          setShowHelp((v) => !v)
+          break
+        case 'Escape':
+          if (s.showHelp) {
+            e.preventDefault()
+            setShowHelp(false)
+          } else if (s.composing) {
+            e.preventDefault()
+            setComposing(null)
+          }
+          break
+        case 'n': {
+          if (s.showHelp || s.composing) break
+          e.preventDefault()
+          const next = Math.min(s.focusedFileIdx + 1, s.files.length - 1)
+          if (next !== s.focusedFileIdx) {
+            setFocusedFileIdx(next)
+            setCursorIdx(0)
+            scrollRef.current = 'file'
+          }
+          break
+        }
+        case 'p': {
+          if (s.showHelp || s.composing) break
+          e.preventDefault()
+          const prev = Math.max(s.focusedFileIdx - 1, 0)
+          if (prev !== s.focusedFileIdx) {
+            setFocusedFileIdx(prev)
+            setCursorIdx(0)
+            scrollRef.current = 'file'
+          }
+          break
+        }
+        case 'j': {
+          if (s.showHelp || s.composing) break
+          e.preventDefault()
+          const name = s.files[s.focusedFileIdx]?.name
+          if (!name || (s.collapsed[name] ?? false)) break
+          const lines = getFileLines(s.focusedFileIdx)
+          if (lines.length === 0) break
+          const next = Math.min(s.cursorIdx + 1, lines.length - 1)
+          if (next !== s.cursorIdx) {
+            setCursorIdx(next)
+            scrollRef.current = 'line'
+          }
+          break
+        }
+        case 'k': {
+          if (s.showHelp || s.composing) break
+          e.preventDefault()
+          const name = s.files[s.focusedFileIdx]?.name
+          if (!name || (s.collapsed[name] ?? false)) break
+          const prev = Math.max(s.cursorIdx - 1, 0)
+          if (prev !== s.cursorIdx) {
+            setCursorIdx(prev)
+            scrollRef.current = 'line'
+          }
+          break
+        }
+        case 'v': {
+          if (s.showHelp || s.composing) break
+          e.preventDefault()
+          const file = s.files[s.focusedFileIdx]
+          if (!file) break
+          const hash = s.fileHashes[file.name]
+          if (!hash) break
+          const isViewed = s.viewed[file.name] === hash
+          const mark = !isViewed
+          setCollapsed((prev) => ({ ...prev, [file.name]: mark }))
+          s.markMutate({ file: file.name, hash, mark })
+          break
+        }
+        case 'e': {
+          if (s.showHelp || s.composing) break
+          e.preventDefault()
+          const file = s.files[s.focusedFileIdx]
+          if (!file) break
+          setCollapsed((prev) => ({
+            ...prev,
+            [file.name]: !(prev[file.name] ?? false),
+          }))
+          break
+        }
+        case 'c': {
+          if (s.showHelp || s.composing) break
+          e.preventDefault()
+          const file = s.files[s.focusedFileIdx]
+          if (!file) break
+          if (s.collapsed[file.name] ?? false) break
+          const lines = getFileLines(s.focusedFileIdx)
+          const line = lines[s.cursorIdx]
+          if (!line || line.lineType === 'change-deletion') break
+          setComposing({ file: file.name, line: line.lineNumber })
+          break
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   if (isLoading) return <div style={{ padding: 20 }}>Loading...</div>
   if (error) return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
   if (data!.error) return <pre style={{ color: 'red', padding: 20 }}>{data!.error}</pre>
@@ -415,6 +727,7 @@ function DiffView() {
   return (
     <div className="diff-container">
       <ProgressBar fileHashes={fileHashes} viewed={viewed} />
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
       {files.map((fileDiff, i) => {
         const name = fileDiff.name
         const hash = fileHashes[name]
@@ -434,6 +747,7 @@ function DiffView() {
             isWide={isWide}
             collapsed={isCollapsed}
             composing={fileComposing}
+            focused={i === focusedFileIdx}
             onToggleCollapse={() =>
               setCollapsed((prev) => ({ ...prev, [name]: !isCollapsed }))
             }

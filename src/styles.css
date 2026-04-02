@@ -292,3 +292,71 @@ body {
   border-color: #484f58;
   color: #e6edf3;
 }
+
+/* Focused file indicator */
+.file-card.focused {
+  border-color: #1f6feb;
+}
+
+.file-card.focused > .file-header {
+  border-bottom-color: #1f6feb;
+}
+
+/* Help modal */
+.help-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.help-modal {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 20px 28px;
+  min-width: 320px;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  color: #e6edf3;
+}
+
+.help-modal h3 {
+  margin: 0 0 16px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.help-modal table {
+  width: 100%;
+  border-spacing: 0;
+}
+
+.help-modal td {
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.help-modal td:first-child {
+  white-space: nowrap;
+  padding-right: 24px;
+  color: #8b949e;
+}
+
+.help-modal kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  color: #e6edf3;
+  min-width: 18px;
+  text-align: center;
+}

@@ -186,10 +186,21 @@ file to check if diff computation and highlighting are lazy or eager.
 ### Phase 8: Polish
 
 - Better context display (change description, author)
-- Keyboard shortcuts:
+- Keyboard shortcuts: ✓
   - `n`/`p` — jump between files
   - `j`/`k` — scroll line-by-line within current file
   - `v` — toggle viewed on focused file
   - `e` — toggle collapse on focused file
-  - `s` — toggle split/unified diff
   - `c` — add comment on focused line
+  - `?` — toggle help popup
+  - Known friction with j/k: cursor always starts at top of file (long
+    hold to reach anything deep), and doesn't carry across file
+    boundaries. Cross-file movement requires n/p.
+  - TODO: focused file should track scroll — whichever file header is
+    sticky (topmost visible) should be the focused file
+  - TODO: j/k cursor should start at the first visible line in the
+    viewport, not the top of the file
+  - TODO: `]c`/`[c` or similar to jump between REVIEW comments
+  - TODO: `]h`/`[h` or similar to jump between diff hunks
+  - TODO: `Ctrl-d`/`Ctrl-u` to move by half-page within a file
+  - TODO: `s` — toggle split/unified diff
