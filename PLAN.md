@@ -193,9 +193,11 @@ file to check if diff computation and highlighting are lazy or eager.
   - `e` — toggle collapse on focused file
   - `c` — add comment on focused line
   - `?` — toggle help popup
-  - Known friction with j/k: cursor always starts at top of file (long
-    hold to reach anything deep), and doesn't carry across file
-    boundaries. Cross-file movement requires n/p.
+  - The line cursor (j/k/c) is the most complex part of the keyboard
+    system — pierces shadow DOM, injects CSS, manages highlight state.
+    May not be worth the complexity given click-to-comment works fine.
+    Consider ripping it out and keeping just file-level shortcuts
+    (n/p/v/e) which are simple and clearly useful.
   - TODO: focused file should track scroll — whichever file header is
     sticky (topmost visible) should be the focused file
   - TODO: j/k cursor should start at the first visible line in the
@@ -204,3 +206,5 @@ file to check if diff computation and highlighting are lazy or eager.
   - TODO: `]h`/`[h` or similar to jump between diff hunks
   - TODO: `Ctrl-d`/`Ctrl-u` to move by half-page within a file
   - TODO: `s` — toggle split/unified diff
+- Make port use dynamic so I can run multiple at once
+- Put repo name in page title

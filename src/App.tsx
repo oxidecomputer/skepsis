@@ -121,6 +121,31 @@ function getFileLines(fileIdx: number) {
   return results
 }
 
+/** Bottom edge of the sticky file header — lines above this are occluded */
+function stickyHeaderBottom(fileIdx: number): number {
+  const card = document.querySelectorAll('.file-card')[fileIdx]
+  const header = card?.querySelector('.file-header')
+  return header ? header.getBoundingClientRect().bottom : 0
+}
+
+/** Find the index of the first visible line in a file card, or -1.
+ *  Accounts for the sticky file header that occludes the top of the card. */
+function firstVisibleLineIdx(fileIdx: number): number {
+  const top = stickyHeaderBottom(fileIdx)
+  const lines = getFileLines(fileIdx)
+  for (let i = 0; i < lines.length; i++) {
+    const rect = lines[i]!.contentEl.getBoundingClientRect()
+    if (rect.bottom > top && rect.top < window.innerHeight) return i
+  }
+  return -1
+}
+
+/** Is a line element visible below the sticky header and above the viewport bottom? */
+function isLineVisible(el: HTMLElement, fileIdx: number): boolean {
+  const r = el.getBoundingClientRect()
+  return r.bottom > stickyHeaderBottom(fileIdx) && r.top < window.innerHeight
+}
+
 function clearCursorHighlight() {
   for (const container of document.querySelectorAll('.file-card diffs-container')) {
     const sr = (container as HTMLElement).shadowRoot
@@ -546,6 +571,7 @@ function DiffView() {
   const [cursorIdx, setCursorIdx] = useState(0)
   const [showHelp, setShowHelp] = useState(false)
   const scrollRef = useRef<'file' | 'line' | null>(null)
+  const keyboardNavTime = useRef(0)
 
   // Mutable snapshot for the keyboard handler (avoids re-creating the listener)
   const navRef = useRef({
@@ -631,6 +657,7 @@ function DiffView() {
           e.preventDefault()
           const next = Math.min(s.focusedFileIdx + 1, s.files.length - 1)
           if (next !== s.focusedFileIdx) {
+            keyboardNavTime.current = Date.now()
             setFocusedFileIdx(next)
             setCursorIdx(0)
             scrollRef.current = 'file'
@@ -642,6 +669,7 @@ function DiffView() {
           e.preventDefault()
           const prev = Math.max(s.focusedFileIdx - 1, 0)
           if (prev !== s.focusedFileIdx) {
+            keyboardNavTime.current = Date.now()
             setFocusedFileIdx(prev)
             setCursorIdx(0)
             scrollRef.current = 'file'
@@ -655,8 +683,16 @@ function DiffView() {
           if (!name || (s.collapsed[name] ?? false)) break
           const lines = getFileLines(s.focusedFileIdx)
           if (lines.length === 0) break
-          const next = Math.min(s.cursorIdx + 1, lines.length - 1)
+          // If cursor is off-screen (or behind sticky header), snap to first visible line
+          let base = s.cursorIdx
+          const cur = lines[Math.min(base, lines.length - 1)]
+          if (cur && !isLineVisible(cur.contentEl, s.focusedFileIdx)) {
+            const vis = firstVisibleLineIdx(s.focusedFileIdx)
+            if (vis >= 0) base = vis
+          }
+          const next = Math.min(base + 1, lines.length - 1)
           if (next !== s.cursorIdx) {
+            keyboardNavTime.current = Date.now()
             setCursorIdx(next)
             scrollRef.current = 'line'
           }
@@ -667,8 +703,18 @@ function DiffView() {
           e.preventDefault()
           const name = s.files[s.focusedFileIdx]?.name
           if (!name || (s.collapsed[name] ?? false)) break
-          const prev = Math.max(s.cursorIdx - 1, 0)
+          const lines = getFileLines(s.focusedFileIdx)
+          if (lines.length === 0) break
+          // If cursor is off-screen (or behind sticky header), snap to first visible line
+          let base = s.cursorIdx
+          const cur = lines[Math.min(base, lines.length - 1)]
+          if (cur && !isLineVisible(cur.contentEl, s.focusedFileIdx)) {
+            const vis = firstVisibleLineIdx(s.focusedFileIdx)
+            if (vis >= 0) base = vis
+          }
+          const prev = Math.max(base - 1, 0)
           if (prev !== s.cursorIdx) {
+            keyboardNavTime.current = Date.now()
             setCursorIdx(prev)
             scrollRef.current = 'line'
           }
@@ -716,6 +762,48 @@ function DiffView() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+
+  // Track which file the user is looking at via IntersectionObserver.
+  // Fires only on visibility transitions — no per-frame work.
+  const visibleCards = useRef(new Set<number>())
+  useEffect(() => {
+    visibleCards.current.clear()
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Don't override keyboard-driven navigation
+        if (Date.now() - keyboardNavTime.current < 150) return
+
+        for (const entry of entries) {
+          const idx = Number((entry.target as HTMLElement).dataset.fileIdx)
+          if (entry.isIntersecting) visibleCards.current.add(idx)
+          else visibleCards.current.delete(idx)
+        }
+
+        if (visibleCards.current.size === 0) return
+        const topIdx = Math.min(...visibleCards.current)
+        const s = navRef.current
+        if (topIdx !== s.focusedFileIdx) {
+          setFocusedFileIdx(topIdx)
+          // Snap cursor to first visible line in the new file
+          const file = s.files[topIdx]
+          if (file && !(s.collapsed[file.name] ?? false)) {
+            const vis = firstVisibleLineIdx(topIdx)
+            if (vis >= 0) setCursorIdx(vis)
+          }
+        }
+      },
+      { threshold: 0 },
+    )
+
+    const cards = document.querySelectorAll('.file-card')
+    cards.forEach((card, i) => {
+      ;(card as HTMLElement).dataset.fileIdx = String(i)
+      observer.observe(card)
+    })
+
+    return () => observer.disconnect()
+  }, [files])
 
   if (isLoading) return <div style={{ padding: 20 }}>Loading...</div>
   if (error) return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
