@@ -5,64 +5,69 @@ import { Command } from '@commander-js/extra-typings'
 const program = new Command()
   .name('local-review')
   .description('Local diff review UI for jj')
-  .argument('[revset]', 'revset to review', '@')
-  .option('-r, --revision <revset>', 'revset to review (alternative to positional)')
+  .option('-r, --revisions <revsets>', 'show changes in these revisions')
+  .option('-f, --from <revset>', 'show changes from this revision')
+  .option('-t, --to <revset>', 'show changes to this revision')
   .option('-C, --directory <path>', 'run as if started in this directory')
   .option('--dev', 'run with Vite dev server for tool development')
   .parse()
 
 const opts = program.opts()
-const revset = opts.revision ?? program.args[0] ?? '@'
+
+// Build jj diff args matching jj's own -r/-f/-t flags
+const diffArgs: string[] = []
+if (opts.from || opts.to) {
+  if (opts.from) diffArgs.push('--from', opts.from)
+  if (opts.to) diffArgs.push('--to', opts.to)
+} else {
+  diffArgs.push('-r', opts.revisions ?? 'trunk()..@')
+}
+
 const cwd = opts.directory ? resolve(opts.directory) : process.cwd()
 
 const projectRoot = import.meta.dirname
 const apiPort = 3742
+const children: ReturnType<typeof spawn>[] = []
+
+function cleanup(code = 0) {
+  for (const child of children) child.kill()
+  process.exit(code)
+}
+
+process.on('SIGINT', () => cleanup())
+process.on('SIGTERM', () => cleanup())
 
 // Start API server
-const api = spawn('bun', ['run', resolve(projectRoot, 'server/main.ts'), revset], {
+const api = spawn('bun', ['run', resolve(projectRoot, 'server/main.ts'), ...diffArgs], {
   cwd,
   stdio: 'inherit',
   env: { ...process.env, PORT: String(apiPort) },
 })
+children.push(api)
+
+api.on('exit', (code) => {
+  if (code !== 0) cleanup(code ?? 1)
+})
 
 if (opts.dev) {
-  const vitePort = 5173
-
-  const vite = spawn('bunx', ['vite', '--port', String(vitePort), '--open'], {
+  const vite = spawn('bunx', ['vite', '--open'], {
     cwd: projectRoot,
     stdio: 'inherit',
   })
-
-  function cleanup() {
-    api.kill()
-    vite.kill()
-    process.exit()
-  }
-
-  process.on('SIGINT', cleanup)
-  process.on('SIGTERM', cleanup)
+  children.push(vite)
 } else {
   // Production mode: build frontend, API server serves dist/
   const build = spawn('bunx', ['vite', 'build'], {
     cwd: projectRoot,
     stdio: 'ignore',
   })
+  children.push(build)
 
   build.on('exit', (code) => {
     if (code !== 0) {
       console.error('vite build failed')
-      api.kill()
-      process.exit(1)
+      cleanup(1)
     }
     spawn('open', [`http://localhost:${apiPort}`])
   })
-
-  function cleanup() {
-    build.kill()
-    api.kill()
-    process.exit()
-  }
-
-  process.on('SIGINT', cleanup)
-  process.on('SIGTERM', cleanup)
 }

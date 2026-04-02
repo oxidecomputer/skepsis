@@ -12,17 +12,23 @@ import {
 } from '../shared/types.ts'
 import type { DiffResponse, OkResponse, ErrorResponse } from '../shared/types.ts'
 
-const revset = process.argv[2] || '@'
+const diffArgs = process.argv.slice(2)
+if (diffArgs.length === 0) diffArgs.push('-r', '@')
 const port = Number(process.env['PORT']) || 3742
 const cwd = process.cwd()
-const sessionKey = await resolveSessionKey(revset)
+const sessionKey = await resolveSessionKey(diffArgs)
 
 const app = new Hono()
 
 app.get('/api/diff', async (c) => {
-  const { patch, fileHashes } = await getDiff(revset)
+  const { patch, fileHashes } = await getDiff(diffArgs)
   const viewed = await loadViewed(cwd, sessionKey)
-  return c.json({ patch, revset, fileHashes, viewed } satisfies DiffResponse)
+  return c.json({
+    patch,
+    revset: diffArgs.join(' '),
+    fileHashes,
+    viewed,
+  } satisfies DiffResponse)
 })
 
 app.post('/api/viewed', zValidator('json', viewedRequestSchema), async (c) => {
@@ -68,4 +74,4 @@ export default {
   fetch: app.fetch,
 }
 
-console.log(`local-review API on http://localhost:${port} (revset: ${revset})`)
+console.log(`local-review API on http://localhost:${port} (${diffArgs.join(' ')})`)

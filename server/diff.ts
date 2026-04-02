@@ -3,9 +3,9 @@ import { createHash } from 'crypto'
 import type { FileHashes } from '../shared/types.ts'
 
 export async function getDiff(
-  revset: string,
+  diffArgs: string[],
 ): Promise<{ patch: string; fileHashes: FileHashes }> {
-  const result = await $`jj diff -r ${revset} --git`.quiet().nothrow()
+  const result = await $`jj diff ${diffArgs} --git`.quiet().nothrow()
   if (result.exitCode !== 0) {
     throw new Error(`jj diff failed (exit ${result.exitCode}): ${result.stderr.toString()}`)
   }
@@ -13,16 +13,14 @@ export async function getDiff(
   return { patch, fileHashes: extractFileHashes(patch) }
 }
 
-/** Resolve a revset to a stable session key by hashing its change IDs. */
-export async function resolveSessionKey(revset: string): Promise<string> {
-  const result = await $`jj log -r ${revset} --no-graph -T 'change_id ++ "\n"'`
-    .quiet()
-    .nothrow()
+/** Resolve diff args to a stable session key. Validates the args against jj. */
+export async function resolveSessionKey(diffArgs: string[]): Promise<string> {
+  // Run jj diff --stat as a cheap validation that the args are valid
+  const result = await $`jj diff ${diffArgs} --stat`.quiet().nothrow()
   if (result.exitCode !== 0) {
-    throw new Error(`jj log failed: ${result.stderr.toString()}`)
+    throw new Error(`jj diff failed: ${result.stderr.toString()}`)
   }
-  const ids = result.stdout.toString().trim().split('\n').filter(Boolean).sort()
-  return createHash('sha256').update(ids.join('\n')).digest('hex').slice(0, 16)
+  return createHash('sha256').update(diffArgs.join('\0')).digest('hex').slice(0, 16)
 }
 
 /**

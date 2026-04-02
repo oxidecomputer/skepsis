@@ -13,10 +13,10 @@ Everything else is ephemeral UI state.
 ## Usage
 
 ```
-local-review                # review current revision (jj diff of @)
-local-review <revset>       # review a specific revset
-local-review -r 'trunk()..@' # review range
-local-review --dev          # run with Vite dev server (HMR for tool development)
+local-review                    # review trunk()..@ (default)
+local-review -r 'trunk()..@'   # review a revset (-r/--revisions)
+local-review -f main -t @      # review from/to specific revisions
+local-review --dev              # run with Vite dev server (HMR for tool development)
 ```
 
 Opens a browser tab with the diff. Server stays alive until killed.
@@ -149,7 +149,7 @@ of silently replacing everything.
 2. Display existing REVIEW comments with distinct styling in the diff
 3. Delete comment through UI (removes line from source file)
 
-### Phase 5: CLI and server
+### Phase 5: CLI and server ✓
 
 1. CLI argument parsing with commander.js (`-r`, `-C`, `--dev`, `--help`)
 2. Single-server production mode: Bun serves `dist/` + API on one port
@@ -178,7 +178,12 @@ enables `@pierre/diffs`' built-in expansion (`expandUnchanged`,
 `expansionLineCount`). **Needs validation first:** test with a large
 file to check if diff computation and highlighting are lazy or eager.
 
-### Phase 7: Polish
+### Phase 7: File navigation
+
+- File tree sidebar and/or filter-by-name for diffs with many files
+- Test performance on large diffs (e.g. big rebases, vendor updates)
+
+### Phase 8: Polish
 
 - Better context display (change description, author)
 - Keyboard shortcuts:

@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "start": "bun run cli.ts",
-    "fmt": "oxfmt --write ."
+    "fmt": "oxfmt --write .",
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "@commander-js/extra-typings": "^14.0.0",
