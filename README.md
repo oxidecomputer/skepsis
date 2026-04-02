@@ -1,46 +1,60 @@
 # skepsis
 
-A browser-based code review UI for local jj (Jujutsu) diffs. Shows a GitHub-style
-split/unified diff view with syntax highlighting and file-viewed tracking. Inline
-review comments are written directly into source files as `// REVIEW: ...` markers.
+A browser-based code review UI for local [jj](https://jj-vcs.dev/) diffs.
+GitHub-style split/unified diff view with syntax highlighting, file-viewed
+tracking, and inline review comments written directly into source files as
+`// REVIEW: ...` markers.
+
+## Setup
+
+Requires [Bun](https://bun.sh/).
+
+```
+git clone https://github.com/oxidecomputer/skepsis.git
+cd skepsis && bun install
+```
+
+Add an alias so you can run it from any jj repo:
+
+```
+alias sk="bun ~/oxide/skepsis/cli.ts"
+```
 
 ## Usage
 
-A nice way to use this tool is to set up an alias pointing to the CLI entry point:
+Takes the same `-r`, `-f`, and `-t` flags as `jj diff` and passes them
+directly to jj when generating the diff.
 
 ```
-alias sk="bun ~/repos/skepsis/cli.ts"
-```
+$ sk -h
+Usage: skepsis [options]
 
-Then run it from any jj repo:
+Local diff review UI for jj
+
+Options:
+  -r, --revisions <revsets>  show changes in these revisions
+  -f, --from <revset>        show changes from this revision
+  -t, --to <revset>          show changes to this revision
+  --dev                      run with Vite dev server for tool development
+  -h, --help                 display help for command
+```
 
 ```
 sk                          # review trunk()..@
 sk -r @                     # review working copy only
-sk -r 'mzbranch..@'        # review a range of revisions
-sk -f main -t @             # diff between two specific revisions
+sk -r 'mybranch..@'         # review a range
+sk -f main -t @             # diff between two revisions
 ```
 
-Each invocation picks a random free port, so you can run multiple instances
-in different repos simultaneously.
+Each invocation picks a free port, so you can run multiple instances simultaneously.
 
-You can also run from this repo with `-C` to point at a different working
-directory:
-
-```
-bun run start -C ~/oxide/omicron -r @
-```
-
-This starts the API server, builds the frontend, and opens the browser. The
-revset defaults to `trunk()..@`.
-
-Review comments are inserted into the actual source files, so they show up in the
-diff itself and can be resolved (deleted) from the UI. Viewed-file state is persisted
-per session (keyed by the revset's change IDs) in `~/.local/share/skepsis/`.
+Review comments are inserted into the source files, so they show up in `jj diff`
+and can be resolved (deleted) from the UI. Viewed-file state is persisted per
+session in `~/.local/share/skepsis/`.
 
 ## Development
 
 ```
 bun install
-bun run dev     # Vite only (no API server)
+sk --dev    # Vite dev server with hot reload + API server
 ```

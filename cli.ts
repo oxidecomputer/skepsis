@@ -9,7 +9,6 @@ const program = new Command()
   .option('-r, --revisions <revsets>', 'show changes in these revisions')
   .option('-f, --from <revset>', 'show changes from this revision')
   .option('-t, --to <revset>', 'show changes to this revision')
-  .option('-C, --directory <path>', 'run as if started in this directory')
   .option('--dev', 'run with Vite dev server for tool development')
   .parse()
 
@@ -24,7 +23,7 @@ if (opts.from || opts.to) {
   diffArgs.push('-r', opts.revisions ?? 'trunk()..@')
 }
 
-const cwd = opts.directory ? resolve(opts.directory) : process.cwd()
+const cwd = process.cwd()
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
