@@ -353,6 +353,37 @@ body {
   color: #8b949e;
 }
 
+/* Ephemeral toast */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  padding: 12px 20px;
+  background: #21262d;
+  border: 1px solid #484f58;
+  border-radius: 8px;
+  color: #e6edf3;
+  font-size: 16px;
+  font-weight: 500;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  z-index: 200;
+  pointer-events: none;
+  animation: toast-fade 1.5s ease forwards;
+}
+
+@keyframes toast-fade {
+  0%,
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 .help-modal kbd {
   display: inline-block;
   padding: 2px 6px;

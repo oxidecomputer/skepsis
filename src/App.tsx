@@ -35,6 +35,21 @@ function useIsWide(): boolean {
   )
 }
 
+function useToast(duration = 1500) {
+  const [toast, setToast] = useState<{ content: React.ReactNode; key: number } | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const key = useRef(0)
+  const showToast = useCallback(
+    (content: React.ReactNode) => {
+      clearTimeout(timer.current)
+      setToast({ content, key: ++key.current })
+      timer.current = setTimeout(() => setToast(null), duration)
+    },
+    [duration],
+  )
+  return { toast, showToast }
+}
+
 // --- Review comment types and detection ---
 
 type AnnotationMeta =
@@ -227,13 +242,13 @@ function CommentForm({
 const MemoizedFileDiff = memo(
   function MemoizedFileDiff({
     fileDiff,
-    isWide,
+    diffStyle,
     lineAnnotations,
     renderAnnotation,
     onGutterUtilityClick,
   }: {
     fileDiff: FileDiffMetadata
-    isWide: boolean
+    diffStyle: 'split' | 'unified'
     lineAnnotations: DiffLineAnnotation<AnnotationMeta>[]
     renderAnnotation: (a: DiffLineAnnotation<AnnotationMeta>) => React.ReactNode
     onGutterUtilityClick: (range: { start: number; end: number; side?: string }) => void
@@ -244,7 +259,7 @@ const MemoizedFileDiff = memo(
         fileDiff={fileDiff}
         options={{
           theme: 'github-dark-default',
-          diffStyle: isWide ? 'split' : 'unified',
+          diffStyle,
           diffIndicators: 'classic',
           hunkSeparators: 'line-info-basic',
           overflow: 'wrap',
@@ -259,7 +274,7 @@ const MemoizedFileDiff = memo(
   },
   (prev, next) =>
     prev.fileDiff === next.fileDiff &&
-    prev.isWide === next.isWide &&
+    prev.diffStyle === next.diffStyle &&
     prev.lineAnnotations === next.lineAnnotations,
 )
 
@@ -270,7 +285,7 @@ function FileCard({
   hash,
   isViewed,
   isStale,
-  isWide,
+  diffStyle,
   collapsed,
   composing,
   focused,
@@ -285,7 +300,7 @@ function FileCard({
   hash: string | undefined
   isViewed: boolean
   isStale: boolean
-  isWide: boolean
+  diffStyle: 'split' | 'unified'
   collapsed: boolean
   composing: { line: number } | null
   focused: boolean
@@ -379,7 +394,7 @@ function FileCard({
       <div style={collapsed ? { display: 'none' } : undefined}>
         <MemoizedFileDiff
           fileDiff={fileDiff}
-          isWide={isWide}
+          diffStyle={diffStyle}
           lineAnnotations={lineAnnotations}
           renderAnnotation={renderAnnotation}
           onGutterUtilityClick={onGutterUtilityClick}
@@ -456,9 +471,15 @@ function HelpModal({ onClose }: { onClose: () => void }) {
             </tr>
             <tr>
               <td>
-                <kbd>e</kbd>
+                <kbd>e</kbd> / <kbd>E</kbd>
               </td>
-              <td>Expand / collapse file</td>
+              <td>Expand / collapse file / all files</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>s</kbd>
+              </td>
+              <td>Cycle split mode (responsive / split / unified)</td>
             </tr>
             <tr>
               <td>
@@ -485,8 +506,15 @@ function HelpModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+type SplitMode = 'responsive' | 'split' | 'unified'
+const SPLIT_CYCLE: SplitMode[] = ['responsive', 'split', 'unified']
+
 function DiffView() {
   const isWide = useIsWide()
+  const [splitMode, setSplitMode] = useState<SplitMode>('responsive')
+  const diffStyle: 'split' | 'unified' =
+    splitMode === 'responsive' ? (isWide ? 'split' : 'unified') : splitMode
+  const { toast, showToast } = useToast()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [composing, setComposing] = useState<{ file: string; line: number } | null>(null)
   const seededFromInitialLoad = useRef(false)
@@ -748,6 +776,28 @@ function DiffView() {
           }))
           break
         }
+        case 'E': {
+          if (s.showHelp || s.composing) break
+          e.preventDefault()
+          // If any file is expanded, collapse all; otherwise expand all
+          const anyExpanded = s.files.some((f) => !(s.collapsed[f.name] ?? false))
+          setCollapsed(Object.fromEntries(s.files.map((f) => [f.name, anyExpanded])))
+          break
+        }
+        case 's': {
+          if (s.showHelp || s.composing) break
+          e.preventDefault()
+          setSplitMode((prev) => {
+            const next = SPLIT_CYCLE[(SPLIT_CYCLE.indexOf(prev) + 1) % SPLIT_CYCLE.length]!
+            showToast(
+              <>
+                Split mode: <code>{next}</code>
+              </>,
+            )
+            return next
+          })
+          break
+        }
         case 'c': {
           if (s.showHelp || s.composing) break
           e.preventDefault()
@@ -836,6 +886,11 @@ function DiffView() {
     <div className="diff-container">
       <ProgressBar fileHashes={fileHashes} viewed={viewed} />
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+      {toast && (
+        <div className="toast" key={toast.key}>
+          {toast.content}
+        </div>
+      )}
       {files.map((fileDiff, i) => {
         const name = fileDiff.name
         const hash = fileHashes[name]
@@ -852,7 +907,7 @@ function DiffView() {
             hash={hash}
             isViewed={isViewed}
             isStale={isStale}
-            isWide={isWide}
+            diffStyle={diffStyle}
             collapsed={isCollapsed}
             composing={fileComposing}
             focused={i === focusedFileIdx}
