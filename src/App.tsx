@@ -239,6 +239,11 @@ function CommentForm({
 
 // --- Diff rendering with annotation support ---
 
+// Measured per-line height from the first rendered diff, used for placeholder sizing.
+// Falls back to 20px until a real measurement is taken.
+let measuredLineHeight = 20
+let lineHeightMeasured = false
+
 const MemoizedFileDiff = memo(
   function MemoizedFileDiff({
     fileDiff,
@@ -253,23 +258,40 @@ const MemoizedFileDiff = memo(
     renderAnnotation: (a: DiffLineAnnotation<AnnotationMeta>) => React.ReactNode
     onGutterUtilityClick: (range: { start: number; end: number; side?: string }) => void
   }) {
+    const measureRef = useCallback(
+      (el: HTMLDivElement | null) => {
+        if (lineHeightMeasured || !el) return
+        // Measure after the web component has rendered into its shadow DOM
+        requestAnimationFrame(() => {
+          const lineCount =
+            diffStyle === 'split' ? fileDiff.splitLineCount : fileDiff.unifiedLineCount
+          if (lineCount > 0 && el.offsetHeight > 0) {
+            measuredLineHeight = el.offsetHeight / lineCount
+            lineHeightMeasured = true
+          }
+        })
+      },
+      [fileDiff, diffStyle],
+    )
     return (
-      <FileDiff<AnnotationMeta>
-        style={fileDiffStyle}
-        fileDiff={fileDiff}
-        options={{
-          theme: 'github-dark-default',
-          diffStyle,
-          diffIndicators: 'classic',
-          hunkSeparators: 'line-info-basic',
-          overflow: 'wrap',
-          disableFileHeader: true,
-          enableGutterUtility: true,
-          onGutterUtilityClick,
-        }}
-        lineAnnotations={lineAnnotations}
-        renderAnnotation={renderAnnotation}
-      />
+      <div ref={measureRef}>
+        <FileDiff<AnnotationMeta>
+          style={fileDiffStyle}
+          fileDiff={fileDiff}
+          options={{
+            theme: 'github-dark-default',
+            diffStyle,
+            diffIndicators: 'classic',
+            hunkSeparators: 'line-info-basic',
+            overflow: 'wrap',
+            disableFileHeader: true,
+            enableGutterUtility: true,
+            onGutterUtilityClick,
+          }}
+          lineAnnotations={lineAnnotations}
+          renderAnnotation={renderAnnotation}
+        />
+      </div>
     )
   },
   (prev, next) =>
@@ -383,10 +405,9 @@ function FileCard({
   const showDiff = nearViewport && !collapsed
 
   // Estimate height for placeholder to prevent layout shift
-  const LINE_HEIGHT_PX = 20
   const lineCount =
     diffStyle === 'split' ? fileDiff.splitLineCount : fileDiff.unifiedLineCount
-  const estimatedHeight = lineCount * LINE_HEIGHT_PX
+  const estimatedHeight = lineCount * measuredLineHeight
 
   return (
     <div ref={cardRef} className={'file-card' + (focused ? ' focused' : '')}>

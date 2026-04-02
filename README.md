@@ -5,9 +5,7 @@ GitHub-style split/unified diff view with syntax highlighting, file-viewed
 tracking, and inline review comments written directly into source files as
 `// REVIEW: ...` markers.
 
-
 https://github.com/user-attachments/assets/698365ab-964c-4e38-a605-82bec4879f60
-
 
 ## Setup
 
