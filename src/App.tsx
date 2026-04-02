@@ -361,8 +361,35 @@ function FileCard({
     [onStartComment],
   )
 
+  // Lazy mount: only create the FileDiff web component when near the viewport
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [nearViewport, setNearViewport] = useState(false)
+  useEffect(() => {
+    const el = cardRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setNearViewport(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '2000px' },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  const showDiff = nearViewport && !collapsed
+
+  // Estimate height for placeholder to prevent layout shift
+  const LINE_HEIGHT_PX = 20
+  const lineCount =
+    diffStyle === 'split' ? fileDiff.splitLineCount : fileDiff.unifiedLineCount
+  const estimatedHeight = lineCount * LINE_HEIGHT_PX
+
   return (
-    <div className={'file-card' + (focused ? ' focused' : '')}>
+    <div ref={cardRef} className={'file-card' + (focused ? ' focused' : '')}>
       <div className="file-header" onClick={onToggleCollapse}>
         <span className={'collapse-chevron' + (collapsed ? ' collapsed' : '')}>
           {'\u25B6'}
@@ -391,7 +418,7 @@ function FileCard({
           {isStale ? 'Changed' : 'Viewed'}
         </button>
       </div>
-      <div style={collapsed ? { display: 'none' } : undefined}>
+      {showDiff ? (
         <MemoizedFileDiff
           fileDiff={fileDiff}
           diffStyle={diffStyle}
@@ -399,7 +426,9 @@ function FileCard({
           renderAnnotation={renderAnnotation}
           onGutterUtilityClick={onGutterUtilityClick}
         />
-      </div>
+      ) : (
+        !collapsed && <div style={{ height: estimatedHeight }} />
+      )}
     </div>
   )
 }
