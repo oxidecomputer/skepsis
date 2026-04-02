@@ -28,14 +28,10 @@ const api = spawn('bun', ['run', resolve(projectRoot, 'server/main.ts'), revset]
 if (opts.dev) {
   const vitePort = 5173
 
-  const vite = spawn('bunx', ['vite', '--port', String(vitePort)], {
+  const vite = spawn('bunx', ['vite', '--port', String(vitePort), '--open'], {
     cwd: projectRoot,
     stdio: 'inherit',
   })
-
-  setTimeout(() => {
-    spawn('open', [`http://localhost:${vitePort}`])
-  }, 1500)
 
   function cleanup() {
     api.kill()
