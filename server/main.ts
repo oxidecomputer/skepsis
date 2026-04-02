@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { getDiff, resolveSessionKey } from './diff.ts'
 import { loadViewed, markViewed, unmarkViewed } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
@@ -7,74 +8,61 @@ const port = Number(process.env['PORT']) || 3742
 const cwd = process.cwd()
 const sessionKey = await resolveSessionKey(revset)
 
-const server = Bun.serve({
-  port,
-  async fetch(req) {
-    const url = new URL(req.url)
+const app = new Hono()
 
-    if (url.pathname === '/api/diff') {
-      try {
-        const { patch, fileHashes } = await getDiff(revset)
-        const viewed = await loadViewed(cwd, sessionKey)
-        return Response.json({ patch, revset, fileHashes, viewed })
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e)
-        return Response.json({ error: message }, { status: 500 })
-      }
-    }
-
-    if (url.pathname === '/api/viewed' && req.method === 'POST') {
-      const { file, hash } = await req.json()
-      if (typeof file !== 'string' || typeof hash !== 'string') {
-        return Response.json({ error: 'file and hash required' }, { status: 400 })
-      }
-      await markViewed(cwd, sessionKey, file, hash)
-      return Response.json({ ok: true })
-    }
-
-    if (url.pathname === '/api/viewed' && req.method === 'DELETE') {
-      const { file } = await req.json()
-      if (typeof file !== 'string') {
-        return Response.json({ error: 'file required' }, { status: 400 })
-      }
-      await unmarkViewed(cwd, sessionKey, file)
-      return Response.json({ ok: true })
-    }
-
-    if (url.pathname === '/api/comment' && req.method === 'POST') {
-      try {
-        const { file, afterLine, text } = (await req.json()) as {
-          file: string
-          afterLine: number
-          text: string
-        }
-        if (typeof file !== 'string' || typeof afterLine !== 'number' || typeof text !== 'string') {
-          return Response.json({ error: 'file, afterLine, and text required' }, { status: 400 })
-        }
-        await insertComment(cwd, file, afterLine, text)
-        return Response.json({ ok: true })
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e)
-        return Response.json({ error: message }, { status: 500 })
-      }
-    }
-
-    if (url.pathname === '/api/comment' && req.method === 'DELETE') {
-      try {
-        const { file, line } = (await req.json()) as { file: string; line: number }
-        if (typeof file !== 'string' || typeof line !== 'number') {
-          return Response.json({ error: 'file and line required' }, { status: 400 })
-        }
-        await removeComment(cwd, file, line)
-        return Response.json({ ok: true })
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e)
-        return Response.json({ error: message }, { status: 500 })
-      }
-    }
-
-    return new Response('Not found', { status: 404 })
-  },
+app.get('/api/diff', async (c) => {
+  const { patch, fileHashes } = await getDiff(revset)
+  const viewed = await loadViewed(cwd, sessionKey)
+  return c.json({ patch, revset, fileHashes, viewed })
 })
+
+app.post('/api/viewed', async (c) => {
+  const { file, hash } = await c.req.json()
+  if (typeof file !== 'string' || typeof hash !== 'string') {
+    return c.json({ error: 'file and hash required' }, 400)
+  }
+  await markViewed(cwd, sessionKey, file, hash)
+  return c.json({ ok: true })
+})
+
+app.delete('/api/viewed', async (c) => {
+  const { file } = await c.req.json()
+  if (typeof file !== 'string') {
+    return c.json({ error: 'file required' }, 400)
+  }
+  await unmarkViewed(cwd, sessionKey, file)
+  return c.json({ ok: true })
+})
+
+app.post('/api/comment', async (c) => {
+  const { file, afterLine, text } = await c.req.json()
+  if (
+    typeof file !== 'string' ||
+    typeof afterLine !== 'number' ||
+    typeof text !== 'string'
+  ) {
+    return c.json({ error: 'file, afterLine, and text required' }, 400)
+  }
+  await insertComment(cwd, file, afterLine, text)
+  return c.json({ ok: true })
+})
+
+app.delete('/api/comment', async (c) => {
+  const { file, line } = await c.req.json()
+  if (typeof file !== 'string' || typeof line !== 'number') {
+    return c.json({ error: 'file and line required' }, 400)
+  }
+  await removeComment(cwd, file, line)
+  return c.json({ ok: true })
+})
+
+app.onError((err, c) => {
+  return c.json({ error: err.message }, 500)
+})
+
+export default {
+  port,
+  fetch: app.fetch,
+}
 
 console.log(`local-review API on http://localhost:${port} (revset: ${revset})`)

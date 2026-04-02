@@ -6,7 +6,7 @@ for a jj diff. File collapse, mark-as-viewed, keyboard navigation.
 Two kinds of persistent state, stored in ways that match their nature:
 
 - **Comments** — `// REVIEW:` comments in the source code, versioned by jj
-- **Viewed state** — content-hashed file map in `.local-review/`, gitignored
+- **Viewed state** — content-hashed file map in `~/.local/share/local-review/`
 
 Everything else is ephemeral UI state.
 
@@ -16,9 +16,12 @@ Everything else is ephemeral UI state.
 local-review                # review current revision (jj diff of @)
 local-review <revset>       # review a specific revset
 local-review -r 'trunk()..@' # review range
+local-review --dev          # run with Vite dev server (HMR for tool development)
 ```
 
 Opens a browser tab with the diff. Server stays alive until killed.
+
+CLI argument parsing via commander.js.
 
 ## Why web, not TUI
 
@@ -38,16 +41,21 @@ from richer rendering (Shiki syntax highlighting, flexible layout).
 
 ## Architecture
 
+By default, a single Bun server handles API routes and serves the Vite
+build output from `dist/`. With `--dev`, it instead spawns a Vite dev
+server (HMR) alongside the API server for tool development.
+
 ```
-cli.ts              — entry point, parse args, start server, open browser
-server.ts           — Bun.serve: static files + API routes + WebSocket
-diff.ts             — shell out to jj, parse/structure diff data
-watcher.ts          — watch working copy files, debounce, trigger re-diff
+cli.ts              — entry point, parse args (commander.js), start server, open browser
+server/
+  main.ts           — Bun.serve: static files + API routes + WebSocket
+  diff.ts           — shell out to jj, parse/structure diff data
+  viewed.ts         — content-hashed viewed state, persisted to disk
+  comment.ts        — insert/remove REVIEW comments in source files
+  watcher.ts        — watch working copy files, debounce, trigger re-diff
 
 src/
   App.tsx           — top-level React component, WebSocket connection
-  DiffView.tsx      — renders multi-file diff using @pierre/diffs
-  FileList.tsx      — sidebar or header file list with viewed state
 ```
 
 ## Comments
@@ -84,27 +92,24 @@ it up:
 No explicit invalidation logic — staleness falls out of the data model.
 Self-validating regardless of rebases, time passing, or session restarts.
 
-Persists to disk in `.local-review/viewed.json` (map of file paths to
-content hashes). Gitignored. Does not need version control because the
-content hash is the source of truth, not the timeline.
+Persists to disk in `~/.local/share/local-review/<repo-hash>/viewed.json`
+(map of file paths to content hashes). One file per repo, no session key
+— the content hash is self-validating, so the store doesn't need to be
+scoped to a particular revset.
 
 ## API
 
 ```
-GET  /api/diff          — returns parsed diff data (from jj)
-POST /api/comment       — write a REVIEW comment to a source file at a given line
-DELETE /api/comment     — remove a REVIEW comment from a source file
-WS   /ws                — pushes updated diffs on file change
+GET  /api/diff              — returns parsed diff data (from jj)
+GET  /api/file-contents     — returns old + new contents for a single file
+POST /api/comment           — write a REVIEW comment to a source file at a given line
+DELETE /api/comment         — remove a REVIEW comment from a source file
 ```
 
 ## Live updating
 
-The server watches only the specific file paths present in the current
-diff for write events (Bun `fs.watch`). On change, debounce (~500ms),
-re-run `jj diff`, push the new diff over WebSocket. After each re-diff,
-update the watch list to match the new set of files.
-
-Frontend reconciliation on update:
+Client polls via react-query `refetchInterval` (~2–3s). Frontend
+reconciliation on update:
 
 - Preserve scroll position
 - Preserve viewed/collapsed state
@@ -116,38 +121,65 @@ of silently replacing everything.
 
 ## Plan of attack
 
-### Phase 1: Minimal diff viewer
+### Phase 1: Minimal diff viewer ✓
 
 1. Set up project: `bun init`, Vite + React, install `@pierre/diffs`
 2. `cli.ts` — parse argv for optional revset, default to `@`
 3. `diff.ts` — run `jj diff -r <revset> --git` to get unified diff
 4. `server.ts` — serve diff as JSON, serve static frontend
-5. `DiffView.tsx` — `parsePatchFiles` + `MultiFileDiff` from `@pierre/diffs`
+5. `DiffView.tsx` — `parsePatchFiles` + `FileDiff` from `@pierre/diffs`
 6. Open browser on server start
 
 ### Phase 2: Live updating
 
-1. `watcher.ts` — watch diff files for writes, debounce, re-diff
-2. WebSocket endpoint, push new diff to connected clients
-3. Frontend reconciliation (preserve scroll, viewed state)
-4. Staleness guard
+1. Poll from the client via react-query `refetchInterval` (~2–3s)
+2. Staleness guard: if the update looks like a different revision
+   entirely (majority of files appeared/disappeared), show a banner
 
-### Phase 3: File state
+### Phase 3: File state ✓
 
 1. Content-hashed viewed toggle per file
 2. "Changed since viewed" indicator
-3. File list with viewed progress (3/12 files viewed)
-4. Persist to `.local-review/viewed.json`
+3. Progress bar (3/12 files viewed)
+4. Persist to `~/.local/share/local-review/`
 
-### Phase 4: Review comments
+### Phase 4: Review comments ✓
 
 1. Click a line to add a `// REVIEW:` comment — UI writes to source file
 2. Display existing REVIEW comments with distinct styling in the diff
 3. Delete comment through UI (removes line from source file)
 
-### Phase 5: Polish
+### Phase 5: CLI and server
 
-- Sticky file headers
+1. CLI argument parsing with commander.js (`-r`, `-C`, `--dev`, `--help`)
+2. Single-server production mode: Bun serves `dist/` + API on one port
+3. `--dev` mode: spawn Vite dev server alongside API server (current behavior)
+4. Drop session key from viewed state (content hash is sufficient)
+
+### Phase 6: Context expansion
+
+Initial load uses `parsePatchFiles` with default context (~3 lines).
+When the user clicks to expand context around a hunk, the client
+requests a re-diff of just that file with more context:
+
+```
+GET /api/diff?file=<path>&context=100
+```
+
+Server runs `jj diff -r <revset> --git --context=N <file>`, returns
+the single-file patch. Client re-parses it and replaces that file's
+`FileDiffMetadata`. Stays entirely in the patch-parsing path — no new
+data model, no full file contents, Shiki only highlights lines in the
+patch. If the user keeps expanding, re-fetch with a larger N.
+
+For "show entire file" (if ever needed), fall back to
+`GET /api/file-contents?file=<path>` + `parseDiffFromFile`. This
+enables `@pierre/diffs`' built-in expansion (`expandUnchanged`,
+`expansionLineCount`). **Needs validation first:** test with a large
+file to check if diff computation and highlighting are lazy or eager.
+
+### Phase 7: Polish
+
 - Better context display (change description, author)
 - Keyboard shortcuts:
   - `n`/`p` — jump between files
