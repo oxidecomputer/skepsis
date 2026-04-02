@@ -770,6 +770,7 @@ function DiffView() {
           e.preventDefault()
           const file = s.files[s.focusedFileIdx]
           if (!file) break
+          keyboardNavTime.current = Date.now()
           setCollapsed((prev) => ({
             ...prev,
             [file.name]: !(prev[file.name] ?? false),
@@ -779,6 +780,7 @@ function DiffView() {
         case 'E': {
           if (s.showHelp || s.composing) break
           e.preventDefault()
+          keyboardNavTime.current = Date.now()
           // If any file is expanded, collapse all; otherwise expand all
           const anyExpanded = s.files.some((f) => !(s.collapsed[f.name] ?? false))
           setCollapsed(Object.fromEntries(s.files.map((f) => [f.name, anyExpanded])))
