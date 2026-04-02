@@ -495,6 +495,10 @@ function DiffView() {
     queryFn: () => fetch('/api/diff').then((r) => r.json()),
   })
 
+  useEffect(() => {
+    if (data?.revset) document.title = `skepsis | ${data.revset}`
+  }, [data?.revset])
+
   // Seed collapse state from the first successful fetch: viewed files start collapsed
   useEffect(() => {
     if (seededFromInitialLoad.current || !data?.fileHashes) return

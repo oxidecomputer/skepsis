@@ -13,7 +13,7 @@
  * file with different content. Both are remembered independently.
  *
  * Storage is a flat TSV file per repo at:
- *   ~/.local/share/local-review/<cwd-hash>.viewed
+ *   ~/.local/share/skepsis/<cwd-hash>.viewed
  *
  * Each line is: file\thash\ttimestamp
  *
@@ -25,7 +25,7 @@ import { createHash } from 'crypto'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import type { ViewedMap } from '../shared/types.ts'
 
-const BASE_DIR = join(process.env['HOME'] ?? '~', '.local', 'share', 'local-review')
+const BASE_DIR = join(process.env['HOME'] ?? '~', '.local', 'share', 'skepsis')
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 
 interface Entry {

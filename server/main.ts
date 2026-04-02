@@ -74,4 +74,4 @@ export default {
   fetch: app.fetch,
 }
 
-console.log(`local-review API on http://localhost:${port} (${diffArgs.join(' ')})`)
+console.log(`skepsis on http://localhost:${port} (${diffArgs.join(' ')})`)

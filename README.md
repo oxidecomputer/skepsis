@@ -1,4 +1,4 @@
-# local-review
+# skepsis
 
 A browser-based code review UI for local jj (Jujutsu) diffs. Shows a GitHub-style
 split/unified diff view with syntax highlighting and file-viewed tracking. Inline
@@ -6,7 +6,7 @@ review comments are written directly into source files as `// REVIEW: ...` marke
 
 ## Usage
 
-Set up a shell alias pointing to the CLI entry point:
+A nice way to use this tool is to set up an alias pointing to the CLI entry point:
 
 ```
 alias sk="bun ~/repos/skepsis/cli.ts"
@@ -36,7 +36,7 @@ revset defaults to `trunk()..@`.
 
 Review comments are inserted into the actual source files, so they show up in the
 diff itself and can be resolved (deleted) from the UI. Viewed-file state is persisted
-per session (keyed by the revset's change IDs) in a `.local-review/` directory.
+per session (keyed by the revset's change IDs) in `~/.local/share/skepsis/`.
 
 ## Development
 
