@@ -808,7 +808,23 @@ function DiffView() {
   if (isLoading) return <div style={{ padding: 20 }}>Loading...</div>
   if (error) return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
   if (data!.error) return <pre style={{ color: 'red', padding: 20 }}>{data!.error}</pre>
-  if (!patch) return <div style={{ padding: 20 }}>No changes in {data!.revset}</div>
+  if (!patch)
+    return (
+      <div style={{ padding: 20, fontSize: 16 }}>
+        Diff is empty for revset args{' '}
+        <code
+          style={{
+            padding: '2px 4px',
+            background: '#30363d',
+            borderRadius: 3,
+            color: '#e6edf3',
+            fontSize: 14,
+          }}
+        >
+          {data!.revset}
+        </code>
+      </div>
+    )
 
   const { fileHashes } = data!
 

@@ -1,6 +1,11 @@
 body {
   margin: 0;
   background: #151b23;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  color: #c9d1d9;
   color-scheme: dark;
 }
 
