@@ -22,7 +22,7 @@ import type { DiffResponse, ViewedMap, FileHashes } from '../shared/types.ts'
 
 const queryClient = new QueryClient()
 
-const wideQuery = '(min-width: 1200px)'
+const wideQuery = '(min-width: 1060px)'
 
 function useIsWide(): boolean {
   return useSyncExternalStore(
@@ -479,7 +479,7 @@ function HelpModal({ onClose }: { onClose: () => void }) {
               <td>
                 <kbd>s</kbd>
               </td>
-              <td>Cycle split mode (responsive / split / unified)</td>
+              <td>Toggle split mode (responsive / unified)</td>
             </tr>
             <tr>
               <td>
@@ -506,14 +506,14 @@ function HelpModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-type SplitMode = 'responsive' | 'split' | 'unified'
-const SPLIT_CYCLE: SplitMode[] = ['responsive', 'split', 'unified']
+type SplitMode = 'responsive' | 'unified'
+const SPLIT_CYCLE: SplitMode[] = ['responsive', 'unified']
 
 function DiffView() {
   const isWide = useIsWide()
   const [splitMode, setSplitMode] = useState<SplitMode>('responsive')
   const diffStyle: 'split' | 'unified' =
-    splitMode === 'responsive' ? (isWide ? 'split' : 'unified') : splitMode
+    splitMode === 'responsive' && isWide ? 'split' : 'unified'
   const { toast, showToast } = useToast()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [composing, setComposing] = useState<{ file: string; line: number } | null>(null)
