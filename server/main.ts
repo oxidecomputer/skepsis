@@ -15,8 +15,12 @@ import {
 } from '../shared/types.ts'
 import type { DiffResponse, OkResponse, ErrorResponse } from '../shared/types.ts'
 
-export async function startServer(opts: { diffArgs: string[]; port: number; cwd: string }) {
-  const { diffArgs, port, cwd } = opts
+export async function startServer(opts: {
+  diffArgs: string[]
+  port?: number
+  cwd: string
+}): Promise<number> {
+  const { diffArgs, port = 0, cwd } = opts
   await validateDiffArgs(diffArgs)
 
   const app = new Hono()
@@ -71,7 +75,11 @@ export async function startServer(opts: { diffArgs: string[]; port: number; cwd:
     return c.json({ error: err.message } satisfies ErrorResponse, 500)
   })
 
-  serve({ fetch: app.fetch, port })
-
-  console.log(`skepsis on http://localhost:${port} (${diffArgs.join(' ')})`)
+  return new Promise((resolve) => {
+    serve({ fetch: app.fetch, port }, (info) => {
+      const assignedPort = typeof info === 'string' ? port : info.port
+      console.log(`skepsis on http://localhost:${assignedPort} (${diffArgs.join(' ')})`)
+      resolve(assignedPort)
+    })
+  })
 }

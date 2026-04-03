@@ -1,4 +1,3 @@
-import { createServer } from 'net'
 import { spawn } from 'child_process'
 import { Command } from '@commander-js/extra-typings'
 import { startServer } from './server/main.ts'
@@ -24,24 +23,7 @@ if (opts.from || opts.to) {
 }
 
 const cwd = process.cwd()
-
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.listen(0, () => {
-      const addr = srv.address()
-      if (addr && typeof addr !== 'string') {
-        srv.close(() => resolve(addr.port))
-      } else {
-        reject(new Error('failed to get free port'))
-      }
-    })
-    srv.on('error', reject)
-  })
-}
-
 const projectRoot = import.meta.dirname
-const apiPort = await getFreePort()
 const children: ReturnType<typeof spawn>[] = []
 
 function cleanup(code = 0) {
@@ -52,8 +34,7 @@ function cleanup(code = 0) {
 process.on('SIGINT', () => cleanup())
 process.on('SIGTERM', () => cleanup())
 
-// Start API server
-await startServer({ diffArgs, port: apiPort, cwd })
+const apiPort = await startServer({ diffArgs, cwd })
 
 if (opts.dev) {
   const vite = spawn('npx', ['vite', '--open'], {
