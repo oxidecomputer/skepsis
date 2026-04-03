@@ -1,22 +1,42 @@
-import { $ } from 'bun'
+import { spawn } from 'node:child_process'
 import type { FileHashes } from '../shared/types.ts'
+
+function run(
+  cmd: string,
+  args: string[],
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args)
+    const stdout: Buffer[] = []
+    const stderr: Buffer[] = []
+    proc.stdout.on('data', (d) => stdout.push(d))
+    proc.stderr.on('data', (d) => stderr.push(d))
+    proc.on('error', reject)
+    proc.on('close', (code) =>
+      resolve({
+        stdout: Buffer.concat(stdout).toString(),
+        stderr: Buffer.concat(stderr).toString(),
+        code: code ?? 1,
+      }),
+    )
+  })
+}
 
 export async function getDiff(
   diffArgs: string[],
 ): Promise<{ patch: string; fileHashes: FileHashes }> {
-  const result = await $`jj diff ${diffArgs} --git`.quiet().nothrow()
-  if (result.exitCode !== 0) {
-    throw new Error(`jj diff failed (exit ${result.exitCode}): ${result.stderr.toString()}`)
+  const { stdout, stderr, code } = await run('jj', ['diff', ...diffArgs, '--git'])
+  if (code !== 0) {
+    throw new Error(`jj diff failed (exit ${code}): ${stderr}`)
   }
-  const patch = result.stdout.toString()
-  return { patch, fileHashes: extractFileHashes(patch) }
+  return { patch: stdout, fileHashes: extractFileHashes(stdout) }
 }
 
 /** Validate diff args against jj at startup. */
 export async function validateDiffArgs(diffArgs: string[]): Promise<void> {
-  const result = await $`jj diff ${diffArgs} --stat`.quiet().nothrow()
-  if (result.exitCode !== 0) {
-    throw new Error(`jj diff failed: ${result.stderr.toString()}`)
+  const { stderr, code } = await run('jj', ['diff', ...diffArgs, '--stat'])
+  if (code !== 0) {
+    throw new Error(`jj diff failed: ${stderr}`)
   }
 }
 

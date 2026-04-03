@@ -1,7 +1,6 @@
-import { createServer } from 'net'
 import { spawn } from 'child_process'
-import { resolve } from 'path'
 import { Command } from '@commander-js/extra-typings'
+import { startServer } from './server/main.ts'
 
 const program = new Command()
   .name('skepsis')
@@ -24,24 +23,7 @@ if (opts.from || opts.to) {
 }
 
 const cwd = process.cwd()
-
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.listen(0, () => {
-      const addr = srv.address()
-      if (addr && typeof addr !== 'string') {
-        srv.close(() => resolve(addr.port))
-      } else {
-        reject(new Error('failed to get free port'))
-      }
-    })
-    srv.on('error', reject)
-  })
-}
-
 const projectRoot = import.meta.dirname
-const apiPort = await getFreePort()
 const children: ReturnType<typeof spawn>[] = []
 
 function cleanup(code = 0) {
@@ -52,38 +34,15 @@ function cleanup(code = 0) {
 process.on('SIGINT', () => cleanup())
 process.on('SIGTERM', () => cleanup())
 
-// Start API server
-const api = spawn('bun', ['run', resolve(projectRoot, 'server/main.ts'), ...diffArgs], {
-  cwd,
-  stdio: 'inherit',
-  env: { ...process.env, PORT: String(apiPort) },
-})
-children.push(api)
-
-api.on('exit', (code) => {
-  if (code !== 0) cleanup(code ?? 1)
-})
+const apiPort = await startServer({ diffArgs, cwd })
 
 if (opts.dev) {
-  const vite = spawn('bunx', ['vite', '--open'], {
+  const vite = spawn('npx', ['vite', '--open'], {
     cwd: projectRoot,
     stdio: 'inherit',
     env: { ...process.env, API_PORT: String(apiPort) },
   })
   children.push(vite)
 } else {
-  // Production mode: build frontend, API server serves dist/
-  const build = spawn('bunx', ['vite', 'build'], {
-    cwd: projectRoot,
-    stdio: 'ignore',
-  })
-  children.push(build)
-
-  build.on('exit', (code) => {
-    if (code !== 0) {
-      console.error('vite build failed')
-      cleanup(1)
-    }
-    spawn('open', [`http://localhost:${apiPort}`])
-  })
+  spawn('open', [`http://localhost:${apiPort}`])
 }

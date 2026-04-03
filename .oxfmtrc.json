@@ -1,5 +1,6 @@
 {
   "printWidth": 92,
   "singleQuote": true,
-  "semi": false
+  "semi": false,
+  "ignorePatterns": ["dist/**"]
 }
