@@ -9,17 +9,17 @@ https://github.com/user-attachments/assets/698365ab-964c-4e38-a605-82bec4879f60
 
 ## Setup
 
-Requires [Bun](https://bun.sh/).
+Requires [Node.js](https://nodejs.org/) (v22+).
 
 ```
 git clone https://github.com/oxidecomputer/skepsis.git
-cd skepsis && bun install
+cd skepsis && npm install
 ```
 
 Add an alias so you can run it from any jj repo:
 
 ```
-alias sk="bun ~/oxide/skepsis/cli.ts"
+alias sk="npx --prefix ~/oxide/skepsis tsx ~/oxide/skepsis/cli.ts"
 ```
 
 ## Usage
@@ -54,9 +54,21 @@ Review comments are inserted into the source files, so they show up in `jj diff`
 and can be resolved (deleted) from the UI. Viewed-file state is persisted per
 session in `~/.local/share/skepsis/`.
 
+## How it works
+
+The built frontend bundle is checked into `dist/` so that the production path
+has no build step — the server serves it directly. In dev mode (`--dev`), a
+Vite dev server runs alongside the API server with hot reload.
+
 ## Development
 
 ```
-bun install
+npm install
 sk --dev    # Vite dev server with hot reload + API server
+```
+
+After changing frontend code, rebuild the checked-in bundle:
+
+```
+npx vite build
 ```
