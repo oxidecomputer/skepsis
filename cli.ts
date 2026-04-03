@@ -53,7 +53,7 @@ process.on('SIGINT', () => cleanup())
 process.on('SIGTERM', () => cleanup())
 
 // Start API server
-const api = spawn('bun', ['run', resolve(projectRoot, 'server/main.ts'), ...diffArgs], {
+const api = spawn('npx', ['tsx', resolve(projectRoot, 'server/main.ts'), ...diffArgs], {
   cwd,
   stdio: 'inherit',
   env: { ...process.env, PORT: String(apiPort) },
@@ -65,7 +65,7 @@ api.on('exit', (code) => {
 })
 
 if (opts.dev) {
-  const vite = spawn('bunx', ['vite', '--open'], {
+  const vite = spawn('npx', ['vite', '--open'], {
     cwd: projectRoot,
     stdio: 'inherit',
     env: { ...process.env, API_PORT: String(apiPort) },
@@ -73,7 +73,7 @@ if (opts.dev) {
   children.push(vite)
 } else {
   // Production mode: build frontend, API server serves dist/
-  const build = spawn('bunx', ['vite', 'build'], {
+  const build = spawn('npx', ['vite', 'build'], {
     cwd: projectRoot,
     stdio: 'ignore',
   })

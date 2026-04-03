@@ -1,6 +1,9 @@
 import { Hono } from 'hono'
+import { serve } from '@hono/node-server'
+import { serveStatic } from '@hono/node-server/serve-static'
 import { zValidator } from '@hono/zod-validator'
-import { join } from 'path'
+import { join, relative } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { getDiff, validateDiffArgs } from './diff.ts'
 import { loadViewed, markViewed, unmarkViewed } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
@@ -57,21 +60,19 @@ app.delete('/api/comment', zValidator('json', commentDeleteSchema), async (c) =>
 
 // Serve built frontend assets in production mode
 const distDir = join(import.meta.dirname, '..', 'dist')
+
+app.use('*', serveStatic({ root: relative(cwd, distDir) }))
+
+// SPA fallback
 app.get('*', async (c) => {
-  const path = new URL(c.req.url).pathname
-  const file = Bun.file(join(distDir, path))
-  if (await file.exists()) return new Response(file)
-  // SPA fallback
-  return new Response(Bun.file(join(distDir, 'index.html')))
+  const html = await readFile(join(distDir, 'index.html'), 'utf-8')
+  return c.html(html)
 })
 
 app.onError((err, c) => {
   return c.json({ error: err.message } satisfies ErrorResponse, 500)
 })
 
-export default {
-  port,
-  fetch: app.fetch,
-}
+serve({ fetch: app.fetch, port })
 
 console.log(`skepsis on http://localhost:${port} (${diffArgs.join(' ')})`)

@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
 
 const REVIEW_MARKER = 'REVIEW:'
 
@@ -39,7 +40,7 @@ export async function insertComment(
   text: string,
 ): Promise<void> {
   const filePath = join(cwd, file)
-  const content = await Bun.file(filePath).text()
+  const content = await readFile(filePath, 'utf-8')
   const lines = content.split('\n')
 
   if (afterLine < 1 || afterLine > lines.length) {
@@ -55,7 +56,7 @@ export async function insertComment(
     : `${indent}${prefix} ${REVIEW_MARKER} ${text}`
 
   lines.splice(afterLine, 0, commentLine)
-  await Bun.write(filePath, lines.join('\n'))
+  await writeFile(filePath, lines.join('\n'))
 }
 
 export async function removeComment(
@@ -64,7 +65,7 @@ export async function removeComment(
   line: number,
 ): Promise<void> {
   const filePath = join(cwd, file)
-  const content = await Bun.file(filePath).text()
+  const content = await readFile(filePath, 'utf-8')
   const lines = content.split('\n')
 
   if (line < 1 || line > lines.length) {
@@ -76,5 +77,5 @@ export async function removeComment(
   }
 
   lines.splice(line - 1, 1)
-  await Bun.write(filePath, lines.join('\n'))
+  await writeFile(filePath, lines.join('\n'))
 }
