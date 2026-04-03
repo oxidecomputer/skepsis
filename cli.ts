@@ -1,7 +1,7 @@
 import { createServer } from 'net'
 import { spawn } from 'child_process'
-import { resolve } from 'path'
 import { Command } from '@commander-js/extra-typings'
+import { startServer } from './server/main.ts'
 
 const program = new Command()
   .name('skepsis')
@@ -53,16 +53,7 @@ process.on('SIGINT', () => cleanup())
 process.on('SIGTERM', () => cleanup())
 
 // Start API server
-const api = spawn('npx', ['tsx', resolve(projectRoot, 'server/main.ts'), ...diffArgs], {
-  cwd,
-  stdio: 'inherit',
-  env: { ...process.env, PORT: String(apiPort) },
-})
-children.push(api)
-
-api.on('exit', (code) => {
-  if (code !== 0) cleanup(code ?? 1)
-})
+await startServer({ diffArgs, port: apiPort, cwd })
 
 if (opts.dev) {
   const vite = spawn('npx', ['vite', '--open'], {
