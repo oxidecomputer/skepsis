@@ -70,5 +70,5 @@ sk --dev    # Vite dev server with hot reload + API server
 After changing frontend code, rebuild the checked-in bundle:
 
 ```
-npx vite build
+npm run build
 ```

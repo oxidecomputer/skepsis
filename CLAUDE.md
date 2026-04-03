@@ -1,3 +1,1 @@
-## Type checking
-
-Run `bun check` (not `npx tsc`) to type-check the project.
+Run `npm run tsc` to type-check the project.

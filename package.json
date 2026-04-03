@@ -4,9 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build": "vite build",
     "start": "tsx cli.ts",
     "fmt": "oxfmt --write .",
-    "check": "tsc --noEmit"
+    "tsc": "tsc --noEmit"
   },
   "dependencies": {
     "@commander-js/extra-typings": "^14.0.0",
