@@ -63,18 +63,5 @@ if (opts.dev) {
   })
   children.push(vite)
 } else {
-  // Production mode: build frontend, API server serves dist/
-  const build = spawn('npx', ['vite', 'build'], {
-    cwd: projectRoot,
-    stdio: 'ignore',
-  })
-  children.push(build)
-
-  build.on('exit', (code) => {
-    if (code !== 0) {
-      console.error('vite build failed')
-      cleanup(1)
-    }
-    spawn('open', [`http://localhost:${apiPort}`])
-  })
+  spawn('open', [`http://localhost:${apiPort}`])
 }
