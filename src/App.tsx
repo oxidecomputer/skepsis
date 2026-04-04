@@ -888,15 +888,14 @@ function DiffView() {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        // Don't override keyboard-driven navigation
-        if (Date.now() - keyboardNavTime.current < 150) return
-
         for (const entry of entries) {
           const idx = Number((entry.target as HTMLElement).dataset.fileIdx)
           if (entry.isIntersecting) visibleCards.current.add(idx)
           else visibleCards.current.delete(idx)
         }
 
+        // Don't override keyboard-driven navigation
+        if (Date.now() - keyboardNavTime.current < 150) return
         if (visibleCards.current.size === 0) return
         const topIdx = Math.min(...visibleCards.current)
         const s = navRef.current
