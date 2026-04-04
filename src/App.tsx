@@ -306,7 +306,6 @@ const MemoizedFileDiff = memo(
 
 function FileCard({
   fileDiff,
-  hash,
   isViewed,
   isStale,
   diffStyle,
@@ -322,7 +321,6 @@ function FileCard({
   commentsEnabled,
 }: {
   fileDiff: FileDiffMetadata
-  hash: string | undefined
   isViewed: boolean
   isStale: boolean
   diffStyle: 'split' | 'unified'
@@ -1064,7 +1062,6 @@ function DiffView() {
             <FileCard
               key={name ?? i}
               fileDiff={fileDiff}
-              hash={hash}
               isViewed={isViewed}
               isStale={isStale}
               diffStyle={diffStyle}
