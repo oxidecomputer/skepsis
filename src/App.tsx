@@ -1006,9 +1006,9 @@ function DiffView() {
     return () => observer.disconnect()
   }, [files])
 
-  if (isLoading) return <div style={{ padding: 20 }}>Loading...</div>
+  if (isLoading || !data) return <div style={{ padding: 20 }}>Loading...</div>
   if (error) return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
-  if (data!.error) return <pre style={{ color: 'red', padding: 20 }}>{data!.error}</pre>
+  if (data.error) return <pre style={{ color: 'red', padding: 20 }}>{data.error}</pre>
   if (!patch)
     return (
       <div style={{ padding: 20, fontSize: 16 }}>
@@ -1021,19 +1021,19 @@ function DiffView() {
             fontSize: 14,
           }}
         >
-          {data!.revset}
+          {data.revset}
         </code>{' '}
         is empty
       </div>
     )
 
-  const { fileHashes } = data!
+  const { fileHashes } = data
 
   return (
     <>
-      {!data!.commentsEnabled && (
+      {!data.commentsEnabled && (
         <CommentsDisabledBanner
-          vcs={data!.vcs}
+          vcs={data.vcs}
           onLearnMore={() => setShowCommentsInfo(true)}
         />
       )}
@@ -1042,7 +1042,7 @@ function DiffView() {
         {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
         {showCommentsInfo && (
           <CommentsDisabledModal
-            vcs={data!.vcs}
+            vcs={data.vcs}
             onClose={() => setShowCommentsInfo(false)}
           />
         )}
@@ -1088,7 +1088,7 @@ function DiffView() {
               }}
               onResolveComment={(line) => resolveMutation.mutate({ file: name, line })}
               onCancelComment={() => setComposing(null)}
-              commentsEnabled={data!.commentsEnabled}
+              commentsEnabled={data.commentsEnabled}
             />
           )
         })}
