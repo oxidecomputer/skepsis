@@ -251,12 +251,14 @@ const MemoizedFileDiff = memo(
     lineAnnotations,
     renderAnnotation,
     onGutterUtilityClick,
+    commentsEnabled,
   }: {
     fileDiff: FileDiffMetadata
     diffStyle: 'split' | 'unified'
     lineAnnotations: DiffLineAnnotation<AnnotationMeta>[]
     renderAnnotation: (a: DiffLineAnnotation<AnnotationMeta>) => React.ReactNode
     onGutterUtilityClick: (range: { start: number; end: number; side?: string }) => void
+    commentsEnabled: boolean
   }) {
     const measureRef = useCallback(
       (el: HTMLDivElement | null) => {
@@ -285,7 +287,7 @@ const MemoizedFileDiff = memo(
             hunkSeparators: 'line-info-basic',
             overflow: 'wrap',
             disableFileHeader: true,
-            enableGutterUtility: true,
+            enableGutterUtility: commentsEnabled,
             onGutterUtilityClick,
           }}
           lineAnnotations={lineAnnotations}
@@ -317,6 +319,7 @@ function FileCard({
   onSubmitComment,
   onResolveComment,
   onCancelComment,
+  commentsEnabled,
 }: {
   fileDiff: FileDiffMetadata
   hash: string | undefined
@@ -332,12 +335,14 @@ function FileCard({
   onSubmitComment: (line: number, text: string) => void
   onResolveComment: (line: number) => void
   onCancelComment: () => void
+  commentsEnabled: boolean
 }) {
   const { additions, deletions } = getFileStats(fileDiff)
   const name = fileDiff.name
 
   // Build annotation list: detected REVIEW comments + composing form
   const lineAnnotations = useMemo(() => {
+    if (!commentsEnabled) return []
     const annotations = detectReviewComments(fileDiff, name)
     if (composing) {
       annotations.push({
@@ -347,7 +352,7 @@ function FileCard({
       })
     }
     return annotations
-  }, [fileDiff, name, composing])
+  }, [fileDiff, name, composing, commentsEnabled])
 
   const renderAnnotation = useCallback(
     (annotation: DiffLineAnnotation<AnnotationMeta>) => {
@@ -376,11 +381,11 @@ function FileCard({
 
   const onGutterUtilityClick = useCallback(
     (range: { start: number; end: number; side?: string }) => {
-      if (range.side === 'additions') {
+      if (commentsEnabled && range.side === 'additions') {
         onStartComment(range.start)
       }
     },
-    [onStartComment],
+    [onStartComment, commentsEnabled],
   )
 
   // Lazy mount: only create the FileDiff web component when near the viewport
@@ -446,6 +451,7 @@ function FileCard({
           lineAnnotations={lineAnnotations}
           renderAnnotation={renderAnnotation}
           onGutterUtilityClick={onGutterUtilityClick}
+          commentsEnabled={commentsEnabled}
         />
       ) : (
         !collapsed && <div style={{ height: estimatedHeight }} />
@@ -483,11 +489,9 @@ function ProgressBar({
   )
 }
 
-function HelpModal({ onClose }: { onClose: () => void }) {
+function Modal({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null)
-  useEffect(() => {
-    ref.current?.showModal()
-  }, [])
+  useEffect(() => ref.current?.showModal(), [])
 
   return (
     <dialog
@@ -498,6 +502,14 @@ function HelpModal({ onClose }: { onClose: () => void }) {
         if (e.target === e.currentTarget) ref.current?.close()
       }}
     >
+      {children}
+    </dialog>
+  )
+}
+
+function HelpModal({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal onClose={onClose}>
       <h3>Keyboard Shortcuts</h3>
       <table>
         <tbody>
@@ -551,7 +563,55 @@ function HelpModal({ onClose }: { onClose: () => void }) {
           </tr>
         </tbody>
       </table>
-    </dialog>
+    </Modal>
+  )
+}
+
+function CommentsDisabledModal({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal onClose={onClose}>
+      <p>
+        Comments work by inserting lines into the code. This can only work if the revset for
+        the diff ends with <code>@</code>, i.e., includes the working copy. Otherwise, the
+        inserted lines will land in <code>@</code> but not in the diff being viewed.
+      </p>
+      <p>
+        The easiest way to get a diff with comments enabled is to run this tool with the{' '}
+        <code>-f</code> flag to get a diff that starts at some revision and ends at{' '}
+        <code>@</code>.
+      </p>
+    </Modal>
+  )
+}
+
+function CommentsDisabledBanner({ onLearnMore }: { onLearnMore: () => void }) {
+  return (
+    <div
+      style={{
+        background: 'oklch(0.22 0.05 260)',
+        borderBottom: '1px solid oklch(0.35 0.07 260)',
+        color: 'oklch(0.7 0.14 260)',
+        padding: '8px 16px',
+        fontSize: 13,
+        textAlign: 'center',
+      }}
+    >
+      Comments are disabled because the revset does not include <code>@</code>.{' '}
+      <a
+        href="#"
+        onClick={(e) => {
+          e.preventDefault()
+          onLearnMore()
+        }}
+        style={{
+          color: 'oklch(0.78 0.14 260)',
+          textDecoration: 'underline',
+          cursor: 'pointer',
+        }}
+      >
+        Learn more
+      </a>
+    </div>
   )
 }
 
@@ -651,6 +711,7 @@ function DiffView() {
   const [focusedFileIdx, setFocusedFileIdx] = useState(0)
   const [cursorIdx, setCursorIdx] = useState(0)
   const [showHelp, setShowHelp] = useState(false)
+  const [showCommentsInfo, setShowCommentsInfo] = useState(false)
   const scrollRef = useRef<'file' | 'line' | null>(null)
   const keyboardNavTime = useRef(0)
 
@@ -850,7 +911,7 @@ function DiffView() {
           break
         }
         case 'c': {
-          if (s.showHelp || s.composing) break
+          if (!data?.commentsEnabled || s.showHelp || s.composing) break
           e.preventDefault()
           const file = s.files[s.focusedFileIdx]
           if (!file) break
@@ -934,55 +995,64 @@ function DiffView() {
   const { fileHashes } = data!
 
   return (
-    <div className="diff-container">
-      <ProgressBar fileHashes={fileHashes} viewed={viewed} />
-      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
-      {toast && (
-        <div className="toast" key={toast.key}>
-          {toast.content}
-        </div>
+    <>
+      {!data!.commentsEnabled && (
+        <CommentsDisabledBanner onLearnMore={() => setShowCommentsInfo(true)} />
       )}
-      {files.map((fileDiff, i) => {
-        const name = fileDiff.name
-        const hash = fileHashes[name]
-        const viewedHash = viewed[name]
-        const isViewed = hash != null && viewedHash === hash
-        const isStale = viewedHash != null && hash != null && viewedHash !== hash
-        const isCollapsed = collapsed[name] ?? false
-        const fileComposing = composing?.file === name ? { line: composing.line } : null
+      <div className="diff-container">
+        <ProgressBar fileHashes={fileHashes} viewed={viewed} />
+        {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+        {showCommentsInfo && (
+          <CommentsDisabledModal onClose={() => setShowCommentsInfo(false)} />
+        )}
+        {toast && (
+          <div className="toast" key={toast.key}>
+            {toast.content}
+          </div>
+        )}
+        {files.map((fileDiff, i) => {
+          const name = fileDiff.name
+          const hash = fileHashes[name]
+          const viewedHash = viewed[name]
+          const isViewed = hash != null && viewedHash === hash
+          const isStale = viewedHash != null && hash != null && viewedHash !== hash
+          const isCollapsed = collapsed[name] ?? false
+          const fileComposing = composing?.file === name ? { line: composing.line } : null
 
-        return (
-          <FileCard
-            key={name ?? i}
-            fileDiff={fileDiff}
-            hash={hash}
-            isViewed={isViewed}
-            isStale={isStale}
-            diffStyle={diffStyle}
-            collapsed={isCollapsed}
-            composing={fileComposing}
-            focused={i === focusedFileIdx}
-            onToggleCollapse={() =>
-              setCollapsed((prev) => ({ ...prev, [name]: !isCollapsed }))
-            }
-            onToggleViewed={() => {
-              if (hash) {
-                const mark = !isViewed
-                setCollapsed((prev) => ({ ...prev, [name]: mark }))
-                markMutation.mutate({ file: name, hash, mark })
+          return (
+            <FileCard
+              key={name ?? i}
+              fileDiff={fileDiff}
+              hash={hash}
+              isViewed={isViewed}
+              isStale={isStale}
+              diffStyle={diffStyle}
+              collapsed={isCollapsed}
+              composing={fileComposing}
+              focused={i === focusedFileIdx}
+              onToggleCollapse={() =>
+                setCollapsed((prev) => ({ ...prev, [name]: !isCollapsed }))
               }
-            }}
-            onStartComment={(line) => setComposing({ file: name, line })}
-            onSubmitComment={(line, text) => {
-              commentMutation.mutate({ file: name, afterLine: line, text })
-              setComposing(null)
-            }}
-            onResolveComment={(line) => resolveMutation.mutate({ file: name, line })}
-            onCancelComment={() => setComposing(null)}
-          />
-        )
-      })}
-    </div>
+              onToggleViewed={() => {
+                if (hash) {
+                  const mark = !isViewed
+                  setCollapsed((prev) => ({ ...prev, [name]: mark }))
+                  markMutation.mutate({ file: name, hash, mark })
+                }
+              }}
+              onStartComment={(line) => setComposing({ file: name, line })}
+              onSubmitComment={(line, text) => {
+                commentMutation.mutate({ file: name, afterLine: line, text })
+                setComposing(null)
+              }}
+              onResolveComment={(line) => resolveMutation.mutate({ file: name, line })}
+              onCancelComment={() => setComposing(null)}
+              commentsEnabled={data!.commentsEnabled}
+            />
+          )
+        })}
+      </div>
+    </>
   )
 }
 

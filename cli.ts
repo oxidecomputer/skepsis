@@ -15,11 +15,17 @@ const opts = program.opts()
 
 // Build jj diff args matching jj's own -r/-f/-t flags
 const diffArgs: string[] = []
+let commentsEnabled: boolean
 if (opts.from || opts.to) {
   if (opts.from) diffArgs.push('--from', opts.from)
   if (opts.to) diffArgs.push('--to', opts.to)
+  // Comments enabled if --to is @ or omitted (jj defaults --to to @)
+  commentsEnabled = !opts.to || opts.to === '@'
 } else {
-  diffArgs.push('-r', opts.revisions ?? 'trunk()..@')
+  const rev = opts.revisions ?? 'trunk()..@'
+  diffArgs.push('-r', rev)
+  // Comments enabled if revset ends with ..@
+  commentsEnabled = rev.endsWith('..@')
 }
 
 const cwd = process.cwd()
@@ -34,7 +40,7 @@ function cleanup(code = 0) {
 process.on('SIGINT', () => cleanup())
 process.on('SIGTERM', () => cleanup())
 
-const apiPort = await startServer({ diffArgs, cwd })
+const apiPort = await startServer({ diffArgs, commentsEnabled, cwd })
 
 if (opts.dev) {
   const vite = spawn('npx', ['vite', '--open'], {

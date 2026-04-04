@@ -37,6 +37,7 @@ export type FileHashes = Record<string, string>
 export interface DiffResponse {
   patch: string
   revset: string
+  commentsEnabled: boolean
   fileHashes: FileHashes
   viewed: ViewedMap
   error?: string

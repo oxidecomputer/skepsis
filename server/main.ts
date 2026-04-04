@@ -17,10 +17,11 @@ import type { DiffResponse, OkResponse, ErrorResponse } from '../shared/types.ts
 
 export async function startServer(opts: {
   diffArgs: string[]
+  commentsEnabled: boolean
   port?: number
   cwd: string
 }): Promise<number> {
-  const { diffArgs, port = 0, cwd } = opts
+  const { diffArgs, commentsEnabled, port = 0, cwd } = opts
   await validateDiffArgs(diffArgs)
 
   const app = new Hono()
@@ -31,6 +32,7 @@ export async function startServer(opts: {
     return c.json({
       patch,
       revset: diffArgs.join(' '),
+      commentsEnabled,
       fileHashes,
       viewed,
     } satisfies DiffResponse)
