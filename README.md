@@ -1,10 +1,12 @@
 # skepsis
 
-A browser-based code review UI for local diffs. Works with
-[jj](https://jj-vcs.dev/) and git — tries jj first, falls back to git.
-GitHub-style split/unified diff view with syntax highlighting, file-viewed
-tracking, and inline review comments written directly into source files as `//
-REVIEW: ...` markers.
+A fully local browser-based code review UI.
+
+- GitHub-style split or unified diff view with syntax highlighting
+- Mark files as viewed
+- Inline review comments written directly into source files as `// REVIEW: ...` markers
+- Works with [jj](https://jj-vcs.dev/) and git (tries jj first, falls back to git)
+- Vim-style navigation shortcuts (press `?` to see the list)
 
 https://github.com/user-attachments/assets/698365ab-964c-4e38-a605-82bec4879f60
 
@@ -31,10 +33,6 @@ slightly. See the examples below.
 
 Each invocation picks a free port, so you can run multiple instances simultaneously.
 
-Review comments are inserted into the source files, so they show up in your
-VCS diff and can be resolved (deleted) from the UI. Viewed-file state is
-persisted per session in `~/.local/share/skepsis/`.
-
 ### jj examples
 
 ```
@@ -59,9 +57,27 @@ sk --git                    # force git in a jj-colocated repo
 
 ## How it works
 
+The CLI starts a local HTTP server that shells out to `jj diff`
+or `git diff`, then serves the diff to a React frontend that uses
+[`@pierre/diffs`](https://diffs.com/) to render it with syntax highlighting.
+
 The built frontend bundle is checked into `dist/` so that the production path
 has no build step — the server serves it directly. In dev mode (`--dev`), a
 Vite dev server runs alongside the API server with hot reload.
+
+### Comments
+
+Review comments are inserted into the source files, so they show up in your VCS
+diff and are visible to coding agents. They can be resolved (deleted) from the
+UI. Comments are only enabled when the diff includes the working copy (e.g.,
+a revset ending in `@` for jj, or an open-ended range ending at the working
+tree for git), since that's where the inserted lines land.
+
+### Marking files viewed
+
+Viewed state is stored per file in `~/.local/share/skepsis/` using the file's
+content hash (the git object ID from the diff header). If the file changes, the
+hash no longer matches and it automatically shows as unviewed again.
 
 ## Development
 
