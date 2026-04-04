@@ -308,16 +308,6 @@ body {
 }
 
 /* Help modal */
-.help-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
 .help-modal {
   background: #161b22;
   border: 1px solid #30363d;
@@ -329,6 +319,14 @@ body {
     -apple-system,
     sans-serif;
   color: #e6edf3;
+}
+
+.help-modal:focus {
+  outline: none;
+}
+
+.help-modal::backdrop {
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .help-modal h3 {

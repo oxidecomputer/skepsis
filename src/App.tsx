@@ -484,75 +484,74 @@ function ProgressBar({
 }
 
 function HelpModal({ onClose }: { onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
-    function handler(e: KeyboardEvent) {
-      if (e.key === 'Escape' || e.key === '?') {
-        e.preventDefault()
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
+    ref.current?.showModal()
+  }, [])
 
   return (
-    <div className="help-overlay" onClick={onClose}>
-      <div className="help-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Keyboard Shortcuts</h3>
-        <table>
-          <tbody>
-            <tr>
-              <td>
-                <kbd>j</kbd> / <kbd>k</kbd>
-              </td>
-              <td>Next / previous line</td>
-            </tr>
-            <tr>
-              <td>
-                <kbd>n</kbd> / <kbd>p</kbd>
-              </td>
-              <td>Next / previous file</td>
-            </tr>
-            <tr>
-              <td>
-                <kbd>v</kbd>
-              </td>
-              <td>Toggle viewed</td>
-            </tr>
-            <tr>
-              <td>
-                <kbd>e</kbd> / <kbd>E</kbd>
-              </td>
-              <td>Expand / collapse file / all files</td>
-            </tr>
-            <tr>
-              <td>
-                <kbd>s</kbd>
-              </td>
-              <td>Toggle split mode (responsive / unified)</td>
-            </tr>
-            <tr>
-              <td>
-                <kbd>c</kbd>
-              </td>
-              <td>Comment on line</td>
-            </tr>
-            <tr>
-              <td>
-                <kbd>Esc</kbd>
-              </td>
-              <td>Close / cancel</td>
-            </tr>
-            <tr>
-              <td>
-                <kbd>?</kbd>
-              </td>
-              <td>Toggle this help</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <dialog
+      ref={ref}
+      className="help-modal"
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) ref.current?.close()
+      }}
+    >
+      <h3>Keyboard Shortcuts</h3>
+      <table>
+        <tbody>
+          <tr>
+            <td>
+              <kbd>j</kbd> / <kbd>k</kbd>
+            </td>
+            <td>Next / previous line</td>
+          </tr>
+          <tr>
+            <td>
+              <kbd>n</kbd> / <kbd>p</kbd>
+            </td>
+            <td>Next / previous file</td>
+          </tr>
+          <tr>
+            <td>
+              <kbd>v</kbd>
+            </td>
+            <td>Toggle viewed</td>
+          </tr>
+          <tr>
+            <td>
+              <kbd>e</kbd> / <kbd>E</kbd>
+            </td>
+            <td>Toggle collapse file / all files</td>
+          </tr>
+          <tr>
+            <td>
+              <kbd>s</kbd>
+            </td>
+            <td>Toggle split mode (responsive / unified)</td>
+          </tr>
+          <tr>
+            <td>
+              <kbd>c</kbd>
+            </td>
+            <td>Comment on line</td>
+          </tr>
+          <tr>
+            <td>
+              <kbd>Esc</kbd>
+            </td>
+            <td>Close / cancel</td>
+          </tr>
+          <tr>
+            <td>
+              <kbd>?</kbd>
+            </td>
+            <td>Toggle this help</td>
+          </tr>
+        </tbody>
+      </table>
+    </dialog>
   )
 }
 
