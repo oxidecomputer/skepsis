@@ -1,32 +1,76 @@
-import { spawn } from 'child_process'
+import { spawn, execFileSync } from 'child_process'
 import { Command } from '@commander-js/extra-typings'
 import { startServer } from './server/main.ts'
+import type { DiffArgs } from './shared/types.ts'
 
 const program = new Command()
   .name('skepsis')
-  .description('Local diff review UI for jj')
-  .option('-r, --revisions <revsets>', 'show changes in these revisions')
-  .option('-f, --from <revset>', 'show changes from this revision')
-  .option('-t, --to <revset>', 'show changes to this revision')
-  .option('--dev', 'run with Vite dev server for tool development')
+  .description('Local diff review UI (auto-detects jj or git)')
+  .option('-r, --revisions <revsets>', 'Show changes in these revisions')
+  .option('-f, --from <rev>', 'Show changes from this revision')
+  .option('-t, --to <rev>', 'Show changes to this revision')
+  .option('--git', 'force git mode (skip jj detection)')
+  .option('--dev', 'run with Vite dev server for development')
   .parse()
 
 const opts = program.opts()
 
-// Build jj diff args matching jj's own -r/-f/-t flags
-const diffArgs: string[] = []
-let commentsEnabled: boolean
-if (opts.from || opts.to) {
-  if (opts.from) diffArgs.push('--from', opts.from)
-  if (opts.to) diffArgs.push('--to', opts.to)
-  // Comments enabled if --to is @ or omitted (jj defaults --to to @)
-  commentsEnabled = !opts.to || opts.to === '@'
-} else {
-  const rev = opts.revisions ?? 'trunk()..@'
-  diffArgs.push('-r', rev)
-  // Comments enabled if revset ends with ..@
-  commentsEnabled = rev.endsWith('..@')
+function detectVcs(): 'jj' | 'git' {
+  try {
+    execFileSync('jj', ['root'], { stdio: 'ignore' })
+    return 'jj'
+  } catch {
+    try {
+      execFileSync('git', ['rev-parse', '--git-dir'], { stdio: 'ignore' })
+      return 'git'
+    } catch {
+      throw new Error('Not in a jj or git repository')
+    }
+  }
 }
+
+const vcs = opts.git ? 'git' : detectVcs()
+
+function buildDiffSource(): DiffArgs {
+  if (vcs === 'jj') {
+    const args: string[] = []
+    let commentsEnabled: boolean
+    if (opts.from || opts.to) {
+      if (opts.from) args.push('--from', opts.from)
+      if (opts.to) args.push('--to', opts.to)
+      // Comments enabled if --to is @ or omitted (jj defaults --to to @)
+      commentsEnabled = !opts.to || opts.to === '@'
+    } else {
+      const rev = opts.revisions ?? 'trunk()..@'
+      args.push('-r', rev)
+      // Comments enabled if revset ends with ..@
+      commentsEnabled = rev.endsWith('..@')
+    }
+    return { vcs: 'jj', args, commentsEnabled }
+  } else {
+    let args: string[]
+    let commentsEnabled: boolean
+    if (opts.from || opts.to) {
+      if (opts.to) {
+        // Explicit --to: commit-to-commit diff, no working copy
+        args = [opts.from ?? 'HEAD', opts.to]
+        commentsEnabled = false
+      } else {
+        // --from only: git diff <from> includes working tree
+        args = [opts.from!]
+        commentsEnabled = true
+      }
+    } else {
+      const rev = opts.revisions ?? 'origin/HEAD..HEAD'
+      // No .. means single ref, which diffs against working tree
+      commentsEnabled = !rev.includes('..')
+      args = [rev]
+    }
+    return { vcs: 'git', args, commentsEnabled }
+  }
+}
+
+const diffSource = buildDiffSource()
 
 const cwd = process.cwd()
 const projectRoot = import.meta.dirname
@@ -40,7 +84,7 @@ function cleanup(code = 0) {
 process.on('SIGINT', () => cleanup())
 process.on('SIGTERM', () => cleanup())
 
-const apiPort = await startServer({ diffArgs, commentsEnabled, cwd })
+const apiPort = await startServer({ diffSource, cwd })
 
 if (opts.dev) {
   const vite = spawn('npx', ['vite', '--open'], {

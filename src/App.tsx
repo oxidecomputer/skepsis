@@ -567,24 +567,51 @@ function HelpModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-function CommentsDisabledModal({ onClose }: { onClose: () => void }) {
+function CommentsDisabledModal({
+  onClose,
+  vcs,
+}: {
+  onClose: () => void
+  vcs: 'jj' | 'git'
+}) {
   return (
     <Modal onClose={onClose}>
       <p>
-        Comments work by inserting lines into the code. This can only work if the revset for
-        the diff ends with <code>@</code>, i.e., includes the working copy. Otherwise, the
-        inserted lines will land in <code>@</code> but not in the diff being viewed.
+        Comments work by inserting lines into the code. This can only work if the{' '}
+        {vcs === 'jj' ? (
+          <>
+            revset includes <code>@</code>
+          </>
+        ) : (
+          'commit range includes the working copy'
+        )}
+        . Otherwise, the inserted lines will land in{' '}
+        {vcs === 'jj' ? <code>@</code> : 'the working copy'} but not in the diff being
+        viewed.
       </p>
-      <p>
-        The easiest way to get a diff with comments enabled is to run this tool with the{' '}
-        <code>-f</code> flag to get a diff that starts at some revision and ends at{' '}
-        <code>@</code>.
-      </p>
+      {vcs === 'jj' ? (
+        <p>
+          The easiest way to get a diff with comments enabled is to run with the{' '}
+          <code>-f</code> flag to get a diff that starts at some revision and ends at{' '}
+          <code>@</code>.
+        </p>
+      ) : (
+        <p>
+          The easiest way to get a diff with comments enabled is to run with <code>-f</code>{' '}
+          only (no <code>-t</code>), so the diff goes from a commit to the working tree.
+        </p>
+      )}
     </Modal>
   )
 }
 
-function CommentsDisabledBanner({ onLearnMore }: { onLearnMore: () => void }) {
+function CommentsDisabledBanner({
+  onLearnMore,
+  vcs,
+}: {
+  onLearnMore: () => void
+  vcs: 'jj' | 'git'
+}) {
   return (
     <div
       style={{
@@ -596,7 +623,15 @@ function CommentsDisabledBanner({ onLearnMore }: { onLearnMore: () => void }) {
         textAlign: 'center',
       }}
     >
-      Comments are disabled because the revset does not include <code>@</code>.{' '}
+      {vcs === 'jj' ? (
+        <>
+          Comments are disabled because the revset does not include <code>@</code>.
+        </>
+      ) : (
+        <>
+          Comments are disabled because the commit range does not end at the working copy.
+        </>
+      )}{' '}
       <a
         href="#"
         onClick={(e) => {
@@ -977,7 +1012,6 @@ function DiffView() {
   if (!patch)
     return (
       <div style={{ padding: 20, fontSize: 16 }}>
-        Diff is empty for revset args{' '}
         <code
           style={{
             padding: '2px 4px',
@@ -988,7 +1022,8 @@ function DiffView() {
           }}
         >
           {data!.revset}
-        </code>
+        </code>{' '}
+        is empty
       </div>
     )
 
@@ -997,13 +1032,19 @@ function DiffView() {
   return (
     <>
       {!data!.commentsEnabled && (
-        <CommentsDisabledBanner onLearnMore={() => setShowCommentsInfo(true)} />
+        <CommentsDisabledBanner
+          vcs={data!.vcs}
+          onLearnMore={() => setShowCommentsInfo(true)}
+        />
       )}
       <div className="diff-container">
         <ProgressBar fileHashes={fileHashes} viewed={viewed} />
         {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
         {showCommentsInfo && (
-          <CommentsDisabledModal onClose={() => setShowCommentsInfo(false)} />
+          <CommentsDisabledModal
+            vcs={data!.vcs}
+            onClose={() => setShowCommentsInfo(false)}
+          />
         )}
         {toast && (
           <div className="toast" key={toast.key}>

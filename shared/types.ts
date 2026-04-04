@@ -29,6 +29,12 @@ export type ViewedRequest = z.infer<typeof viewedRequestSchema>
 export type CommentRequest = z.infer<typeof commentRequestSchema>
 export type CommentDeleteRequest = z.infer<typeof commentDeleteSchema>
 
+// --- VCS types ---
+
+export type DiffArgs = ({ vcs: 'jj'; args: string[] } | { vcs: 'git'; args: string[] }) & {
+  commentsEnabled: boolean
+}
+
 // --- Response types (checked via satisfies on the server) ---
 
 export type ViewedMap = Record<string, string>
@@ -37,6 +43,7 @@ export type FileHashes = Record<string, string>
 export interface DiffResponse {
   patch: string
   revset: string
+  vcs: 'jj' | 'git'
   commentsEnabled: boolean
   fileHashes: FileHashes
   viewed: ViewedMap

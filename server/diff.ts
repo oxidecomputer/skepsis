@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import type { FileHashes } from '../shared/types.ts'
+import type { DiffArgs, FileHashes } from '../shared/types.ts'
 
 function run(
   cmd: string,
@@ -22,21 +22,33 @@ function run(
   })
 }
 
+function diffCommand(src: DiffArgs): { cmd: string; args: string[] } {
+  if (src.vcs === 'jj') {
+    return { cmd: 'jj', args: ['diff', ...src.args, '--git'] }
+  } else {
+    return { cmd: 'git', args: ['diff', ...src.args] }
+  }
+}
+
 export async function getDiff(
-  diffArgs: string[],
+  src: DiffArgs,
 ): Promise<{ patch: string; fileHashes: FileHashes }> {
-  const { stdout, stderr, code } = await run('jj', ['diff', ...diffArgs, '--git'])
+  const { cmd, args } = diffCommand(src)
+  const { stdout, stderr, code } = await run(cmd, args)
   if (code !== 0) {
-    throw new Error(`jj diff failed (exit ${code}): ${stderr}`)
+    throw new Error(`${cmd} diff failed (exit ${code}): ${stderr}`)
   }
   return { patch: stdout, fileHashes: extractFileHashes(stdout) }
 }
 
-/** Validate diff args against jj at startup. */
-export async function validateDiffArgs(diffArgs: string[]): Promise<void> {
-  const { stderr, code } = await run('jj', ['diff', ...diffArgs, '--stat'])
+/** Validate diff args at startup. */
+export async function validateDiffArgs(src: DiffArgs): Promise<void> {
+  const { cmd } = diffCommand(src)
+  const statArgs =
+    src.vcs === 'jj' ? ['diff', ...src.args, '--stat'] : ['diff', '--stat', ...src.args]
+  const { stderr, code } = await run(cmd, statArgs)
   if (code !== 0) {
-    throw new Error(`jj diff failed: ${stderr}`)
+    throw new Error(`${cmd} diff failed: ${stderr}`)
   }
 }
 

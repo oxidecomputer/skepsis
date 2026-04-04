@@ -4,6 +4,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { zValidator } from '@hono/zod-validator'
 import { join, relative } from 'node:path'
 import { readFile } from 'node:fs/promises'
+import type { DiffArgs } from '../shared/types.ts'
 import { getDiff, validateDiffArgs } from './diff.ts'
 import { loadViewed, markViewed, unmarkViewed } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
@@ -16,23 +17,26 @@ import {
 import type { DiffResponse, OkResponse, ErrorResponse } from '../shared/types.ts'
 
 export async function startServer(opts: {
-  diffArgs: string[]
-  commentsEnabled: boolean
+  diffSource: DiffArgs
   port?: number
   cwd: string
 }): Promise<number> {
-  const { diffArgs, commentsEnabled, port = 0, cwd } = opts
-  await validateDiffArgs(diffArgs)
+  const { diffSource, port = 0, cwd } = opts
+  await validateDiffArgs(diffSource)
 
   const app = new Hono()
 
   app.get('/api/diff', async (c) => {
-    const { patch, fileHashes } = await getDiff(diffArgs)
+    const { patch, fileHashes } = await getDiff(diffSource)
     const viewed = await loadViewed(cwd, fileHashes)
     return c.json({
       patch,
-      revset: diffArgs.join(' '),
-      commentsEnabled,
+      revset:
+        diffSource.vcs === 'jj'
+          ? `jj diff ${diffSource.args.join(' ')}`
+          : `git diff ${diffSource.args.join(' ')}`,
+      vcs: diffSource.vcs,
+      commentsEnabled: diffSource.commentsEnabled,
       fileHashes,
       viewed,
     } satisfies DiffResponse)
@@ -80,7 +84,9 @@ export async function startServer(opts: {
   return new Promise((resolve) => {
     serve({ fetch: app.fetch, port }, (info) => {
       const assignedPort = typeof info === 'string' ? port : info.port
-      console.log(`skepsis on http://localhost:${assignedPort} (${diffArgs.join(' ')})`)
+      console.log(
+        `skepsis on http://localhost:${assignedPort} (${diffSource.vcs}: ${diffSource.args.join(' ')})`,
+      )
       resolve(assignedPort)
     })
   })
