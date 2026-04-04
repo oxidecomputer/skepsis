@@ -183,13 +183,6 @@ function ensureCursorStyles(sr: ShadowRoot) {
   sr.appendChild(style)
 }
 
-const fileDiffStyle = {
-  '--diffs-font-size': '13px',
-  '--diffs-font-family': 'monospace',
-  '--diffs-bg-separator-override': '#1c2333',
-  '--diffs-modified-color-override': '#1f6feb',
-} as React.CSSProperties
-
 // --- Comment form ---
 
 function CommentForm({
@@ -278,7 +271,6 @@ const MemoizedFileDiff = memo(
     return (
       <div ref={measureRef}>
         <FileDiff<AnnotationMeta>
-          style={fileDiffStyle}
           fileDiff={fileDiff}
           options={{
             theme: 'github-dark-default',
@@ -505,73 +497,43 @@ function Modal({ onClose, children }: { onClose: () => void; children: React.Rea
   )
 }
 
+const SHORTCUTS: [string, string][] = [
+  ['j / k', 'Next / previous line'],
+  ['n / p', 'Next / previous file'],
+  ['v', 'Toggle viewed'],
+  ['e / E', 'Toggle collapse file / all files'],
+  ['s', 'Toggle split mode (responsive / unified)'],
+  ['c', 'Comment on line'],
+  ['Esc', 'Close / cancel'],
+  ['?', 'Toggle this help'],
+]
+
 function HelpModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal onClose={onClose}>
       <h3>Keyboard Shortcuts</h3>
       <table>
         <tbody>
-          <tr>
-            <td>
-              <kbd>j</kbd> / <kbd>k</kbd>
-            </td>
-            <td>Next / previous line</td>
-          </tr>
-          <tr>
-            <td>
-              <kbd>n</kbd> / <kbd>p</kbd>
-            </td>
-            <td>Next / previous file</td>
-          </tr>
-          <tr>
-            <td>
-              <kbd>v</kbd>
-            </td>
-            <td>Toggle viewed</td>
-          </tr>
-          <tr>
-            <td>
-              <kbd>e</kbd> / <kbd>E</kbd>
-            </td>
-            <td>Toggle collapse file / all files</td>
-          </tr>
-          <tr>
-            <td>
-              <kbd>s</kbd>
-            </td>
-            <td>Toggle split mode (responsive / unified)</td>
-          </tr>
-          <tr>
-            <td>
-              <kbd>c</kbd>
-            </td>
-            <td>Comment on line</td>
-          </tr>
-          <tr>
-            <td>
-              <kbd>Esc</kbd>
-            </td>
-            <td>Close / cancel</td>
-          </tr>
-          <tr>
-            <td>
-              <kbd>?</kbd>
-            </td>
-            <td>Toggle this help</td>
-          </tr>
+          {SHORTCUTS.map(([keys, desc]) => (
+            <tr key={keys}>
+              <td>
+                {keys.split(' / ').map((k, i) => (
+                  <span key={k}>
+                    {i > 0 && ' / '}
+                    <kbd>{k}</kbd>
+                  </span>
+                ))}
+              </td>
+              <td>{desc}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </Modal>
   )
 }
 
-function CommentsDisabledModal({
-  onClose,
-  vcs,
-}: {
-  onClose: () => void
-  vcs: 'jj' | 'git'
-}) {
+function CommentsModal({ onClose, vcs }: { onClose: () => void; vcs: 'jj' | 'git' }) {
   return (
     <Modal onClose={onClose}>
       <p>
@@ -611,35 +573,19 @@ function CommentsDisabledBanner({
   vcs: 'jj' | 'git'
 }) {
   return (
-    <div
-      style={{
-        background: 'oklch(0.22 0.05 260)',
-        borderBottom: '1px solid oklch(0.35 0.07 260)',
-        color: 'oklch(0.7 0.14 260)',
-        padding: '8px 16px',
-        fontSize: 13,
-        textAlign: 'center',
-      }}
-    >
+    <div className="comments-disabled-banner">
       {vcs === 'jj' ? (
         <>
           Comments are disabled because the revset does not include <code>@</code>.
         </>
       ) : (
-        <>
-          Comments are disabled because the commit range does not end at the working copy.
-        </>
+        'Comments are disabled because the commit range does not end at the working copy.'
       )}{' '}
       <a
         href="#"
         onClick={(e) => {
           e.preventDefault()
           onLearnMore()
-        }}
-        style={{
-          color: 'oklch(0.78 0.14 260)',
-          textDecoration: 'underline',
-          cursor: 'pointer',
         }}
       >
         Learn more
@@ -827,10 +773,12 @@ function DiffView() {
             setComposing(null)
           }
           break
-        case 'n': {
+        case 'n':
+        case 'p': {
           if (s.showHelp || s.composing) break
           e.preventDefault()
-          const next = Math.min(s.focusedFileIdx + 1, s.files.length - 1)
+          const delta = e.key === 'n' ? 1 : -1
+          const next = Math.max(0, Math.min(s.focusedFileIdx + delta, s.files.length - 1))
           if (next !== s.focusedFileIdx) {
             keyboardNavTime.current = Date.now()
             setFocusedFileIdx(next)
@@ -839,40 +787,7 @@ function DiffView() {
           }
           break
         }
-        case 'p': {
-          if (s.showHelp || s.composing) break
-          e.preventDefault()
-          const prev = Math.max(s.focusedFileIdx - 1, 0)
-          if (prev !== s.focusedFileIdx) {
-            keyboardNavTime.current = Date.now()
-            setFocusedFileIdx(prev)
-            setCursorIdx(0)
-            scrollRef.current = 'file'
-          }
-          break
-        }
-        case 'j': {
-          if (s.showHelp || s.composing) break
-          e.preventDefault()
-          const name = s.files[s.focusedFileIdx]?.name
-          if (!name || (s.collapsed[name] ?? false)) break
-          const lines = getFileLines(s.focusedFileIdx)
-          if (lines.length === 0) break
-          // If cursor is off-screen (or behind sticky header), snap to first visible line
-          let base = s.cursorIdx
-          const cur = lines[Math.min(base, lines.length - 1)]
-          if (cur && !isLineVisible(cur.contentEl, s.focusedFileIdx)) {
-            const vis = firstVisibleLineIdx(s.focusedFileIdx)
-            if (vis >= 0) base = vis
-          }
-          const next = Math.min(base + 1, lines.length - 1)
-          if (next !== s.cursorIdx) {
-            keyboardNavTime.current = Date.now()
-            setCursorIdx(next)
-            scrollRef.current = 'line'
-          }
-          break
-        }
+        case 'j':
         case 'k': {
           if (s.showHelp || s.composing) break
           e.preventDefault()
@@ -887,10 +802,13 @@ function DiffView() {
             const vis = firstVisibleLineIdx(s.focusedFileIdx)
             if (vis >= 0) base = vis
           }
-          const prev = Math.max(base - 1, 0)
-          if (prev !== s.cursorIdx) {
+          const moved = Math.max(
+            0,
+            Math.min(base + (e.key === 'j' ? 1 : -1), lines.length - 1),
+          )
+          if (moved !== s.cursorIdx) {
             keyboardNavTime.current = Date.now()
-            setCursorIdx(prev)
+            setCursorIdx(moved)
             scrollRef.current = 'line'
           }
           break
@@ -1004,24 +922,13 @@ function DiffView() {
     return () => observer.disconnect()
   }, [files])
 
-  if (isLoading || !data) return <div style={{ padding: 20 }}>Loading...</div>
+  if (isLoading || !data) return <div className="empty-diff">Loading...</div>
   if (error) return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
   if (data.error) return <pre style={{ color: 'red', padding: 20 }}>{data.error}</pre>
   if (!patch)
     return (
-      <div style={{ padding: 20, fontSize: 16 }}>
-        <code
-          style={{
-            padding: '2px 4px',
-            background: '#30363d',
-            borderRadius: 3,
-            color: '#e6edf3',
-            fontSize: 14,
-          }}
-        >
-          {data.revset}
-        </code>{' '}
-        is empty
+      <div className="empty-diff">
+        <code>{data.revset}</code> is empty
       </div>
     )
 
@@ -1039,10 +946,7 @@ function DiffView() {
         <ProgressBar fileHashes={fileHashes} viewed={viewed} />
         {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
         {showCommentsInfo && (
-          <CommentsDisabledModal
-            vcs={data.vcs}
-            onClose={() => setShowCommentsInfo(false)}
-          />
+          <CommentsModal vcs={data.vcs} onClose={() => setShowCommentsInfo(false)} />
         )}
         {toast && (
           <div className="toast" key={toast.key}>

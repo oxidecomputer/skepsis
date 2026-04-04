@@ -22,6 +22,10 @@ body {
   border: 1px solid #30363d;
   border-radius: 8px;
   overflow: clip;
+  --diffs-font-size: 13px;
+  --diffs-font-family: monospace;
+  --diffs-bg-separator-override: #1c2333;
+  --diffs-modified-color-override: #1f6feb;
 }
 
 /* Custom file header */
@@ -395,6 +399,36 @@ body {
   100% {
     opacity: 0;
   }
+}
+
+/* Comments-disabled banner */
+.comments-disabled-banner {
+  background: oklch(0.22 0.05 260);
+  border-bottom: 1px solid oklch(0.35 0.07 260);
+  color: oklch(0.7 0.14 260);
+  padding: 8px 16px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.comments-disabled-banner a {
+  color: oklch(0.78 0.14 260);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Empty diff message */
+.empty-diff {
+  padding: 20px;
+  font-size: 16px;
+}
+
+.empty-diff code {
+  padding: 2px 4px;
+  background: #30363d;
+  border-radius: 3px;
+  color: #e6edf3;
+  font-size: 14px;
 }
 
 .help-modal kbd {
