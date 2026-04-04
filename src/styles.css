@@ -44,6 +44,10 @@ body {
   user-select: none;
 }
 
+.file-card:has(> .file-header:only-child) > .file-header {
+  border-bottom: none;
+}
+
 .collapse-chevron {
   font-size: 10px;
   color: #8b949e;
