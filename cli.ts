@@ -43,8 +43,8 @@ function buildDiffSource(): DiffArgs {
     } else {
       const rev = opts.revisions ?? 'trunk()..@'
       args.push('-r', rev)
-      // Comments enabled if revset ends with ..@
-      commentsEnabled = rev.endsWith('..@')
+      // Comments enabled if the revset's "to" side is @
+      commentsEnabled = rev === '@' || rev.endsWith('..@')
     }
     return { vcs: 'jj', args, commentsEnabled }
   } else {
