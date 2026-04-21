@@ -193,6 +193,8 @@ function CommentForm({
   onCancel: () => void
 }) {
   const [text, setText] = useState('')
+  // useEffect instead of a function ref because the function ref didn't
+  // actually focus the textarea on open.
   const ref = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     ref.current?.focus()
@@ -351,7 +353,7 @@ function FileCard({
         return (
           <div className="review-annotation">
             <button className="resolve-button" onClick={() => onResolveComment(meta.line)}>
-              Resolve
+              Resolve comment
             </button>
           </div>
         )

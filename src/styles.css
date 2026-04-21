@@ -100,6 +100,7 @@ body {
   background: #21262d;
   color: #8b949e;
   font-size: 12px;
+  font-weight: 500;
   font-family: inherit;
   cursor: pointer;
   flex-shrink: 0;
@@ -228,7 +229,7 @@ body {
     system-ui,
     -apple-system,
     sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   resize: vertical;
   box-sizing: border-box;
 }
@@ -246,19 +247,23 @@ body {
 }
 
 .comment-cancel {
-  padding: 4px 12px;
-  background: transparent;
-  border: 1px solid #30363d;
+  padding: 6px 16px;
+  background: #262c34;
+  border: 1px solid #484f58;
   border-radius: 6px;
-  color: #8b949e;
-  font-family: inherit;
-  font-size: 12px;
+  color: #e6edf3;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .comment-cancel:hover {
-  border-color: #484f58;
-  color: #e6edf3;
+  border-color: #6e7681;
+  background: #2d333b;
 }
 
 .comment-submit {
@@ -267,8 +272,12 @@ body {
   border: 1px solid transparent;
   border-radius: 6px;
   color: #fff;
-  font-family: inherit;
-  font-size: 12px;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
 }
 
@@ -291,19 +300,23 @@ body {
 }
 
 .resolve-button {
-  padding: 2px 10px;
-  background: #21262d;
-  border: 1px solid #30363d;
+  padding: 6px 16px;
+  background: #262c34;
+  border: 1px solid #484f58;
   border-radius: 6px;
-  color: #8b949e;
-  font-family: inherit;
-  font-size: 11px;
+  color: #e6edf3;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .resolve-button:hover {
-  border-color: #484f58;
-  color: #e6edf3;
+  border-color: #6e7681;
+  background: #2d333b;
 }
 
 /* Focused file indicator */
