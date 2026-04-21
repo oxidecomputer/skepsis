@@ -53,29 +53,38 @@ function useToast(duration = 1500) {
 // --- Review comment types and detection ---
 
 type AnnotationMeta =
-  | { type: 'review'; line: number; text: string; file: string }
+  | { type: 'review'; startLine: number; endLine: number; file: string }
   | { type: 'composing'; file: string }
 
-const REVIEW_PATTERN =
-  /^\s*(?:\/\/|#|--|\/\*|<!--)\s*REVIEW:\s*(.*?)(?:\s*(?:\*\/|-->))?\s*$/
+const REVIEW_OPEN_PATTERN = /^\s*(?:\/\/|#|--|\/\*|<!--)\s*<review>\s*(?:\*\/|-->)?\s*$/
+const REVIEW_CLOSE_PATTERN = /^\s*(?:\/\/|#|--|\/\*|<!--)\s*<\/review>\s*(?:\*\/|-->)?\s*$/
 
-/** Walk the addition side of a diff and find lines matching // REVIEW: ... */
+/** Walk the addition side of a diff and find <review>...</review> blocks. */
 function detectReviewComments(
   fileDiff: FileDiffMetadata,
   fileName: string,
 ): DiffLineAnnotation<AnnotationMeta>[] {
   const annotations: DiffLineAnnotation<AnnotationMeta>[] = []
   for (const hunk of fileDiff.hunks) {
+    let openLine: number | null = null
     for (let i = 0; i < hunk.additionCount; i++) {
       const lineText = fileDiff.additionLines[hunk.additionLineIndex + i]
-      const match = lineText?.match(REVIEW_PATTERN)
-      if (match) {
-        const line = hunk.additionStart + i
+      if (!lineText) continue
+      const absLine = hunk.additionStart + i
+      if (REVIEW_OPEN_PATTERN.test(lineText)) {
+        openLine = absLine
+      } else if (REVIEW_CLOSE_PATTERN.test(lineText) && openLine !== null) {
         annotations.push({
           side: 'additions',
-          lineNumber: line,
-          metadata: { type: 'review', line, text: match[1]!.trim(), file: fileName },
+          lineNumber: absLine,
+          metadata: {
+            type: 'review',
+            startLine: openLine,
+            endLine: absLine,
+            file: fileName,
+          },
         })
+        openLine = null
       }
     }
   }
@@ -352,7 +361,10 @@ function FileCard({
       if (meta.type === 'review') {
         return (
           <div className="review-annotation">
-            <button className="resolve-button" onClick={() => onResolveComment(meta.line)}>
+            <button
+              className="resolve-button"
+              onClick={() => onResolveComment(meta.startLine)}
+            >
               Resolve comment
             </button>
           </div>

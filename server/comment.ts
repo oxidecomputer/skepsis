@@ -1,7 +1,8 @@
 import { join } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
 
-const REVIEW_MARKER = 'REVIEW:'
+const OPEN_TAG = '<review>'
+const CLOSE_TAG = '</review>'
 
 function getCommentSyntax(filePath: string): { prefix: string; suffix: string } {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
@@ -33,6 +34,16 @@ function getCommentSyntax(filePath: string): { prefix: string; suffix: string } 
   }
 }
 
+function openTagRegex(prefix: string): RegExp {
+  const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^\\s*${esc}\\s*${OPEN_TAG}\\s*(?:\\*\\/|-->)?\\s*$`)
+}
+
+function closeTagRegex(prefix: string): RegExp {
+  const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^\\s*${esc}\\s*${CLOSE_TAG}\\s*(?:\\*\\/|-->)?\\s*$`)
+}
+
 export async function insertComment(
   cwd: string,
   file: string,
@@ -51,11 +62,18 @@ export async function insertComment(
   const targetLine = lines[afterLine - 1]!
   const indent = targetLine.match(/^(\s*)/)?.[1] ?? ''
   const { prefix, suffix } = getCommentSyntax(file)
-  const commentLine = suffix
-    ? `${indent}${prefix} ${REVIEW_MARKER} ${text} ${suffix}`
-    : `${indent}${prefix} ${REVIEW_MARKER} ${text}`
+  const wrap = (body: string) => {
+    if (!body) return suffix ? `${indent}${prefix} ${suffix}` : `${indent}${prefix}`
+    return suffix ? `${indent}${prefix} ${body} ${suffix}` : `${indent}${prefix} ${body}`
+  }
 
-  lines.splice(afterLine, 0, commentLine)
+  const commentLines = [
+    wrap(OPEN_TAG),
+    ...text.split('\n').map((line) => wrap(line)),
+    wrap(CLOSE_TAG),
+  ]
+
+  lines.splice(afterLine, 0, ...commentLines)
   await writeFile(filePath, lines.join('\n'))
 }
 
@@ -72,10 +90,20 @@ export async function removeComment(
     throw new Error(`Line ${line} out of range`)
   }
 
-  if (!lines[line - 1]!.includes(REVIEW_MARKER)) {
-    throw new Error(`Line ${line} is not a REVIEW comment`)
+  const { prefix } = getCommentSyntax(file)
+  const openRe = openTagRegex(prefix)
+  const closeRe = closeTagRegex(prefix)
+
+  if (!openRe.test(lines[line - 1]!)) {
+    throw new Error(`Line ${line} is not a <review> open tag`)
   }
 
-  lines.splice(line - 1, 1)
+  let end = line
+  while (end < lines.length && !closeRe.test(lines[end]!)) end++
+  if (end >= lines.length) {
+    throw new Error(`No </review> close tag found after line ${line}`)
+  }
+
+  lines.splice(line - 1, end - line + 2)
   await writeFile(filePath, lines.join('\n'))
 }
