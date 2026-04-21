@@ -385,11 +385,19 @@ function FileCard({
 
   const onGutterUtilityClick = useCallback(
     (range: { start: number; end: number; side?: string }) => {
-      if (commentsEnabled && range.side === 'additions') {
-        onStartComment(range.start)
-      }
+      if (!commentsEnabled || range.side !== 'additions') return
+      // Block nesting: disallow starting a comment on any line inside an
+      // existing <review>...</review> block.
+      const insideReview = lineAnnotations.some(
+        (a) =>
+          a.metadata.type === 'review' &&
+          range.start >= a.metadata.startLine &&
+          range.start <= a.metadata.endLine,
+      )
+      if (insideReview) return
+      onStartComment(range.start)
     },
-    [onStartComment, commentsEnabled],
+    [onStartComment, commentsEnabled, lineAnnotations],
   )
 
   // Lazy mount: only create the FileDiff web component when near the viewport
