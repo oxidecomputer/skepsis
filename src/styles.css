@@ -244,6 +244,17 @@ body {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
+  align-items: center;
+}
+
+.comment-form-error {
+  color: #f85149;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 13px;
+  margin-right: auto;
 }
 
 .comment-cancel {

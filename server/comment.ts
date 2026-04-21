@@ -1,48 +1,11 @@
 import { join } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
-
-const OPEN_TAG = '<review>'
-const CLOSE_TAG = '</review>'
-
-function getCommentSyntax(filePath: string): { prefix: string; suffix: string } {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
-  switch (ext) {
-    case 'py':
-    case 'rb':
-    case 'sh':
-    case 'bash':
-    case 'zsh':
-    case 'yml':
-    case 'yaml':
-    case 'toml':
-    case 'conf':
-      return { prefix: '#', suffix: '' }
-    case 'html':
-    case 'xml':
-    case 'svg':
-      return { prefix: '<!--', suffix: '-->' }
-    case 'css':
-    case 'scss':
-    case 'less':
-      return { prefix: '/*', suffix: '*/' }
-    case 'sql':
-    case 'lua':
-    case 'hs':
-      return { prefix: '--', suffix: '' }
-    default:
-      return { prefix: '//', suffix: '' }
-  }
-}
-
-function openTagRegex(prefix: string): RegExp {
-  const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`^\\s*${esc}\\s*${OPEN_TAG}\\s*(?:\\*\\/|-->)?\\s*$`)
-}
-
-function closeTagRegex(prefix: string): RegExp {
-  const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`^\\s*${esc}\\s*${CLOSE_TAG}\\s*(?:\\*\\/|-->)?\\s*$`)
-}
+import { getCommentSyntax } from './commentSyntax.ts'
+import {
+  REVIEW_CLOSE_TAG,
+  REVIEW_OPEN_TAG,
+  reviewTagRegex,
+} from '../shared/reviewComments.ts'
 
 export async function insertComment(
   cwd: string,
@@ -61,16 +24,16 @@ export async function insertComment(
   // Match indentation of the target line
   const targetLine = lines[afterLine - 1]!
   const indent = targetLine.match(/^(\s*)/)?.[1] ?? ''
-  const { prefix, suffix } = getCommentSyntax(file)
+  const { prefix, suffix } = getCommentSyntax(file, lines[0] ?? '')
   const wrap = (body: string) => {
     if (!body) return suffix ? `${indent}${prefix} ${suffix}` : `${indent}${prefix}`
     return suffix ? `${indent}${prefix} ${body} ${suffix}` : `${indent}${prefix} ${body}`
   }
 
   const commentLines = [
-    wrap(OPEN_TAG),
+    wrap(REVIEW_OPEN_TAG),
     ...text.split('\n').map((line) => wrap(line)),
-    wrap(CLOSE_TAG),
+    wrap(REVIEW_CLOSE_TAG),
   ]
 
   lines.splice(afterLine, 0, ...commentLines)
@@ -90,9 +53,9 @@ export async function removeComment(
     throw new Error(`Line ${line} out of range`)
   }
 
-  const { prefix } = getCommentSyntax(file)
-  const openRe = openTagRegex(prefix)
-  const closeRe = closeTagRegex(prefix)
+  const syntax = getCommentSyntax(file, lines[0] ?? '')
+  const openRe = reviewTagRegex(syntax, REVIEW_OPEN_TAG)
+  const closeRe = reviewTagRegex(syntax, REVIEW_CLOSE_TAG)
 
   if (!openRe.test(lines[line - 1]!)) {
     throw new Error(`Line ${line} is not a <review> open tag`)

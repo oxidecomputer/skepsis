@@ -18,9 +18,26 @@ import {
 import { parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs'
-import type { DiffResponse, ViewedMap, FileHashes } from '../shared/types.ts'
+import type { DiffResponse, ErrorResponse, ViewedMap, FileHashes } from '../shared/types.ts'
+import { REVIEW_CLOSE_PATTERN, REVIEW_OPEN_PATTERN } from '../shared/reviewComments.ts'
 
 const queryClient = new QueryClient()
+
+async function apiFetch<T = unknown>(
+  url: string,
+  opts: { method: string; body?: unknown } = { method: 'GET' },
+): Promise<T> {
+  const res = await fetch(url, {
+    method: opts.method,
+    headers: opts.body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+  })
+  if (!res.ok) {
+    const err = (await res.json().catch(() => null)) as ErrorResponse | null
+    throw new Error(err?.error ?? `Request failed (${res.status})`)
+  }
+  return res.json() as Promise<T>
+}
 
 const wideQuery = '(min-width: 1060px)'
 
@@ -55,9 +72,6 @@ function useToast(duration = 1500) {
 type AnnotationMeta =
   | { type: 'review'; startLine: number; endLine: number; file: string }
   | { type: 'composing'; file: string }
-
-const REVIEW_OPEN_PATTERN = /^\s*(?:\/\/|#|--|\/\*|<!--)\s*<review>\s*(?:\*\/|-->)?\s*$/
-const REVIEW_CLOSE_PATTERN = /^\s*(?:\/\/|#|--|\/\*|<!--)\s*<\/review>\s*(?:\*\/|-->)?\s*$/
 
 /** Walk the addition side of a diff and find <review>...</review> blocks. */
 function detectReviewComments(
@@ -258,9 +272,13 @@ function applyReviewHighlights(
 function CommentForm({
   onSubmit,
   onCancel,
+  submitting,
+  error,
 }: {
   onSubmit: (text: string) => void
   onCancel: () => void
+  submitting: boolean
+  error: string | null
 }) {
   const [text, setText] = useState('')
   // useEffect instead of a function ref because the function ref didn't
@@ -270,6 +288,12 @@ function CommentForm({
     ref.current?.focus()
   }, [])
 
+  const submit = () => {
+    const body = text.trim()
+    if (!body || submitting) return
+    onSubmit(body)
+  }
+
   return (
     <div className="comment-form" onClick={(e) => e.stopPropagation()}>
       <textarea
@@ -277,23 +301,25 @@ function CommentForm({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && text.trim()) {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault()
-            onSubmit(text.trim())
+            submit()
           }
           if (e.key === 'Escape') onCancel()
         }}
         placeholder="Leave a review comment... (Cmd+Enter to submit)"
         rows={3}
+        disabled={submitting}
       />
       <div className="comment-form-actions">
-        <button className="comment-cancel" onClick={onCancel}>
+        {error && <div className="comment-form-error">{error}</div>}
+        <button className="comment-cancel" onClick={onCancel} disabled={submitting}>
           Cancel
         </button>
         <button
           className="comment-submit"
-          disabled={!text.trim()}
-          onClick={() => text.trim() && onSubmit(text.trim())}
+          disabled={!text.trim() || submitting}
+          onClick={submit}
         >
           Comment
         </button>
@@ -383,6 +409,8 @@ function FileCard({
   onResolveComment,
   onCancelComment,
   commentsEnabled,
+  submitting,
+  submitError,
 }: {
   fileDiff: FileDiffMetadata
   isViewed: boolean
@@ -398,6 +426,8 @@ function FileCard({
   onResolveComment: (line: number) => void
   onCancelComment: () => void
   commentsEnabled: boolean
+  submitting: boolean
+  submitError: string | null
 }) {
   const { additions, deletions } = getFileStats(fileDiff)
   const name = fileDiff.name
@@ -436,12 +466,14 @@ function FileCard({
           <CommentForm
             onSubmit={(text) => onSubmitComment(annotation.lineNumber, text)}
             onCancel={onCancelComment}
+            submitting={submitting}
+            error={submitError}
           />
         )
       }
       return null
     },
-    [onResolveComment, onSubmitComment, onCancelComment],
+    [onResolveComment, onSubmitComment, onCancelComment, submitting, submitError],
   )
 
   const onGutterUtilityClick = useCallback(
@@ -726,9 +758,9 @@ function DiffView() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [composing, setComposing] = useState<{ file: string; line: number } | null>(null)
   const seededFromInitialLoad = useRef(false)
-  const { data, error, isLoading } = useQuery<DiffResponse>({
+  const { data, error, isLoading } = useQuery({
     queryKey: ['diff'],
-    queryFn: () => fetch('/api/diff').then((r) => r.json()),
+    queryFn: () => apiFetch<DiffResponse>('/api/diff'),
   })
 
   useEffect(() => {
@@ -752,10 +784,9 @@ function DiffView() {
 
   const markMutation = useMutation({
     mutationFn: ({ file, hash, mark }: { file: string; hash: string; mark: boolean }) =>
-      fetch('/api/viewed', {
+      apiFetch('/api/viewed', {
         method: mark ? 'POST' : 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file, hash }),
+        body: { file, hash },
       }),
     onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
   })
@@ -770,20 +801,19 @@ function DiffView() {
       afterLine: number
       text: string
     }) =>
-      fetch('/api/comment', {
+      apiFetch('/api/comment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file, afterLine, text }),
+        body: { file, afterLine, text },
       }),
+    onSuccess: () => setComposing(null),
     onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
   })
 
   const resolveMutation = useMutation({
     mutationFn: ({ file, line }: { file: string; line: number }) =>
-      fetch('/api/comment', {
+      apiFetch('/api/comment', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file, line }),
+        body: { file, line },
       }),
     onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
   })
@@ -1101,14 +1131,24 @@ function DiffView() {
                   markMutation.mutate({ file: name, hash, mark })
                 }
               }}
-              onStartComment={(line) => setComposing({ file: name, line })}
-              onSubmitComment={(line, text) => {
-                commentMutation.mutate({ file: name, afterLine: line, text })
-                setComposing(null)
+              onStartComment={(line) => {
+                commentMutation.reset()
+                setComposing({ file: name, line })
               }}
+              onSubmitComment={(line, text) =>
+                commentMutation.mutate({ file: name, afterLine: line, text })
+              }
               onResolveComment={(line) => resolveMutation.mutate({ file: name, line })}
               onCancelComment={() => setComposing(null)}
               commentsEnabled={data.commentsEnabled}
+              submitting={
+                commentMutation.isPending && commentMutation.variables?.file === name
+              }
+              submitError={
+                commentMutation.variables?.file === name && commentMutation.error
+                  ? commentMutation.error.message
+                  : null
+              }
             />
           )
         })}
