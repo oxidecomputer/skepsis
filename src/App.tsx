@@ -192,6 +192,67 @@ function ensureCursorStyles(sr: ShadowRoot) {
   sr.appendChild(style)
 }
 
+/** Inject review-comment CSS into a shadow root (idempotent) */
+function ensureReviewStyles(sr: ShadowRoot) {
+  if (sr.querySelector('style[data-review-css]')) return
+  const style = document.createElement('style')
+  style.setAttribute('data-review-css', '')
+  style.textContent = `
+    [data-review-comment] {
+      --diffs-bg-addition: rgba(56, 139, 253, 0.14) !important;
+      --diffs-addition-base: rgba(56, 139, 253, 0.85) !important;
+      --diffs-fg-number-addition-override: var(--diffs-fg-number) !important;
+    }
+    [data-review-comment][data-line] *,
+    [data-review-comment][data-no-newline] * {
+      color: var(--diffs-fg) !important;
+    }
+    [data-review-comment] [data-gutter-utility-slot] { display: none !important; }
+  `
+  sr.appendChild(style)
+}
+
+/** Apply data-review-comment attribute to line elements within review block ranges. */
+function applyReviewHighlights(
+  cardEl: HTMLElement,
+  ranges: Array<{ start: number; end: number }>,
+): void {
+  const container = cardEl.querySelector('diffs-container')
+  const sr = (container as HTMLElement | null)?.shadowRoot
+  if (!sr) return
+  const pre = sr.querySelector('pre')
+  if (!pre) return
+
+  ensureReviewStyles(sr)
+
+  for (const el of sr.querySelectorAll('[data-review-comment]')) {
+    el.removeAttribute('data-review-comment')
+  }
+  if (ranges.length === 0) return
+
+  const inRange = (n: number) => ranges.some((r) => n >= r.start && n <= r.end)
+
+  for (const col of Array.from(pre.children)) {
+    if (!(col instanceof HTMLElement) || !col.hasAttribute('data-code')) continue
+    if (col.hasAttribute('data-deletions')) continue
+    const gutter = col.querySelector('[data-gutter]')
+    const content = col.querySelector('[data-content]')
+    if (!gutter || !content) continue
+    for (let i = 0; i < gutter.children.length && i < content.children.length; i++) {
+      const g = gutter.children[i] as HTMLElement
+      const c = content.children[i] as HTMLElement
+      if (g.getAttribute('data-line-type') !== 'change-addition') continue
+      const numAttr = g.getAttribute('data-column-number')
+      if (!numAttr) continue
+      const lineNum = parseInt(numAttr, 10)
+      if (inRange(lineNum)) {
+        g.setAttribute('data-review-comment', '')
+        c.setAttribute('data-review-comment', '')
+      }
+    }
+  }
+}
+
 // --- Comment form ---
 
 function CommentForm({
@@ -420,6 +481,43 @@ function FileCard({
   }, [])
 
   const showDiff = nearViewport && !collapsed
+
+  // Tag review-comment lines in the diff's shadow DOM so CSS can style them.
+  // The library virtualizes and re-renders line elements as you scroll, so we
+  // observe the <pre> subtree and re-apply tags on every mutation.
+  useEffect(() => {
+    if (!showDiff) return
+    const cardEl = cardRef.current
+    if (!cardEl) return
+    const ranges = lineAnnotations.flatMap((a) =>
+      a.metadata.type === 'review'
+        ? [{ start: a.metadata.startLine, end: a.metadata.endLine }]
+        : [],
+    )
+
+    let raf = 0
+    let observer: MutationObserver | null = null
+    let attempts = 0
+
+    const apply = () => applyReviewHighlights(cardEl, ranges)
+
+    const attach = () => {
+      const sr = (cardEl.querySelector('diffs-container') as HTMLElement | null)?.shadowRoot
+      const pre = sr?.querySelector('pre')
+      if (!pre) {
+        if (attempts++ < 60) raf = requestAnimationFrame(attach)
+        return
+      }
+      apply()
+      observer = new MutationObserver(apply)
+      observer.observe(pre, { childList: true, subtree: true })
+    }
+    raf = requestAnimationFrame(attach)
+    return () => {
+      cancelAnimationFrame(raf)
+      observer?.disconnect()
+    }
+  }, [lineAnnotations, showDiff, diffStyle, fileDiff])
 
   // Estimate height for placeholder to prevent layout shift
   const lineCount =
