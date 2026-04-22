@@ -32,4 +32,12 @@ jobs:
       - name: Build
         run: npm run build
       - name: Check for dist/ drift
-        run: git diff --exit-code dist/
+        run: |
+          if ! git diff --quiet dist/; then
+            echo "::error::dist/ is out of date with source."
+            echo ""
+            echo "dist/ is checked in so the app works out of the box without a"
+            echo "build step (e.g. to run on illumos without a build toolchain)."
+            echo "Run 'npm run build' locally and commit the updated dist/."
+            exit 1
+          fi
