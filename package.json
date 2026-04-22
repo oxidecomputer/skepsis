@@ -10,7 +10,8 @@
     "fmt:check": "oxfmt --check .",
     "lint": "oxlint",
     "tsc": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "ci": "npm run build && npm run tsc && npm run lint && npm run fmt:check && npm test"
   },
   "dependencies": {
     "@commander-js/extra-typings": "^14.0.0",
