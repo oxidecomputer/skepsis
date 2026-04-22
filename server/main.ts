@@ -86,7 +86,7 @@ export async function startServer(opts: {
   return new Promise((resolve) => {
     serve({ fetch: app.fetch, port }, (info) => {
       const assignedPort = typeof info === 'string' ? port : info.port
-      console.log(
+      console.info(
         `skepsis on http://localhost:${assignedPort} (${diffSource.vcs}: ${diffSource.args.join(' ')}${
           diffSource.files.length > 0 ? ` -- ${diffSource.files.join(' ')}` : ''
         })`,

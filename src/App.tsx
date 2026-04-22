@@ -313,10 +313,16 @@ function CommentForm({
       />
       <div className="comment-form-actions">
         {error && <div className="comment-form-error">{error}</div>}
-        <button className="comment-cancel" onClick={onCancel} disabled={submitting}>
+        <button
+          type="button"
+          className="comment-cancel"
+          onClick={onCancel}
+          disabled={submitting}
+        >
           Cancel
         </button>
         <button
+          type="button"
           className="comment-submit"
           disabled={!text.trim() || submitting}
           onClick={submit}
@@ -453,6 +459,7 @@ function FileCard({
         return (
           <div className="review-annotation">
             <button
+              type="button"
               className="resolve-button"
               onClick={() => onResolveComment(meta.startLine)}
             >
@@ -568,6 +575,7 @@ function FileCard({
           {deletions > 0 && <span className="stat-del">-{deletions}</span>}
         </span>
         <button
+          type="button"
           className={
             'viewed-button' + (isStale ? ' stale' : '') + (isViewed ? ' checked' : '')
           }
@@ -827,7 +835,7 @@ function DiffView() {
 
   // Derive optimistic viewed state from pending mutation
   const viewed = useMemo(() => {
-    const base = { ...(data?.viewed ?? {}) }
+    const base = { ...data?.viewed }
     if (markMutation.isPending && markMutation.variables) {
       const { file, hash, mark } = markMutation.variables
       if (mark) base[file] = hash
@@ -1028,7 +1036,7 @@ function DiffView() {
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [showToast, data?.commentsEnabled])
 
   // Track which file the user is looking at via IntersectionObserver.
   // Fires only on visibility transitions — no per-frame work.

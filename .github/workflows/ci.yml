@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npm run tsc
+      - name: Lint
+        run: npm run lint
+      - name: Check formatting
+        run: npm run fmt:check
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Make sure dist/ is up to date
+        run: |
+          if ! git diff --quiet dist/; then
+            echo "::error::dist/ is out of date with source."
+            echo ""
+            echo "dist/ is checked in so the app works out of the box without a"
+            echo "build step (e.g. to run on illumos without a build toolchain)."
+            echo "Run 'npm run build' locally and commit the updated dist/."
+            exit 1
+          fi
