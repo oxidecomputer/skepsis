@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npm run tsc
+      - name: Lint
+        run: npm run lint
+      - name: Check formatting
+        run: npm run fmt:check
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Check for dist/ drift
+        run: git diff --exit-code dist/
