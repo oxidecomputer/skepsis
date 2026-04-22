@@ -121,7 +121,7 @@ body {
 }
 
 .viewed-button.checked {
-  color: #3fb950;
+  color: #58a6ff;
 }
 
 .viewed-button.stale {
@@ -142,8 +142,8 @@ body {
 }
 
 .viewed-checkbox:checked {
-  background: #238636;
-  border-color: #238636;
+  background: #1f6feb;
+  border-color: #1f6feb;
 }
 
 .viewed-checkbox:checked::after {
@@ -265,12 +265,9 @@ body {
   margin-right: auto;
 }
 
-.comment-cancel {
+.btn {
   padding: 6px 16px;
-  background: #262c34;
-  border: 1px solid #484f58;
   border-radius: 6px;
-  color: #e6edf3;
   font-family:
     system-ui,
     -apple-system,
@@ -280,62 +277,39 @@ body {
   cursor: pointer;
 }
 
-.comment-cancel:hover {
-  border-color: #6e7681;
-  background: #2d333b;
-}
-
-.comment-submit {
-  padding: 4px 12px;
-  background: #238636;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: #fff;
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.comment-submit:hover {
-  background: #2ea043;
-}
-
-.comment-submit:disabled {
+.btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* Resolve button (existing REVIEW comment annotation) */
+.btn-secondary {
+  background: #262c34;
+  border: 1px solid #484f58;
+  color: #e6edf3;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: #6e7681;
+  background: #2d333b;
+}
+
+.btn-primary {
+  background: #238636;
+  border: 1px solid transparent;
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #2ea043;
+}
+
+/* Review comment annotation row */
 .review-annotation {
   display: flex;
   justify-content: flex-end;
   padding: 4px 12px;
   background: #1c2128;
   border-top: 1px solid #30363d;
-}
-
-.resolve-button {
-  padding: 6px 16px;
-  background: #262c34;
-  border: 1px solid #484f58;
-  border-radius: 6px;
-  color: #e6edf3;
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.resolve-button:hover {
-  border-color: #6e7681;
-  background: #2d333b;
 }
 
 /* Focused file indicator */

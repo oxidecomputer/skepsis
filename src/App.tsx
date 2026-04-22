@@ -275,6 +275,26 @@ function applyReviewHighlights(
   }
 }
 
+type ButtonProps = {
+  variant?: 'primary' | 'secondary'
+  onClick: () => void
+  disabled?: boolean
+  children: React.ReactNode
+}
+
+function Button({ variant = 'secondary', onClick, disabled, children }: ButtonProps) {
+  return (
+    <button
+      type="button"
+      className={`btn btn-${variant}`}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {children}
+    </button>
+  )
+}
+
 // --- Comment form ---
 
 function CommentForm({
@@ -321,22 +341,12 @@ function CommentForm({
       />
       <div className="comment-form-actions">
         {error && <div className="comment-form-error">{error}</div>}
-        <button
-          type="button"
-          className="comment-cancel"
-          onClick={onCancel}
-          disabled={submitting}
-        >
+        <Button onClick={onCancel} disabled={submitting}>
           Cancel
-        </button>
-        <button
-          type="button"
-          className="comment-submit"
-          disabled={!text.trim() || submitting}
-          onClick={submit}
-        >
+        </Button>
+        <Button variant="primary" disabled={!text.trim() || submitting} onClick={submit}>
           Comment
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -466,13 +476,9 @@ function FileCard({
       if (meta.type === 'review') {
         return (
           <div className="review-annotation">
-            <button
-              type="button"
-              className="resolve-button"
-              onClick={() => onResolveComment(meta.startLine)}
-            >
+            <Button onClick={() => onResolveComment(meta.startLine)}>
               Resolve comment
-            </button>
+            </Button>
           </div>
         )
       }
