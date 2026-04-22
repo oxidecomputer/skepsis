@@ -31,7 +31,7 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
-      - name: Check for dist/ drift
+      - name: Make sure dist/ is up to date
         run: |
           if ! git diff --quiet dist/; then
             echo "::error::dist/ is out of date with source."
