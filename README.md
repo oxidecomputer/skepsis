@@ -1,6 +1,8 @@
 # skepsis
 
-A fully local browser-based code review UI.
+> [σκέψις](https://www.perseus.tufts.edu/hopper/text?doc=Perseus:text:1999.04.0057:entry=ske/yis): viewing, perception by the senses. Examination, speculation, consideration.
+
+A fully local browser-based code review UI. Review your (or your agent's) diff _before_ inflicting it on the world.
 
 - GitHub-style split or unified diff view with syntax highlighting
 - Mark files as viewed
