@@ -30,7 +30,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "oxfmt": "^0.43.0",
     "tsx": "^4.21.0",
-    "vite": "^8.0.3",
+    "vite": "^8.0.9",
     "vitest": "^4.1.5"
   },
   "peerDependencies": {
