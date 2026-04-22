@@ -11,9 +11,11 @@ const program = new Command()
   .option('-t, --to <rev>', 'Show changes to this revision')
   .option('--git', 'force git mode (skip jj detection)')
   .option('--dev', 'run with Vite dev server for development')
+  .argument('[files...]', 'Limit diff to these paths (passed through to jj/git)')
   .parse()
 
 const opts = program.opts()
+const files = program.processedArgs[0] ?? []
 
 function detectVcs(): 'jj' | 'git' {
   try {
@@ -46,7 +48,7 @@ function buildDiffSource(): DiffArgs {
       // Comments enabled if the revset's "to" side is @
       commentsEnabled = rev === '@' || rev.endsWith('..@')
     }
-    return { vcs: 'jj', args, commentsEnabled }
+    return { vcs: 'jj', args, commentsEnabled, files }
   } else {
     let args: string[]
     let commentsEnabled: boolean
@@ -66,7 +68,7 @@ function buildDiffSource(): DiffArgs {
       commentsEnabled = !rev.includes('..')
       args = [rev]
     }
-    return { vcs: 'git', args, commentsEnabled }
+    return { vcs: 'git', args, commentsEnabled, files }
   }
 }
 

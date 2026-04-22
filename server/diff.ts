@@ -23,10 +23,11 @@ function run(
 }
 
 function diffCommand(src: DiffArgs): { cmd: string; args: string[] } {
+  const fileArgs = src.files.length > 0 ? ['--', ...src.files] : []
   if (src.vcs === 'jj') {
-    return { cmd: 'jj', args: ['diff', ...src.args, '--git'] }
+    return { cmd: 'jj', args: ['diff', ...src.args, '--git', ...fileArgs] }
   } else {
-    return { cmd: 'git', args: ['diff', ...src.args] }
+    return { cmd: 'git', args: ['diff', ...src.args, ...fileArgs] }
   }
 }
 
@@ -44,8 +45,11 @@ export async function getDiff(
 /** Validate diff args at startup. */
 export async function validateDiffArgs(src: DiffArgs): Promise<void> {
   const { cmd } = diffCommand(src)
+  const fileArgs = src.files.length > 0 ? ['--', ...src.files] : []
   const statArgs =
-    src.vcs === 'jj' ? ['diff', ...src.args, '--stat'] : ['diff', '--stat', ...src.args]
+    src.vcs === 'jj'
+      ? ['diff', ...src.args, '--stat', ...fileArgs]
+      : ['diff', '--stat', ...src.args, ...fileArgs]
   const { stderr, code } = await run(cmd, statArgs)
   if (code !== 0) {
     throw new Error(`${cmd} diff failed: ${stderr}`)

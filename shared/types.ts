@@ -33,6 +33,7 @@ export type CommentDeleteRequest = z.infer<typeof commentDeleteSchema>
 
 export type DiffArgs = ({ vcs: 'jj'; args: string[] } | { vcs: 'git'; args: string[] }) & {
   commentsEnabled: boolean
+  files: string[]
 }
 
 // --- Response types (checked via satisfies on the server) ---

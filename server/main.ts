@@ -29,12 +29,14 @@ export async function startServer(opts: {
   app.get('/api/diff', async (c) => {
     const { patch, fileHashes } = await getDiff(diffSource)
     const viewed = await loadViewed(cwd, fileHashes)
+    const fileSuffix =
+      diffSource.files.length > 0 ? ` -- ${diffSource.files.join(' ')}` : ''
     return c.json({
       patch,
       revset:
         diffSource.vcs === 'jj'
-          ? `jj diff ${diffSource.args.join(' ')}`
-          : `git diff ${diffSource.args.join(' ')}`,
+          ? `jj diff ${diffSource.args.join(' ')}${fileSuffix}`
+          : `git diff ${diffSource.args.join(' ')}${fileSuffix}`,
       vcs: diffSource.vcs,
       commentsEnabled: diffSource.commentsEnabled,
       fileHashes,
@@ -85,7 +87,9 @@ export async function startServer(opts: {
     serve({ fetch: app.fetch, port }, (info) => {
       const assignedPort = typeof info === 'string' ? port : info.port
       console.log(
-        `skepsis on http://localhost:${assignedPort} (${diffSource.vcs}: ${diffSource.args.join(' ')})`,
+        `skepsis on http://localhost:${assignedPort} (${diffSource.vcs}: ${diffSource.args.join(' ')}${
+          diffSource.files.length > 0 ? ` -- ${diffSource.files.join(' ')}` : ''
+        })`,
       )
       resolve(assignedPort)
     })
