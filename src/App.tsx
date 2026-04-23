@@ -26,7 +26,13 @@ import {
 import { parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs'
-import type { DiffResponse, ErrorResponse, ViewedMap, FileHashes } from '../shared/types.ts'
+import type {
+  DiffResponse,
+  ErrorResponse,
+  FileAttrs,
+  FileHashes,
+  ViewedMap,
+} from '../shared/types.ts'
 import { REVIEW_CLOSE_PATTERN, REVIEW_OPEN_PATTERN } from '../shared/reviewComments.ts'
 
 const queryClient = new QueryClient()
@@ -61,7 +67,10 @@ function useIsWide(): boolean {
 }
 
 function useToast(duration = 1500) {
-  const [toast, setToast] = useState<{ content: React.ReactNode; key: number } | null>(null)
+  const [toast, setToast] = useState<{
+    content: React.ReactNode
+    key: number
+  } | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const key = useRef(0)
   const showToast = useCallback(
@@ -624,17 +633,28 @@ function FileCard({
   )
 }
 
+/** Auto-collapse applies to generated, vendored, and binary files.
+ *  Documentation files stay expanded (just badged) since they're usually
+ *  worth reading. */
+function isAutoCollapsed(attrs: FileAttrs | undefined): boolean {
+  if (!attrs) return false
+  return attrs.generated || attrs.vendored || attrs.binary
+}
+
 function ProgressBar({
   fileHashes,
   viewed,
+  attrs,
 }: {
   fileHashes: FileHashes
   viewed: ViewedMap
+  attrs: Record<string, FileAttrs>
 }) {
-  const total = Object.keys(fileHashes).length
-  const viewedCount = Object.entries(fileHashes).filter(
-    ([file, hash]) => viewed[file] === hash,
-  ).length
+  const reviewable = Object.entries(fileHashes).filter(
+    ([file]) => !isAutoCollapsed(attrs[file]),
+  )
+  const total = reviewable.length
+  const viewedCount = reviewable.filter(([file, hash]) => viewed[file] === hash).length
 
   if (total === 0) return null
 
@@ -778,7 +798,10 @@ function DiffView() {
     splitMode === 'responsive' && isWide ? 'split' : 'unified'
   const { toast, showToast } = useToast()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
-  const [composing, setComposing] = useState<{ file: string; line: number } | null>(null)
+  const [composing, setComposing] = useState<{
+    file: string
+    line: number
+  } | null>(null)
   const seededFromInitialLoad = useRef(false)
   const { data, error, isLoading } = useQuery({
     queryKey: ['diff'],
@@ -789,13 +812,14 @@ function DiffView() {
     if (data?.revset) document.title = `skepsis | ${data.revset}`
   }, [data?.revset])
 
-  // Seed collapse state from the first successful fetch: viewed files start collapsed
+  // Seed collapse state from the first successful fetch: viewed files start
+  // collapsed, as do auto-collapsed files (generated / vendored / binary).
   useEffect(() => {
     if (seededFromInitialLoad.current || !data?.fileHashes) return
     seededFromInitialLoad.current = true
     const initial: Record<string, boolean> = {}
     for (const [file, hash] of Object.entries(data.fileHashes)) {
-      if (data.viewed[file] === hash) {
+      if (data.viewed[file] === hash || isAutoCollapsed(data.attrs[file])) {
         initial[file] = true
       }
     }
@@ -1114,7 +1138,7 @@ function DiffView() {
         />
       )}
       <div className="diff-container">
-        <ProgressBar fileHashes={fileHashes} viewed={viewed} />
+        <ProgressBar fileHashes={fileHashes} viewed={viewed} attrs={data.attrs} />
         {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
         {showCommentsInfo && (
           <CommentsModal vcs={data.vcs} onClose={() => setShowCommentsInfo(false)} />
