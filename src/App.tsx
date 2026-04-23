@@ -427,8 +427,30 @@ const MemoizedFileDiff = memo(
 
 // --- FileCard ---
 
+function AttrBadges({ attrs }: { attrs: FileAttrs | undefined }) {
+  if (!attrs) return null
+  const labels: { key: keyof FileAttrs; label: string }[] = [
+    { key: 'generated', label: 'Generated' },
+    { key: 'vendored', label: 'Vendored' },
+    { key: 'documentation', label: 'Documentation' },
+    { key: 'binary', label: 'Binary' },
+  ]
+  const active = labels.filter((l) => attrs[l.key])
+  if (active.length === 0) return null
+  return (
+    <>
+      {active.map((l) => (
+        <span key={l.key} className={`attr-badge attr-badge-${l.key}`}>
+          {l.label}
+        </span>
+      ))}
+    </>
+  )
+}
+
 function FileCard({
   fileDiff,
+  attrs,
   isViewed,
   isStale,
   diffStyle,
@@ -446,6 +468,7 @@ function FileCard({
   submitError,
 }: {
   fileDiff: FileDiffMetadata
+  attrs: FileAttrs | undefined
   isViewed: boolean
   isStale: boolean
   diffStyle: 'split' | 'unified'
@@ -597,6 +620,7 @@ function FileCard({
           {additions > 0 && <span className="stat-add">+{additions}</span>}
           {deletions > 0 && <span className="stat-del">-{deletions}</span>}
         </span>
+        <AttrBadges attrs={attrs} />
         <button
           type="button"
           className={
@@ -1161,6 +1185,7 @@ function DiffView() {
             <FileCard
               key={name ?? i}
               fileDiff={fileDiff}
+              attrs={data.attrs[name]}
               isViewed={isViewed}
               isStale={isStale}
               diffStyle={diffStyle}

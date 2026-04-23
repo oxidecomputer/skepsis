@@ -98,6 +98,19 @@ body {
   color: #f85149;
 }
 
+.attr-badge {
+  padding: 1px 6px;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  background: #161b22;
+  color: #8b949e;
+  font-size: 10px;
+  font-family: -apple-system, system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  align-self: center;
+}
+
 .viewed-button {
   display: flex;
   align-items: center;
