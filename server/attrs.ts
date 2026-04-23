@@ -8,9 +8,11 @@
 
 /**
  * Per-file attributes that affect how skepsis displays a file in the diff.
- * Sourced from `.gitattributes` via `git check-attr`, mirroring GitHub
- * Linguist's behavior for `linguist-generated`, `linguist-vendored`,
- * `linguist-documentation`, and `binary`.
+ * Mirrors GitHub Linguist: `linguist-generated`, `linguist-vendored`,
+ * `linguist-documentation`, and `binary`. Sources (highest priority first):
+ *
+ *   1. `.gitattributes` via `git check-attr` — explicit `set`/`unset`.
+ *   2. Linguist's built-in path rules (`linguist/pathRules.ts`).
  *
  * Generated/vendored/binary files are auto-collapsed by the frontend;
  * documentation files get a badge but stay expanded.
@@ -18,6 +20,13 @@
 
 import { spawn } from 'node:child_process'
 import type { FileAttrs } from '../shared/types.ts'
+import { classifyByPaths } from './linguist/pathRules.ts'
+
+/**
+ * A `Partial<FileAttrs>` tracks which attributes a layer has decided on.
+ * A missing key means "no opinion" — the next layer gets a turn.
+ */
+export type PartialAttrMap = Record<string, Partial<FileAttrs>>
 
 const TRACKED_ATTRS = [
   'linguist-generated',
@@ -28,26 +37,30 @@ const TRACKED_ATTRS = [
 
 type TrackedAttr = (typeof TRACKED_ATTRS)[number]
 
-function emptyAttrs(): FileAttrs {
-  return {
-    generated: false,
-    vendored: false,
-    documentation: false,
-    binary: false,
-  }
-}
-
 /**
- * Fetch `.gitattributes` attributes for the given file paths. Returns a
- * partial map: files with no tracked attributes set are omitted.
- *
- * Resolves to `{}` if `git check-attr` is unavailable (e.g., pure-jj repo
- * with no `.git/`) — skepsis treats that as "no files have attributes."
+ * Resolve the full attribute map for a set of files by combining
+ * `.gitattributes` (highest priority) with Linguist's built-in path rules.
+ * Files without any set attribute are omitted from the result.
  */
-export async function getGitAttrs(
+export async function resolveFileAttrs(
   files: string[],
   cwd: string,
 ): Promise<Record<string, FileAttrs>> {
+  if (files.length === 0) return {}
+  const [gitAttrs, pathAttrs] = [await getGitAttrs(files, cwd), classifyByPaths(files)]
+  return mergeAttrs([gitAttrs, pathAttrs])
+}
+
+/**
+ * Fetch `.gitattributes` attributes for the given file paths. Presence of
+ * a key in the inner `Partial<FileAttrs>` means check-attr returned
+ * `set` or `unset` for that attribute; `unspecified` is represented as a
+ * missing key so lower-priority layers can contribute.
+ *
+ * Resolves to `{}` if `git check-attr` is unavailable (e.g., pure-jj repo
+ * with no `.git/`).
+ */
+export async function getGitAttrs(files: string[], cwd: string): Promise<PartialAttrMap> {
   if (files.length === 0) return {}
 
   let stdout: string
@@ -95,10 +108,10 @@ const ATTR_TO_FIELD: Record<TrackedAttr, keyof FileAttrs> = {
  * Parse `git check-attr --stdin` output. Format per line:
  *   <path>: <attr>: <value>
  * where value is `set`, `unset`, `unspecified`, or a literal string.
- * Only `set` counts as true for our boolean attributes.
+ * `unspecified` is dropped so lower-priority sources can contribute.
  */
-export function parseCheckAttrOutput(stdout: string): Record<string, FileAttrs> {
-  const result: Record<string, FileAttrs> = {}
+export function parseCheckAttrOutput(stdout: string): PartialAttrMap {
+  const result: PartialAttrMap = {}
 
   for (const line of stdout.split('\n')) {
     if (!line) continue
@@ -115,15 +128,47 @@ export function parseCheckAttrOutput(stdout: string): Record<string, FileAttrs> 
     const attr = pathAndAttr.slice(midColon + 2)
 
     if (!isTrackedAttr(attr)) continue
+    if (value !== 'set' && value !== 'unset') continue
 
-    const attrs = (result[path] ??= emptyAttrs())
+    const attrs = (result[path] ??= {})
     attrs[ATTR_TO_FIELD[attr]] = value === 'set'
   }
 
-  // Drop entries where nothing was set — keeps the payload small.
-  for (const [path, attrs] of Object.entries(result)) {
-    if (!attrs.generated && !attrs.vendored && !attrs.documentation && !attrs.binary) {
-      delete result[path]
+  return result
+}
+
+/**
+ * Merge attribute layers in priority order (first wins per attribute).
+ * Materializes to full `FileAttrs` objects and drops entries where
+ * nothing ended up set.
+ */
+export function mergeAttrs(layers: PartialAttrMap[]): Record<string, FileAttrs> {
+  const paths = new Set<string>()
+  for (const layer of layers) {
+    for (const path of Object.keys(layer)) paths.add(path)
+  }
+
+  const result: Record<string, FileAttrs> = {}
+  const fields: (keyof FileAttrs)[] = ['generated', 'vendored', 'documentation', 'binary']
+
+  for (const path of paths) {
+    const out: FileAttrs = {
+      generated: false,
+      vendored: false,
+      documentation: false,
+      binary: false,
+    }
+    for (const field of fields) {
+      for (const layer of layers) {
+        const v = layer[path]?.[field]
+        if (v !== undefined) {
+          out[field] = v
+          break
+        }
+      }
+    }
+    if (out.generated || out.vendored || out.documentation || out.binary) {
+      result[path] = out
     }
   }
 
