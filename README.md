@@ -6,7 +6,7 @@ A fully local browser-based code review UI. Review your (or your agent's) diff _
 
 - GitHub-style split or unified diff view with syntax highlighting
 - Mark files as viewed
-- Inline review comments written directly into source files using comment markers appropriate to the file type
+- Inline review comments are written directly into source files as code comments
 - Works with [jj](https://jj-vcs.dev/) and git (tries jj first, falls back to git)
 - Vim-style navigation shortcuts (press `?` to see the list)
 
