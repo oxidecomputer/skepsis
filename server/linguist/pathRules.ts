@@ -95,6 +95,8 @@ const GENERATED_PATH_PATTERNS: string[] = [
   // maven_wrapper?  (case-insensitive — handled below)
   // htmlcov?
   '(?:^|/)htmlcov/',
+  // generated_sqlx_query?
+  '(?:^|/)\\.sqlx/query-[a-f\\d]{64}\\.json$',
 ]
 
 const GENERATED_PATH_PATTERNS_CI: string[] = [

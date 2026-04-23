@@ -19,8 +19,10 @@
  */
 
 import { spawn } from 'node:child_process'
-import type { FileAttrs } from '../shared/types.ts'
+import type { FileAttrs, FileHashes } from '../shared/types.ts'
 import { classifyByPaths } from './linguist/pathRules.ts'
+import { classifyByContent } from './linguist/contentRules.ts'
+import { readBlobSummaries } from './linguist/contentReader.ts'
 
 /**
  * A `Partial<FileAttrs>` tracks which attributes a layer has decided on.
@@ -38,17 +40,48 @@ const TRACKED_ATTRS = [
 type TrackedAttr = (typeof TRACKED_ATTRS)[number]
 
 /**
- * Resolve the full attribute map for a set of files by combining
- * `.gitattributes` (highest priority) with Linguist's built-in path rules.
+ * Resolve the full attribute map for a diff by combining (highest priority
+ * first):
+ *
+ *   1. `.gitattributes` via `git check-attr`.
+ *   2. Linguist's built-in path rules.
+ *   3. Linguist's built-in content rules (reads blob contents via
+ *      `git cat-file`; only runs where `generated` isn't already decided).
+ *
  * Files without any set attribute are omitted from the result.
  */
 export async function resolveFileAttrs(
-  files: string[],
+  fileHashes: FileHashes,
   cwd: string,
 ): Promise<Record<string, FileAttrs>> {
+  const files = Object.keys(fileHashes)
   if (files.length === 0) return {}
-  const [gitAttrs, pathAttrs] = [await getGitAttrs(files, cwd), classifyByPaths(files)]
-  return mergeAttrs([gitAttrs, pathAttrs])
+
+  const [gitAttrs, pathAttrs] = await Promise.all([
+    getGitAttrs(files, cwd),
+    Promise.resolve(classifyByPaths(files)),
+  ])
+
+  // Only read content for files whose `generated` status isn't already
+  // decided. check-attr `unset` wins — we respect the user's override and
+  // skip content checks.
+  const needsContent: FileHashes = {}
+  for (const [path, hash] of Object.entries(fileHashes)) {
+    const git = gitAttrs[path]?.generated
+    const byPath = pathAttrs[path]?.generated
+    if (git === undefined && byPath !== true) needsContent[path] = hash
+  }
+
+  const contentAttrs: PartialAttrMap = {}
+  if (Object.keys(needsContent).length > 0) {
+    const summaries = await readBlobSummaries(needsContent, cwd)
+    for (const [path, summary] of Object.entries(summaries)) {
+      const attrs = classifyByContent(path, summary)
+      if (Object.keys(attrs).length > 0) contentAttrs[path] = attrs
+    }
+  }
+
+  return mergeAttrs([gitAttrs, pathAttrs, contentAttrs])
 }
 
 /**

@@ -39,7 +39,7 @@ export async function startServer(opts: {
     const { patch, fileHashes } = await getDiff(diffSource)
     const [viewed, attrs] = await Promise.all([
       loadViewed(cwd, fileHashes),
-      resolveFileAttrs(Object.keys(fileHashes), cwd),
+      resolveFileAttrs(fileHashes, cwd),
     ])
     const fileSuffix =
       diffSource.files.length > 0 ? ` -- ${diffSource.files.join(' ')}` : ''
