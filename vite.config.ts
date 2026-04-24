@@ -9,11 +9,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+const rawApiHost = process.env['API_HOST'] || 'localhost'
+// 0.0.0.0 means "bind to all interfaces" and isn't reliably dialable as a
+// connect target on macOS/Windows, so route the proxy at localhost instead.
+const apiHost = rawApiHost === '0.0.0.0' ? 'localhost' : rawApiHost
+const apiPort = process.env['API_PORT'] || 3742
+
 export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': `http://localhost:${process.env['API_PORT'] || 3742}`,
+      '/api': `http://${apiHost}:${apiPort}`,
     },
   },
 })

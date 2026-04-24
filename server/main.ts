@@ -27,9 +27,10 @@ import type { DiffResponse, OkResponse, ErrorResponse } from '../shared/types.ts
 export async function startServer(opts: {
   diffSource: DiffArgs
   port?: number
+  hostname?: string
   cwd: string
 }): Promise<number> {
-  const { diffSource, port = 0, cwd } = opts
+  const { diffSource, port = 0, hostname = 'localhost', cwd } = opts
   await validateDiffArgs(diffSource)
 
   const app = new Hono()
@@ -92,10 +93,10 @@ export async function startServer(opts: {
   })
 
   return new Promise((resolve) => {
-    serve({ fetch: app.fetch, port }, (info) => {
+    serve({ fetch: app.fetch, port, hostname }, (info) => {
       const assignedPort = typeof info === 'string' ? port : info.port
       console.info(
-        `skepsis on http://localhost:${assignedPort} (${diffSource.vcs}: ${diffSource.args.join(' ')}${
+        `skepsis on http://${hostname}:${assignedPort} (${diffSource.vcs}: ${diffSource.args.join(' ')}${
           diffSource.files.length > 0 ? ` -- ${diffSource.files.join(' ')}` : ''
         })`,
       )

@@ -19,11 +19,13 @@ const program = new Command()
   .option('-t, --to <rev>', 'Show changes to this revision')
   .option('--git', 'force git mode (skip jj detection)')
   .option('--dev', 'run with Vite dev server for development')
+  .option('--host <address>', 'address to bind the HTTP server to', 'localhost')
   .argument('[files...]', 'Limit diff to these paths (passed through to jj/git)')
   .parse()
 
 const opts = program.opts()
 const files = program.processedArgs[0] ?? []
+const hostname = opts.host
 
 function detectVcs(): 'jj' | 'git' {
   try {
@@ -94,7 +96,7 @@ function cleanup(code = 0) {
 process.on('SIGINT', () => cleanup())
 process.on('SIGTERM', () => cleanup())
 
-const apiPort = await startServer({ diffSource, cwd })
+const apiPort = await startServer({ diffSource, cwd, hostname })
 
 function urlOpenCommand(url: string): { cmd: string; args: string[] } {
   switch (process.platform) {
@@ -107,14 +109,21 @@ function urlOpenCommand(url: string): { cmd: string; args: string[] } {
   }
 }
 
+// Only auto-open a browser when bound to localhost. With any other host,
+// the user is likely on a remote dev box and the browser lives elsewhere
+// — opening locally would just spawn an unwanted browser.
+const shouldAutoOpen = hostname === 'localhost'
+
 if (opts.dev) {
-  const vite = spawn('npx', ['vite', '--open'], {
+  const viteArgs = ['vite', '--host', hostname]
+  if (shouldAutoOpen) viteArgs.push('--open')
+  const vite = spawn('npx', viteArgs, {
     cwd: projectRoot,
     stdio: 'inherit',
-    env: { ...process.env, API_PORT: String(apiPort) },
+    env: { ...process.env, API_HOST: hostname, API_PORT: String(apiPort) },
   })
   children.push(vite)
-} else {
+} else if (shouldAutoOpen) {
   const url = `http://localhost:${apiPort}`
   const { cmd, args } = urlOpenCommand(url)
   const opener = spawn(cmd, args, { detached: true, stdio: 'ignore' })
