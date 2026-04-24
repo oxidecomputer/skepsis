@@ -55,6 +55,7 @@ sk -r main..my-branch       # review commits on my-branch
 sk -r HEAD~5..HEAD          # review the last 5 commits
 sk -f v1.2.0 -t v1.3.0      # compare two tags
 sk --git                    # force git in a jj-colocated repo
+sk --host 0.0.0.0           # bind to all interfaces
 ```
 
 ## How it works
