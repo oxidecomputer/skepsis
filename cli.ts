@@ -96,6 +96,17 @@ process.on('SIGTERM', () => cleanup())
 
 const apiPort = await startServer({ diffSource, cwd })
 
+function urlOpenCommand(url: string): { cmd: string; args: string[] } {
+  switch (process.platform) {
+    case 'darwin':
+      return { cmd: 'open', args: [url] }
+    case 'win32':
+      return { cmd: 'cmd', args: ['/c', 'start', '', url] }
+    default:
+      return { cmd: 'xdg-open', args: [url] }
+  }
+}
+
 if (opts.dev) {
   const vite = spawn('npx', ['vite', '--open'], {
     cwd: projectRoot,
@@ -104,5 +115,12 @@ if (opts.dev) {
   })
   children.push(vite)
 } else {
-  spawn('open', [`http://localhost:${apiPort}`])
+  const url = `http://localhost:${apiPort}`
+  const { cmd, args } = urlOpenCommand(url)
+  const opener = spawn(cmd, args, { detached: true, stdio: 'ignore' })
+  opener.on('error', (err) => {
+    console.error(`Could not open URL with ${cmd}: ${err.message}`)
+    console.error(`Open ${url} to see the diff`)
+  })
+  opener.unref()
 }
