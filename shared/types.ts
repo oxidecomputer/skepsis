@@ -49,6 +49,18 @@ export type DiffArgs = ({ vcs: 'jj'; args: string[] } | { vcs: 'git'; args: stri
 export type ViewedMap = Record<string, string>
 export type FileHashes = Record<string, string>
 
+/**
+ * Per-file attributes (from `.gitattributes` and Linguist built-in rules).
+ * Generated/vendored/binary cause auto-collapse in the UI; documentation
+ * only produces a badge.
+ */
+export interface FileAttrs {
+  generated: boolean
+  vendored: boolean
+  documentation: boolean
+  binary: boolean
+}
+
 export interface DiffResponse {
   patch: string
   revset: string
@@ -56,6 +68,8 @@ export interface DiffResponse {
   commentsEnabled: boolean
   fileHashes: FileHashes
   viewed: ViewedMap
+  /** Only includes files with at least one attribute set. */
+  attrs: Record<string, FileAttrs>
   error?: string
 }
 

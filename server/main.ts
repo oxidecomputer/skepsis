@@ -14,6 +14,7 @@ import { join, relative } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
 import { getDiff, validateDiffArgs } from './diff.ts'
+import { resolveFileAttrs } from './attrs.ts'
 import { loadViewed, markViewed, unmarkViewed } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
 import {
@@ -37,7 +38,10 @@ export async function startServer(opts: {
 
   app.get('/api/diff', async (c) => {
     const { patch, fileHashes } = await getDiff(diffSource)
-    const viewed = await loadViewed(cwd, fileHashes)
+    const [viewed, attrs] = await Promise.all([
+      loadViewed(cwd, fileHashes),
+      resolveFileAttrs(fileHashes, cwd),
+    ])
     const fileSuffix =
       diffSource.files.length > 0 ? ` -- ${diffSource.files.join(' ')}` : ''
     return c.json({
@@ -50,6 +54,7 @@ export async function startServer(opts: {
       commentsEnabled: diffSource.commentsEnabled,
       fileHashes,
       viewed,
+      attrs,
     } satisfies DiffResponse)
   })
 
