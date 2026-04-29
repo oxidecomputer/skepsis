@@ -21,21 +21,24 @@ git clone https://github.com/oxidecomputer/skepsis.git
 cd skepsis && npm install
 ```
 
-Add an alias so you can run it from any repo:
+Add an alias pointing to your clone so you can run it from any repo:
 
 ```
-alias sk="npx --prefix ~/oxide/skepsis tsx ~/oxide/skepsis/cli.ts"
+alias sk="npx --prefix ~/repos/skepsis tsx ~/repos/skepsis/cli.ts"
 ```
 
 ## Usage
 
-Takes `-r`, `-f`, and `-t` flags. The VCS is auto-detected. In jj mode, the
-flags are passed straight to `jj diff`. In git mode, they have to be translated
-slightly. See the examples below.
+Takes `-r`/`--revision`, `-f`/`--from`, and `-t`/`--to` flags for specifying
+the commit range. The VCS is auto-detected. In jj mode, the flags are passed
+straight to `jj diff`. In git mode, they have to be translated slightly. See the
+examples below.
 
 Each invocation picks a free port, so you can run multiple instances simultaneously.
 
 ### jj examples
+
+`sk` is just an alias (see above). You can name it whatever you want.
 
 ```
 sk                          # review trunk()..@
@@ -55,7 +58,6 @@ sk -r main..my-branch       # review commits on my-branch
 sk -r HEAD~5..HEAD          # review the last 5 commits
 sk -f v1.2.0 -t v1.3.0      # compare two tags
 sk --git                    # force git in a jj-colocated repo
-sk --host 0.0.0.0           # bind to all interfaces
 ```
 
 ## How it works
