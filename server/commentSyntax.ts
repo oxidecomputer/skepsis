@@ -64,6 +64,7 @@ const SYNTAX_GROUPS: Array<[CommentSyntax, LanguageName[]]> = [
       'C#',
       'Scala',
       'Dart',
+      'PHP',
       'Zig',
       'JSON5',
       'JSON with Comments',
@@ -100,6 +101,7 @@ const EXTENSION_OVERRIDES: Partial<Record<string, LanguageName>> = {
   '.rs': 'Rust',
   '.ts': 'TypeScript',
   '.cls': 'TeX',
+  '.php': 'PHP',
 }
 
 const EXTENSION_SYNTAX_OVERRIDES: Partial<Record<string, CommentSyntax>> = {
