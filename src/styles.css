@@ -63,11 +63,12 @@ body,
   --diffs-modified-color-override: #1f6feb;
 }
 
-/* Per-file card border (previously on the now-removed .file-card wrapper). */
+/* Don't draw a card (border/radius/overflow) on the per-file host. The host
+   scrolls, so any top chrome would scroll off and leave the pinned sticky header
+   flush and square against the scroll edge ("cut off") — fighting the library,
+   whose native model has no card. Files are delineated by the header strip
+   (.file-header background + border) and inter-file spacing instead. */
 .codeview-root diffs-container {
-  border: 1px solid #30363d;
-  border-radius: 8px;
-  overflow: clip;
   display: block;
 }
 
@@ -78,8 +79,12 @@ body,
   align-items: center;
   gap: 12px;
   padding: 8px 16px;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
+  /* Lighter than the diff background (~#0d1117) with top+bottom borders so each
+     file's header reads as a distinct bar. Needed because there's no per-file
+     card chrome anymore — the header strip is the only file delimiter. */
+  background: #2d333b;
+  border-top: 1px solid #444c56;
+  border-bottom: 1px solid #444c56;
   font-family:
     system-ui,
     -apple-system,
