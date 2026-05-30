@@ -716,7 +716,7 @@ function DiffView() {
     () => ({
       theme: 'github-dark-default',
       diffStyle,
-      diffIndicators: 'classic',
+      diffIndicators: 'none',
       hunkSeparators: 'line-info-basic',
       overflow: 'wrap',
       // NOTE: do not set disableFileHeader. The custom header (renderCustomHeader)
