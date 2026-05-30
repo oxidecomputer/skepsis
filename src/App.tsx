@@ -388,12 +388,10 @@ function Modal({ onClose, children }: { onClose: () => void; children: React.Rea
 }
 
 const SHORTCUTS: [string, string][] = [
-  ['j / k', 'Next / previous line'],
   ['n / p', 'Next / previous file'],
   ['v', 'Toggle viewed'],
   ['e / E', 'Toggle collapse file / all files'],
   ['s', 'Toggle split mode (responsive / unified)'],
-  ['c', 'Comment on line'],
   ['Esc', 'Close / cancel'],
   ['?', 'Toggle this help'],
 ]
@@ -582,6 +580,12 @@ function DiffView() {
   const [showHelp, setShowHelp] = useState(false)
   const [showCommentsInfo, setShowCommentsInfo] = useState(false)
   const codeViewRef = useRef<CodeViewHandle<AnnotationMeta>>(null)
+  // Latest scroll offset, tracked for file navigation (n/p). Kept in a ref so
+  // scrolling doesn't trigger re-renders; the key handler reads it on demand.
+  const scrollTopRef = useRef(0)
+  const onScroll = useCallback((scrollTop: number) => {
+    scrollTopRef.current = scrollTop
+  }, [])
 
   // Build the CodeView item list. CodeView only re-renders an item when its
   // `version` changes, so we bump version whenever any rendered input for a
@@ -738,17 +742,74 @@ function DiffView() {
     [diffStyle, commentsEnabled],
   )
 
-  // Keyboard shortcuts. NOTE: per-line/file cursor navigation (j/k/n/p/c and the
-  // focused-file v/e shortcuts) is temporarily disabled during the CodeView
-  // migration; it will be rebuilt on CodeView's selection/scroll APIs. Global
-  // shortcuts that don't need a focused file/line still work.
+  // Keyboard shortcuts. File navigation (n/p) and the focused-file actions
+  // (e/v) operate on the "top file": the item whose top edge is at or above
+  // the current scroll offset. Per-line cursor navigation (j/k/c) is not yet
+  // rebuilt on CodeView's APIs.
   useEffect(() => {
+    // Index of the file currently pinned to the top of the viewport.
+    function topFileIndex(): number {
+      const inst = codeViewRef.current?.getInstance()
+      if (!inst) return 0
+      const st = scrollTopRef.current
+      let idx = 0
+      for (let i = 0; i < items.length; i++) {
+        const top = inst.getTopForItem(items[i]!.id)
+        if (top == null) continue
+        // 4px slop so a header sitting flush at the top still counts as the top file.
+        if (top <= st + 4) idx = i
+        else break
+      }
+      return idx
+    }
+
     function handler(e: KeyboardEvent) {
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement)
         return
       if (e.ctrlKey || e.metaKey || e.altKey) return
 
       switch (e.key) {
+        case 'n':
+        case 'p': {
+          if (showHelp || composing || items.length === 0) break
+          e.preventDefault()
+          const inst = codeViewRef.current?.getInstance()
+          if (!inst) break
+          const cur = topFileIndex()
+          let target: number
+          if (e.key === 'n') {
+            target = Math.min(cur + 1, items.length - 1)
+          } else {
+            const curTop = inst.getTopForItem(items[cur]!.id) ?? 0
+            // If scrolled into the body of the current file, snap to its top
+            // first; otherwise step to the previous file.
+            target = scrollTopRef.current > curTop + 4 ? cur : Math.max(cur - 1, 0)
+          }
+          codeViewRef.current?.scrollTo({
+            type: 'item',
+            id: items[target]!.id,
+            align: 'start',
+          })
+          break
+        }
+        case 'e': {
+          if (showHelp || composing || items.length === 0) break
+          e.preventDefault()
+          const name = items[topFileIndex()]!.id
+          setCollapsed((prev) => ({ ...prev, [name]: !(prev[name] ?? false) }))
+          break
+        }
+        case 'v': {
+          if (showHelp || composing || items.length === 0) break
+          e.preventDefault()
+          const name = items[topFileIndex()]!.id
+          const hash = data?.fileHashes[name]
+          if (!hash) break
+          const mark = viewed[name] !== hash
+          setCollapsed((prev) => ({ ...prev, [name]: mark }))
+          markMutation.mutate({ file: name, hash, mark })
+          break
+        }
         case '?':
           e.preventDefault()
           setShowHelp((v) => !v)
@@ -789,7 +850,7 @@ function DiffView() {
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [showHelp, composing, files, collapsed, showToast])
+  }, [showHelp, composing, files, collapsed, showToast, items, data, viewed, markMutation])
 
   if (isLoading || !data) return <div className="empty-diff">Loading...</div>
   if (error) return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
@@ -827,6 +888,7 @@ function DiffView() {
           className="codeview-root"
           items={items}
           options={options}
+          onScroll={onScroll}
           renderCustomHeader={renderCustomHeader}
           renderAnnotation={renderAnnotation}
         />
