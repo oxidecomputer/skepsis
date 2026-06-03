@@ -25,7 +25,7 @@ import {
 } from 'react'
 import { parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
-import type { DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs'
+import type { DiffLineAnnotation, FileDiffMetadata, SelectedLineRange } from '@pierre/diffs'
 import type { DiffResponse, ErrorResponse, ViewedMap, FileHashes } from '../shared/types.ts'
 import { REVIEW_CLOSE_PATTERN, REVIEW_OPEN_PATTERN } from '../shared/reviewComments.ts'
 
@@ -123,6 +123,35 @@ function getFileStats(fileDiff: FileDiffMetadata) {
   return { additions, deletions }
 }
 
+// --- Line anchors (file + side + line number, GitHub-style deeplinks) ---
+
+/** A selected line: a file, a side, and a line number on that side. */
+type SelectedLine = { file: string; line: number; side: 'additions' | 'deletions' }
+
+/** Serialize a selection to a URL hash fragment, e.g. `src/App.tsxR76`.
+ *  `R` = additions (right) side, `L` = deletions (left) side — matching GitHub.
+ *  Slashes are kept literal for readability (they're valid in a fragment);
+ *  everything else is percent-encoded so spaces, `#`, `%`, etc. stay safe. */
+function buildAnchor(sel: SelectedLine): string {
+  const path = encodeURIComponent(sel.file).replace(/%2F/g, '/')
+  return `${path}${sel.side === 'additions' ? 'R' : 'L'}${sel.line}`
+}
+
+/** Parse a URL hash fragment back into a selection, or null if it isn't one. */
+function parseAnchor(hash: string): SelectedLine | null {
+  const raw = hash.replace(/^#/, '')
+  if (!raw) return null
+  // Greedy `.+` so the final R/L+digits is taken as the marker even when the
+  // (encoded) file path itself contains an R or L.
+  const m = /^(.+)([RL])(\d+)$/.exec(raw)
+  if (!m) return null
+  return {
+    file: decodeURIComponent(m[1]!),
+    side: m[2] === 'R' ? 'additions' : 'deletions',
+    line: parseInt(m[3]!, 10),
+  }
+}
+
 // --- Keyboard navigation helpers ---
 
 /** Query shadow DOM for navigable diff lines in a file card */
@@ -196,21 +225,42 @@ function clearCursorHighlight() {
   for (const container of document.querySelectorAll('.file-card diffs-container')) {
     const sr = (container as HTMLElement).shadowRoot
     if (!sr) continue
-    for (const el of sr.querySelectorAll('[data-selected-line]')) {
-      el.removeAttribute('data-selected-line')
+    for (const el of sr.querySelectorAll('[data-cursor-line]')) {
+      el.removeAttribute('data-cursor-line')
     }
   }
 }
 
-/** Inject cursor-line CSS into a shadow root (idempotent) */
+/** Inject cursor-line CSS into a shadow root (idempotent).
+ *  The keyboard cursor uses its own attribute (not the library's
+ *  `data-selected-line`, which is reserved for the native `selectedLines`
+ *  anchor selection) so the two highlights never clobber each other. */
 function ensureCursorStyles(sr: ShadowRoot) {
   if (sr.querySelector('style[data-cursor-css]')) return
   const style = document.createElement('style')
   style.setAttribute('data-cursor-css', '')
-  // The library only styles change lines with data-selected-line;
-  // this covers context lines too.
-  style.textContent =
-    '[data-selected-line][data-line] { background-color: var(--diffs-bg-selection); }'
+  // Explicit neutral (not var(--diffs-bg-selection), which derives from
+  // --diffs-selection-base) so the cursor stays distinct from the amber anchor.
+  style.textContent = '[data-cursor-line] { background-color: rgba(110, 118, 129, 0.18); }'
+  sr.appendChild(style)
+}
+
+/** Re-theme the native `selectedLines` anchor highlight amber (GitHub-style),
+ *  injected into a shadow root (idempotent). The library tags the deeplinked
+ *  line with `data-selected-line` and keeps it painted across virtualization;
+ *  we only restyle it (its `*-override` CSS vars are registered non-inheriting,
+ *  so they can't reach the shadow DOM from the host — a scoped style can). */
+function ensureSelectionStyles(sr: ShadowRoot) {
+  if (sr.querySelector('style[data-anchor-css]')) return
+  const style = document.createElement('style')
+  style.setAttribute('data-anchor-css', '')
+  style.textContent = `
+    [data-selected-line][data-line] { background-color: rgba(187, 128, 9, 0.16) !important; }
+    [data-selected-line][data-column-number] {
+      background-color: rgba(187, 128, 9, 0.42) !important;
+      color: #e3b341 !important;
+    }
+  `
   sr.appendChild(style)
 }
 
@@ -234,6 +284,33 @@ function ensureReviewStyles(sr: ShadowRoot) {
   sr.appendChild(style)
 }
 
+type LineCellInfo = { lineNumber: number; lineType: string; isDeletionsCol: boolean }
+
+/** Walk every gutter/content cell pair in a rendered diff's <pre>. */
+function forEachLineCell(
+  pre: Element,
+  cb: (gutter: HTMLElement, content: HTMLElement, info: LineCellInfo) => void,
+): void {
+  for (const col of Array.from(pre.children)) {
+    if (!(col instanceof HTMLElement) || !col.hasAttribute('data-code')) continue
+    const isDeletionsCol = col.hasAttribute('data-deletions')
+    const gutter = col.querySelector('[data-gutter]')
+    const content = col.querySelector('[data-content]')
+    if (!gutter || !content) continue
+    for (let i = 0; i < gutter.children.length && i < content.children.length; i++) {
+      const g = gutter.children[i] as HTMLElement
+      const c = content.children[i] as HTMLElement
+      const numAttr = g.getAttribute('data-column-number')
+      if (!numAttr) continue
+      cb(g, c, {
+        lineNumber: parseInt(numAttr, 10),
+        lineType: g.getAttribute('data-line-type') || '',
+        isDeletionsCol,
+      })
+    }
+  }
+}
+
 /** Apply data-review-comment attribute to line elements within review block ranges. */
 function applyReviewHighlights(
   cardEl: HTMLElement,
@@ -254,25 +331,40 @@ function applyReviewHighlights(
 
   const inRange = (n: number) => ranges.some((r) => n >= r.start && n <= r.end)
 
-  for (const col of Array.from(pre.children)) {
-    if (!(col instanceof HTMLElement) || !col.hasAttribute('data-code')) continue
-    if (col.hasAttribute('data-deletions')) continue
-    const gutter = col.querySelector('[data-gutter]')
-    const content = col.querySelector('[data-content]')
-    if (!gutter || !content) continue
-    for (let i = 0; i < gutter.children.length && i < content.children.length; i++) {
-      const g = gutter.children[i] as HTMLElement
-      const c = content.children[i] as HTMLElement
-      if (g.getAttribute('data-line-type') !== 'change-addition') continue
-      const numAttr = g.getAttribute('data-column-number')
-      if (!numAttr) continue
-      const lineNum = parseInt(numAttr, 10)
-      if (inRange(lineNum)) {
-        g.setAttribute('data-review-comment', '')
-        c.setAttribute('data-review-comment', '')
-      }
+  forEachLineCell(pre, (g, c, info) => {
+    if (info.isDeletionsCol || info.lineType !== 'change-addition') return
+    if (inRange(info.lineNumber)) {
+      g.setAttribute('data-review-comment', '')
+      c.setAttribute('data-review-comment', '')
     }
+  })
+}
+
+/** Does this cell correspond to the selected line on the selected side?
+ *  Additions side matches the new-file column (skipping deletion rows);
+ *  deletions side matches deletion rows or the split deletions column. */
+function anchorCellMatches(info: LineCellInfo, sel: SelectedLine): boolean {
+  if (info.lineNumber !== sel.line) return false
+  if (sel.side === 'additions') {
+    return !info.isDeletionsCol && info.lineType !== 'change-deletion'
   }
+  return (
+    info.lineType === 'change-deletion' ||
+    (info.isDeletionsCol && info.lineType !== 'change-addition')
+  )
+}
+
+/** Find the content element for a selected line, for scroll-into-view. */
+function getAnchorLineEl(fileIdx: number, sel: SelectedLine): HTMLElement | null {
+  const card = document.querySelectorAll('.file-card')[fileIdx]
+  const container = card?.querySelector('diffs-container')
+  const pre = (container as HTMLElement | null)?.shadowRoot?.querySelector('pre')
+  if (!pre) return null
+  let found: HTMLElement | null = null
+  forEachLineCell(pre, (_g, c, info) => {
+    if (!found && anchorCellMatches(info, sel)) found = c
+  })
+  return found
 }
 
 type ButtonProps = {
@@ -364,15 +456,19 @@ const MemoizedFileDiff = memo(
     fileDiff,
     diffStyle,
     lineAnnotations,
+    selectedLines,
     renderAnnotation,
     onGutterUtilityClick,
+    onLineNumberClick,
     commentsEnabled,
   }: {
     fileDiff: FileDiffMetadata
     diffStyle: 'split' | 'unified'
     lineAnnotations: DiffLineAnnotation<AnnotationMeta>[]
+    selectedLines: SelectedLineRange | null
     renderAnnotation: (a: DiffLineAnnotation<AnnotationMeta>) => React.ReactNode
     onGutterUtilityClick: (range: { start: number; end: number; side?: string }) => void
+    onLineNumberClick: (line: number, side: 'additions' | 'deletions') => void
     commentsEnabled: boolean
   }) {
     const measureRef = useCallback(
@@ -403,8 +499,12 @@ const MemoizedFileDiff = memo(
             disableFileHeader: true,
             enableGutterUtility: commentsEnabled,
             onGutterUtilityClick,
+            lineHoverHighlight: 'number',
+            onLineNumberClick: (props) =>
+              onLineNumberClick(props.lineNumber, props.annotationSide),
           }}
           lineAnnotations={lineAnnotations}
+          selectedLines={selectedLines}
           renderAnnotation={renderAnnotation}
         />
       </div>
@@ -413,7 +513,8 @@ const MemoizedFileDiff = memo(
   (prev, next) =>
     prev.fileDiff === next.fileDiff &&
     prev.diffStyle === next.diffStyle &&
-    prev.lineAnnotations === next.lineAnnotations,
+    prev.lineAnnotations === next.lineAnnotations &&
+    prev.selectedLines === next.selectedLines,
 )
 
 // --- FileCard ---
@@ -432,6 +533,8 @@ function FileCard({
   onSubmitComment,
   onResolveComment,
   onCancelComment,
+  onSelectLine,
+  anchor,
   commentsEnabled,
   submitting,
   submitError,
@@ -449,6 +552,8 @@ function FileCard({
   onSubmitComment: (line: number, text: string) => void
   onResolveComment: (line: number) => void
   onCancelComment: () => void
+  onSelectLine: (line: number, side: 'additions' | 'deletions') => void
+  anchor: SelectedLine | null
   commentsEnabled: boolean
   submitting: boolean
   submitError: string | null
@@ -469,6 +574,12 @@ function FileCard({
     }
     return annotations
   }, [fileDiff, name, composing, commentsEnabled])
+
+  // The library's native single-line selection highlight (virtualization-safe).
+  const selectedLines = useMemo<SelectedLineRange | null>(
+    () => (anchor ? { start: anchor.line, end: anchor.line, side: anchor.side } : null),
+    [anchor],
+  )
 
   const renderAnnotation = useCallback(
     (annotation: DiffLineAnnotation<AnnotationMeta>) => {
@@ -557,10 +668,11 @@ function FileCard({
     const attach = () => {
       const sr = (cardEl.querySelector('diffs-container') as HTMLElement | null)?.shadowRoot
       const pre = sr?.querySelector('pre')
-      if (!pre) {
+      if (!sr || !pre) {
         if (attempts++ < 60) raf = requestAnimationFrame(attach)
         return
       }
+      ensureSelectionStyles(sr)
       apply()
       observer = new MutationObserver(apply)
       observer.observe(pre, { childList: true, subtree: true })
@@ -613,8 +725,10 @@ function FileCard({
           fileDiff={fileDiff}
           diffStyle={diffStyle}
           lineAnnotations={lineAnnotations}
+          selectedLines={selectedLines}
           renderAnnotation={renderAnnotation}
           onGutterUtilityClick={onGutterUtilityClick}
+          onLineNumberClick={onSelectLine}
           commentsEnabled={commentsEnabled}
         />
       ) : (
@@ -779,6 +893,7 @@ function DiffView() {
   const { toast, showToast } = useToast()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [composing, setComposing] = useState<{ file: string; line: number } | null>(null)
+  const [selected, setSelected] = useState<SelectedLine | null>(null)
   const seededFromInitialLoad = useRef(false)
   const { data, error, isLoading } = useQuery({
     queryKey: ['diff'],
@@ -872,6 +987,7 @@ function DiffView() {
     cursorIdx: 0,
     showHelp: false,
     composing: null as typeof composing,
+    selected: null as SelectedLine | null,
     files: [] as FileDiffMetadata[],
     collapsed: {} as Record<string, boolean>,
     fileHashes: {} as Record<string, string>,
@@ -883,12 +999,79 @@ function DiffView() {
     cursorIdx,
     showHelp,
     composing,
+    selected,
     files,
     collapsed,
     fileHashes: data?.fileHashes ?? {},
     viewed,
     markMutate: markMutation.mutate,
   }
+
+  // --- Line anchor selection (GitHub-style file+line deeplinks) ---
+
+  // Select (or, if already selected, deselect) a line and reflect it in the URL.
+  // Stable across renders (reads navRef) so the FileDiff's click handler never goes stale.
+  const selectLine = useCallback(
+    (file: string, line: number, side: 'additions' | 'deletions') => {
+      const cur = navRef.current.selected
+      if (cur && cur.file === file && cur.line === line && cur.side === side) {
+        setSelected(null)
+        history.replaceState(null, '', location.pathname + location.search)
+        return
+      }
+      const sel: SelectedLine = { file, line, side }
+      setSelected(sel)
+      history.replaceState(null, '', '#' + buildAnchor(sel))
+      const idx = navRef.current.files.findIndex((f) => f.name === file)
+      if (idx >= 0) setFocusedFileIdx(idx)
+    },
+    [],
+  )
+
+  // Expand the target file, bring its card into view (triggering lazy mount),
+  // then poll for the specific line element and center it. Two-phase because the
+  // library has no scroll-to-line API for an off-screen virtualized row; if
+  // pierrecomputer/pierre#452 lands this collapses to a single scrollToLine call.
+  const scrollToAnchor = useCallback((sel: SelectedLine) => {
+    const idx = navRef.current.files.findIndex((f) => f.name === sel.file)
+    if (idx < 0) return
+    setFocusedFileIdx(idx)
+    setCollapsed((prev) => (prev[sel.file] ? { ...prev, [sel.file]: false } : prev))
+    document.querySelectorAll('.file-card')[idx]?.scrollIntoView({ block: 'start' })
+    let attempts = 0
+    const tryScroll = () => {
+      const el = getAnchorLineEl(idx, sel)
+      if (el) {
+        el.scrollIntoView({ block: 'center' })
+        return
+      }
+      if (attempts++ < 120) requestAnimationFrame(tryScroll)
+    }
+    requestAnimationFrame(tryScroll)
+  }, [])
+
+  // Apply the anchor from the initial URL once files are available.
+  const appliedInitialAnchor = useRef(false)
+  useEffect(() => {
+    if (appliedInitialAnchor.current || files.length === 0) return
+    appliedInitialAnchor.current = true
+    const sel = parseAnchor(location.hash)
+    if (sel) {
+      setSelected(sel)
+      scrollToAnchor(sel)
+    }
+  }, [files, scrollToAnchor])
+
+  // React to URL changes (shared link pasted into the bar, back/forward).
+  useEffect(() => {
+    const onHashChange = () => {
+      const sel = parseAnchor(location.hash)
+      setSelected(sel)
+      if (sel) scrollToAnchor(sel)
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [scrollToAnchor])
 
   // Apply cursor highlight after state or DOM changes
   useLayoutEffect(() => {
@@ -914,8 +1097,8 @@ function DiffView() {
     const sr = line.gutterEl.getRootNode() as ShadowRoot
     if (sr instanceof ShadowRoot) ensureCursorStyles(sr)
 
-    line.gutterEl.setAttribute('data-selected-line', 'single')
-    line.contentEl.setAttribute('data-selected-line', 'single')
+    line.gutterEl.setAttribute('data-cursor-line', '')
+    line.contentEl.setAttribute('data-cursor-line', '')
 
     if (target === 'line') {
       line.contentEl.scrollIntoView({ block: 'nearest' })
@@ -1132,6 +1315,7 @@ function DiffView() {
           const isStale = viewedHash != null && hash != null && viewedHash !== hash
           const isCollapsed = collapsed[name] ?? false
           const fileComposing = composing?.file === name ? { line: composing.line } : null
+          const fileAnchor = selected?.file === name ? selected : null
 
           return (
             <FileCard
@@ -1142,6 +1326,7 @@ function DiffView() {
               diffStyle={diffStyle}
               collapsed={isCollapsed}
               composing={fileComposing}
+              anchor={fileAnchor}
               focused={i === focusedFileIdx}
               onToggleCollapse={() =>
                 setCollapsed((prev) => ({ ...prev, [name]: !isCollapsed }))
@@ -1162,6 +1347,7 @@ function DiffView() {
               }
               onResolveComment={(line) => resolveMutation.mutate({ file: name, line })}
               onCancelComment={() => setComposing(null)}
+              onSelectLine={(line, side) => selectLine(name, line, side)}
               commentsEnabled={data.commentsEnabled}
               submitting={
                 commentMutation.isPending && commentMutation.variables?.file === name
