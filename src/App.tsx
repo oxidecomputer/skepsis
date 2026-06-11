@@ -10,6 +10,7 @@ import {
   QueryClient,
   QueryClientProvider,
   useQuery,
+  useQueries,
   useMutation,
   useQueryClient,
 } from '@tanstack/react-query'
@@ -24,7 +25,7 @@ import {
 } from 'react'
 import type { ReactElement } from 'react'
 import { Tooltip } from '@base-ui/react/tooltip'
-import { parsePatchFiles } from '@pierre/diffs'
+import { parsePatchFiles, parseDiffFromFile } from '@pierre/diffs'
 import { CodeView } from '@pierre/diffs/react'
 import type { CodeViewHandle } from '@pierre/diffs/react'
 import type {
@@ -36,7 +37,13 @@ import type {
   LineAnnotation,
   SelectedLineRange,
 } from '@pierre/diffs'
-import type { DiffResponse, ErrorResponse, ViewedMap, FileHashes } from '../shared/types.ts'
+import type {
+  DiffResponse,
+  ErrorResponse,
+  FileContentsResponse,
+  ViewedMap,
+  FileHashes,
+} from '../shared/types.ts'
 import { REVIEW_CLOSE_PATTERN, REVIEW_OPEN_PATTERN } from '../shared/reviewComments.ts'
 
 const queryClient = new QueryClient()
@@ -159,6 +166,36 @@ const REVIEW_CSS = `
   [data-deletions] [data-gutter-utility-slot],
   [data-line-type='change-deletion'] [data-gutter-utility-slot] {
     display: none !important;
+  }
+`
+
+// The diffs library's expand chevron sprite (a down chevron), as a mask so we
+// can paint a placeholder copy in the same color.
+const EXPAND_CHEVRON =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.47 5.47a.75.75 0 0 1 1.06 0L8 8.94l3.47-3.47a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 0 1 0-1.06'/%3E%3C/svg%3E\")"
+
+// Until a file's full contents load it renders as a "partial" diff (host tagged
+// data-skepsis-partial in onPostRender), whose hunk separators have no expand
+// control — and the library lays the "N unmodified lines" label flush in the
+// gutter. When contents arrive the separator becomes expandable: a chevron
+// appears and the label jumps one gutter-width to the right. To avoid that pop,
+// give the partial separators the same gutter grid and a dimmed ghost chevron,
+// so loading only lights the chevron up in place.
+const EXPAND_PLACEHOLDER_CSS = `
+  :host([data-skepsis-partial]) [data-separator]:not(:has([data-expand-button])) [data-separator-wrapper] {
+    display: grid;
+    grid-template-columns: var(--diffs-column-number-width) 1fr;
+    align-items: center;
+  }
+  :host([data-skepsis-partial]) [data-separator]:not(:has([data-expand-button])) [data-separator-wrapper]::before {
+    content: '';
+    width: 16px;
+    height: 16px;
+    justify-self: center;
+    background-color: var(--diffs-fg-number);
+    opacity: 0.4;
+    -webkit-mask: ${EXPAND_CHEVRON} center / 16px no-repeat;
+    mask: ${EXPAND_CHEVRON} center / 16px no-repeat;
   }
 `
 
@@ -348,22 +385,44 @@ function CheckIcon() {
   )
 }
 
+// Outward-pointing chevrons (the diffs library's own expand-all glyph) for the
+// expand-all-lines button.
+function ExpandAllIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M11.47 9.47a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 1 1 1.06-1.06L8 12.94zM7.526 1.418a.75.75 0 0 1 1.004.052l4 4a.75.75 0 1 1-1.06 1.06L8 3.06 4.53 6.53a.75.75 0 1 1-1.06-1.06l4-4z"
+      />
+    </svg>
+  )
+}
+
 function FileHeader({
   fileDiff,
   isViewed,
   isStale,
   collapsed,
   focused,
+  showExpand,
+  expandDisabledReason,
+  expanded,
   onToggleCollapse,
   onToggleViewed,
+  onToggleExpand,
 }: {
   fileDiff: FileDiffMetadata
   isViewed: boolean
   isStale: boolean
   collapsed: boolean
   focused: boolean
+  showExpand: boolean
+  // Non-null when the expand button is shown but can't act; used as its tooltip.
+  expandDisabledReason: string | null
+  expanded: boolean
   onToggleCollapse: () => void
   onToggleViewed: () => void
+  onToggleExpand: () => void
 }) {
   const { additions, deletions } = getFileStats(fileDiff)
   const [copied, setCopied] = useState(false)
@@ -397,6 +456,32 @@ function FileHeader({
           </span>
         </button>
       </Tip>
+      {showExpand && (
+        <Tip
+          text={
+            expandDisabledReason ??
+            (expanded ? 'Collapse expanded lines' : 'Expand all lines')
+          }
+        >
+          <button
+            type="button"
+            className={
+              'expand-all-button' +
+              (expanded ? ' expanded' : '') +
+              (expandDisabledReason ? ' disabled' : '')
+            }
+            aria-label={expanded ? 'Collapse expanded lines' : 'Expand all lines'}
+            aria-disabled={expandDisabledReason !== null}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (expandDisabledReason) return
+              onToggleExpand()
+            }}
+          >
+            <ExpandAllIcon />
+          </button>
+        </Tip>
+      )}
       <span className="file-header-stats">
         {additions > 0 && <span className="stat-add">+{additions}</span>}
         {deletions > 0 && <span className="stat-del">-{deletions}</span>}
@@ -596,6 +681,9 @@ function DiffView() {
     splitMode === 'responsive' && isWide ? 'split' : 'unified'
   const { toast, showToast } = useToast()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  // Files the user expanded via the header's expand-all-lines button: these are
+  // re-parsed with whole-file context so every collapsed region is revealed.
+  const [expandedFiles, setExpandedFiles] = useState<Record<string, boolean>>({})
   const [composing, setComposing] = useState<{
     file: string
     line: number
@@ -661,12 +749,104 @@ function DiffView() {
     onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
   })
 
-  // Memoize patch parsing so it doesn't re-run on viewed state changes
+  // Memoize patch parsing so it doesn't re-run on viewed state changes. These
+  // are "partial" diffs (no full-file context), used for initial paint and as
+  // the fallback when full contents aren't available.
   const patch = data?.patch
-  const files = useMemo(
+  const patchFiles = useMemo(
     () => (patch ? parsePatchFiles(patch).flatMap((p) => p.files) : []),
     [patch],
   )
+
+  // Hunk expansion needs "non-partial" diffs built from full file contents.
+  // The diffs library can't lazily fetch context on expand — it reads revealed
+  // lines straight out of the full content arrays and exposes no expansion hook
+  // (confirmed through 1.3.0-beta) — so the contents must be loaded before its
+  // expand controls can work. To avoid fetching files the user never looks at,
+  // a file is fetched only once it enters the virtualization window (viewport +
+  // buffer). onPostRender marks rendered items "seen"; seeing a new one bumps
+  // state so the queries below re-evaluate `enabled` and fire.
+  const seenFilesRef = useRef(new Set<string>())
+  const [, bumpSeen] = useState(0)
+  const markSeen = useCallback((id: string) => {
+    if (seenFilesRef.current.has(id)) return
+    seenFilesRef.current.add(id)
+    bumpSeen((n) => n + 1)
+  }, [])
+
+  // When contents arrive the file upgrades to an expandable diff. Files with no
+  // hunks (binary, pure renames) have nothing to expand, and collapsed files
+  // can't show expansion, so neither is fetched.
+  const expandable = data?.expandable ?? false
+  const contentQueries = useQueries({
+    queries: patchFiles.map((f) => {
+      const hash = data?.fileHashes[f.name]
+      const params = new URLSearchParams({ path: f.name })
+      if (f.prevName) params.set('oldPath', f.prevName)
+      return {
+        queryKey: ['file-contents', f.name, hash] as const,
+        queryFn: () => apiFetch<FileContentsResponse>(`/api/file-contents?${params}`),
+        enabled:
+          expandable &&
+          f.hunks.length > 0 &&
+          seenFilesRef.current.has(f.name) &&
+          !(collapsed[f.name] ?? false),
+        staleTime: Infinity,
+      }
+    }),
+  })
+
+  // Map of loaded contents by file name. contentQueries is a fresh array each
+  // render, so this recomputes often, but it's just a small map build.
+  const contentsByFile = useMemo(() => {
+    const map = new Map<string, FileContentsResponse>()
+    patchFiles.forEach((f, i) => {
+      const d = contentQueries[i]?.data
+      if (d) map.set(f.name, d)
+    })
+    return map
+  }, [patchFiles, contentQueries])
+
+  // Upgrade files whose contents have loaded to non-partial (expandable) diffs;
+  // others keep their partial patch parse. parseDiffFromFile (jsdiff) is cached
+  // per file+content so it doesn't re-run on unrelated renders.
+  const parsedCacheRef = useRef(
+    new Map<
+      string,
+      { old: string | null; new: string | null; expanded: boolean; diff: FileDiffMetadata }
+    >(),
+  )
+  const files = useMemo(() => {
+    return patchFiles.map((f) => {
+      const c = contentsByFile.get(f.name)
+      if (!c || (c.oldContents == null && c.newContents == null)) return f
+      const isExpanded = expandedFiles[f.name] ?? false
+      const cached = parsedCacheRef.current.get(f.name)
+      if (
+        cached &&
+        cached.old === c.oldContents &&
+        cached.new === c.newContents &&
+        cached.expanded === isExpanded
+      ) {
+        return cached.diff
+      }
+      // context: 3 matches git's default so the visible context doesn't jump
+      // when a file upgrades from its patch parse to the full-content diff.
+      // Expand-all uses whole-file context so the entire file shows as one hunk.
+      const diff = parseDiffFromFile(
+        { name: f.prevName ?? f.name, contents: c.oldContents ?? '' },
+        { name: f.name, contents: c.newContents ?? '' },
+        { context: isExpanded ? Number.MAX_SAFE_INTEGER : 3 },
+      )
+      parsedCacheRef.current.set(f.name, {
+        old: c.oldContents,
+        new: c.newContents,
+        expanded: isExpanded,
+        diff,
+      })
+      return diff
+    })
+  }, [patchFiles, contentsByFile, expandedFiles])
 
   // Navigable lines per file for the j/k cursor: addition-side line numbers
   // (context + additions; deletions are skipped), derived from hunk metadata
@@ -778,8 +958,13 @@ function DiffView() {
         })
       }
       const isCollapsed = collapsed[name] ?? false
+      const isExpanded = expandedFiles[name] ?? false
       const composingLine = composing?.file === name ? composing.line : -1
-      const key = `${fileHashes[name] ?? ''}|${composingLine}|${isCollapsed ? 1 : 0}`
+      // fileDiff.isPartial flips false once full contents load, upgrading the
+      // item to an expandable diff — bump the version so CodeView re-renders it.
+      // isExpanded is in the key too: expand-all swaps fileDiff for a re-parse
+      // at the same content hash, so nothing else here would move the version.
+      const key = `${fileHashes[name] ?? ''}|${composingLine}|${isCollapsed ? 1 : 0}|${fileDiff.isPartial ? 1 : 0}|${isExpanded ? 1 : 0}`
       const prev = versionsRef.current.get(name)
       const version = !prev || prev.key !== key ? (prev?.version ?? 0) + 1 : prev.version
       if (!prev || prev.key !== key) versionsRef.current.set(name, { key, version })
@@ -792,7 +977,7 @@ function DiffView() {
         version,
       }
     })
-  }, [files, data, composing, collapsed, commentsEnabled])
+  }, [files, data, composing, collapsed, expandedFiles, commentsEnabled])
   itemsRef.current = items
 
   // The header highlight falls back to the first file before any focus exists
@@ -855,6 +1040,15 @@ function DiffView() {
       const isViewed = hash != null && viewedHash === hash
       const isStale = viewedHash != null && hash != null && viewedHash !== hash
       const isCollapsed = collapsed[name] ?? false
+      // Show the expand control for any text diff (files with hunks); binary /
+      // pure-rename diffs have no lines to expand. When the diff range can't
+      // serve full contents at all, leave it visible but disabled with a tooltip
+      // explaining why, rather than letting it silently vanish. A collapsed file
+      // isn't disabled: expanding it also opens it (see onToggleExpand).
+      const showExpand = item.fileDiff.hunks.length > 0
+      const expandDisabledReason = expandable
+        ? null
+        : "Line expansion isn't available for this diff range"
       return (
         <FileHeader
           fileDiff={item.fileDiff}
@@ -862,6 +1056,9 @@ function DiffView() {
           isStale={isStale}
           collapsed={isCollapsed}
           focused={name === effectiveFocused}
+          showExpand={showExpand}
+          expandDisabledReason={expandDisabledReason}
+          expanded={expandedFiles[name] ?? false}
           onToggleCollapse={() => {
             anchorIfTopFile(name)
             setCollapsed((prev) => ({ ...prev, [name]: !isCollapsed }))
@@ -873,10 +1070,29 @@ function DiffView() {
             setCollapsed((prev) => ({ ...prev, [name]: mark }))
             markMutation.mutate({ file: name, hash, mark })
           }}
+          onToggleExpand={() => {
+            anchorIfTopFile(name)
+            const willExpand = !(expandedFiles[name] ?? false)
+            setExpandedFiles((prev) => ({ ...prev, [name]: willExpand }))
+            // Expanding a collapsed file also opens it — otherwise the revealed
+            // lines would sit behind a hidden body.
+            if (willExpand && isCollapsed) {
+              setCollapsed((prev) => ({ ...prev, [name]: false }))
+            }
+          }}
         />
       )
     },
-    [data, viewed, collapsed, markMutation, anchorIfTopFile, effectiveFocused],
+    [
+      data,
+      viewed,
+      collapsed,
+      expandable,
+      expandedFiles,
+      markMutation,
+      anchorIfTopFile,
+      effectiveFocused,
+    ],
   )
 
   const renderAnnotation = useCallback(
@@ -965,13 +1181,20 @@ function DiffView() {
       // entirely, so the slot never exists and the portal has nowhere to land.
       stickyHeaders: true,
       enableGutterUtility: commentsEnabled,
-      unsafeCSS: REVIEW_CSS,
+      unsafeCSS: REVIEW_CSS + EXPAND_PLACEHOLDER_CSS,
       onGutterUtilityClick: (range, context) => gutterClickRef.current(range, context.item),
       // Re-tag review-comment lines whenever an item (re)renders. Runs per item
       // and re-derives tags from scratch, so pooled/recycled elements never keep
       // stale highlights from a previously-rendered file.
       onPostRender: (node, instance, phase, context) => {
         if (phase === 'unmount') return
+        // Mark the file seen so its full contents get fetched for expansion.
+        markSeen(context.item.id)
+        // Tag partial (not-yet-loaded) diffs so EXPAND_PLACEHOLDER_CSS can ghost
+        // an expand chevron into their separators and avoid layout pop on load.
+        if (context.item.type === 'diff') {
+          node.toggleAttribute('data-skepsis-partial', context.item.fileDiff.isPartial)
+        }
         tagReviewLines(node, reviewRanges(context.item.annotations))
         // Re-apply the cursor selection: a re-rendered (version-bumped) or
         // pooled element loses its selection styling, and the library's own
@@ -987,7 +1210,7 @@ function DiffView() {
         }
       },
     }),
-    [diffStyle, commentsEnabled],
+    [diffStyle, commentsEnabled, markSeen],
   )
 
   // Keyboard shortcuts. File navigation (n/p) and the focused-file actions

@@ -31,6 +31,12 @@ export const commentDeleteSchema = z.object({
   line: z.number(),
 })
 
+export const fileContentsQuerySchema = z.object({
+  path: z.string(),
+  // Present for renamed files: the path to fetch the old-side content from.
+  oldPath: z.string().optional(),
+})
+
 // --- Request types (inferred from schemas) ---
 
 export type ViewedRequest = z.infer<typeof viewedRequestSchema>
@@ -39,9 +45,22 @@ export type CommentDeleteRequest = z.infer<typeof commentDeleteSchema>
 
 // --- VCS types ---
 
+/**
+ * Concrete revisions at the two ends of the diff, used to fetch full file
+ * contents for hunk expansion. `null` when the diff args can't be resolved to
+ * concrete endpoints (exotic revsets) — expansion is disabled in that case.
+ * The right side is `'workingCopy'` when the diff ends at the working tree
+ * (git only; in jj the working copy is the real revision `@`).
+ */
+export type DiffEndpoints = {
+  left: string
+  right: { rev: string } | 'workingCopy'
+} | null
+
 export type DiffArgs = ({ vcs: 'jj'; args: string[] } | { vcs: 'git'; args: string[] }) & {
   commentsEnabled: boolean
   files: string[]
+  endpoints: DiffEndpoints
 }
 
 // --- Response types (checked via satisfies on the server) ---
@@ -54,9 +73,20 @@ export interface DiffResponse {
   revset: string
   vcs: 'jj' | 'git'
   commentsEnabled: boolean
+  /** Whether diff endpoints resolved, so /api/file-contents can serve full
+   *  file contents for hunk expansion. */
+  expandable: boolean
   fileHashes: FileHashes
   viewed: ViewedMap
   error?: string
+}
+
+/** Full file contents at each diff endpoint. A side is `null` when the file
+ *  does not exist there (added → old null; deleted → new null) or could not be
+ *  read (treated as non-expandable by the client). */
+export interface FileContentsResponse {
+  oldContents: string | null
+  newContents: string | null
 }
 
 export interface ErrorResponse {

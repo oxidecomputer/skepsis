@@ -9,7 +9,7 @@
 import { spawn, execFileSync } from 'child_process'
 import { Command } from '@commander-js/extra-typings'
 import { startServer } from './server/main.ts'
-import type { DiffArgs } from './shared/types.ts'
+import type { DiffArgs, DiffEndpoints } from './shared/types.ts'
 
 const program = new Command()
   .name('skepsis')
@@ -43,42 +43,76 @@ function detectVcs(): 'jj' | 'git' {
 
 const vcs = opts.git ? 'git' : detectVcs()
 
+/** Split an `A..B` range into its two revs. Returns null for anything that
+ *  isn't a simple two-sided range with both sides non-empty. */
+function parseRange(rev: string): { left: string; right: string } | null {
+  const idx = rev.indexOf('..')
+  if (idx < 0 || rev.includes('...')) return null
+  const left = rev.slice(0, idx)
+  const right = rev.slice(idx + 2)
+  if (!left || !right || right.includes('..')) return null
+  return { left, right }
+}
+
 function buildDiffSource(): DiffArgs {
   if (vcs === 'jj') {
     const args: string[] = []
     let commentsEnabled: boolean
+    let endpoints: DiffEndpoints
     if (opts.from || opts.to) {
       if (opts.from) args.push('--from', opts.from)
       if (opts.to) args.push('--to', opts.to)
       // Comments enabled if --to is @ or omitted (jj defaults --to to @)
       commentsEnabled = !opts.to || opts.to === '@'
+      // jj defaults both --from and --to to @
+      endpoints = { left: opts.from ?? '@', right: { rev: opts.to ?? '@' } }
     } else {
       const rev = opts.revisions ?? 'trunk()..@'
       args.push('-r', rev)
       // Comments enabled if the revset's "to" side is @
       commentsEnabled = rev === '@' || rev.endsWith('..@')
+      const range = parseRange(rev)
+      if (range) {
+        endpoints = { left: range.left, right: { rev: range.right } }
+      } else if (!rev.includes('..')) {
+        // Single rev: `jj diff -r R` shows R's own change, i.e. R-..R.
+        endpoints = { left: `${rev}-`, right: { rev } }
+      } else {
+        endpoints = null
+      }
     }
-    return { vcs: 'jj', args, commentsEnabled, files }
+    return { vcs: 'jj', args, commentsEnabled, files, endpoints }
   } else {
     let args: string[]
     let commentsEnabled: boolean
+    let endpoints: DiffEndpoints
     if (opts.from || opts.to) {
       if (opts.to) {
         // Explicit --to: commit-to-commit diff, no working copy
         args = [opts.from ?? 'HEAD', opts.to]
         commentsEnabled = false
+        endpoints = { left: opts.from ?? 'HEAD', right: { rev: opts.to } }
       } else {
         // --from only: git diff <from> includes working tree
         args = [opts.from!]
         commentsEnabled = true
+        endpoints = { left: opts.from!, right: 'workingCopy' }
       }
     } else {
       const rev = opts.revisions ?? 'origin/HEAD..HEAD'
       // No .. means single ref, which diffs against working tree
       commentsEnabled = !rev.includes('..')
       args = [rev]
+      const range = parseRange(rev)
+      if (range) {
+        endpoints = { left: range.left, right: { rev: range.right } }
+      } else if (!rev.includes('..')) {
+        endpoints = { left: rev, right: 'workingCopy' }
+      } else {
+        endpoints = null
+      }
     }
-    return { vcs: 'git', args, commentsEnabled, files }
+    return { vcs: 'git', args, commentsEnabled, files, endpoints }
   }
 }
 

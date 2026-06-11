@@ -14,6 +14,7 @@ import { join, relative } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
 import { getDiff, validateDiffArgs } from './diff.ts'
+import { getFileContents } from './fileContents.ts'
 import { loadViewed, markViewed, unmarkViewed } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
 import {
@@ -21,8 +22,14 @@ import {
   viewedDeleteSchema,
   commentRequestSchema,
   commentDeleteSchema,
+  fileContentsQuerySchema,
 } from '../shared/types.ts'
-import type { DiffResponse, OkResponse, ErrorResponse } from '../shared/types.ts'
+import type {
+  DiffResponse,
+  FileContentsResponse,
+  OkResponse,
+  ErrorResponse,
+} from '../shared/types.ts'
 
 export async function startServer(opts: {
   diffSource: DiffArgs
@@ -48,9 +55,16 @@ export async function startServer(opts: {
           : `git diff ${diffSource.args.join(' ')}${fileSuffix}`,
       vcs: diffSource.vcs,
       commentsEnabled: diffSource.commentsEnabled,
+      expandable: diffSource.endpoints !== null,
       fileHashes,
       viewed,
     } satisfies DiffResponse)
+  })
+
+  app.get('/api/file-contents', zValidator('query', fileContentsQuerySchema), async (c) => {
+    const { path, oldPath } = c.req.valid('query')
+    const contents = await getFileContents(diffSource, cwd, path, oldPath)
+    return c.json(contents satisfies FileContentsResponse)
   })
 
   app.post('/api/viewed', zValidator('json', viewedRequestSchema), async (c) => {

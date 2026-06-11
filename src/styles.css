@@ -291,6 +291,59 @@ body,
   transform: scale(1);
 }
 
+/* Expand-all-lines button, sitting just right of the copy button. Re-parses the
+   file with whole-file context to reveal every collapsed region at once. */
+.expand-all-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  /* Sit snug against the copy button rather than a full header gap away. */
+  margin-left: -6px;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease,
+    transform 0.12s ease;
+}
+
+.expand-all-button:hover {
+  color: var(--fg-bright);
+  background: var(--bg-control-hover);
+}
+
+.expand-all-button:active {
+  transform: scale(0.85);
+}
+
+/* Keep the control lit while the file is expanded so it reads as active. */
+.expand-all-button.expanded {
+  color: var(--fg-bright);
+  background: var(--bg-control);
+}
+
+/* Disabled: dimmed and inert, but still hoverable so its tooltip (the reason it
+   can't expand) shows. aria-disabled rather than the disabled attribute, since
+   disabled buttons don't fire :hover. */
+.expand-all-button.disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.expand-all-button.disabled:hover {
+  color: var(--fg-muted);
+  background: transparent;
+}
+
+.expand-all-button.disabled:active {
+  transform: none;
+}
+
 .file-header-stats {
   display: flex;
   gap: 6px;
