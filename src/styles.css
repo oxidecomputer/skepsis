@@ -36,6 +36,7 @@
   /* Text, hue 250. */
   --fg: oklch(86% 0.014 250);
   --fg-bright: oklch(94% 0.012 250);
+  --fg-dim: oklch(77% 0.016 250); /* between muted and fg: de-emphasized but interactive */
   --fg-muted: oklch(66% 0.018 250);
 
   /* Accents: base / brighter (hover) / lighter (text-on-dark). */
@@ -461,6 +462,42 @@ body,
   background: var(--green);
   border-radius: 2px;
   transition: width 0.2s ease;
+}
+
+/* Clear-viewed-progress button next to the counter. Chrome matches
+   .viewed-button so the two read as the same family of control. */
+.unview-all-button {
+  padding: 3px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-control);
+  color: var(--fg-dim);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.unview-all-button:hover {
+  border-color: var(--border-muted);
+  background: var(--bg-control-hover);
+  color: var(--fg);
+}
+
+/* Nothing viewed: dimmed and inert, but still hoverable so the tooltip shows.
+   aria-disabled rather than the disabled attribute, since disabled buttons
+   don't fire :hover. */
+.unview-all-button.disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.unview-all-button.disabled:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-control);
 }
 
 /* Gutter "+" button for adding comments */

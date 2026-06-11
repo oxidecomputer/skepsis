@@ -15,11 +15,12 @@ import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
 import { getDiff, validateDiffArgs } from './diff.ts'
 import { getFileContents } from './fileContents.ts'
-import { loadViewed, markViewed, unmarkViewed } from './viewed.ts'
+import { loadViewed, markViewed, unmarkViewed, unmarkViewedAll } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
 import {
   viewedRequestSchema,
   viewedDeleteSchema,
+  viewedDeleteAllSchema,
   commentRequestSchema,
   commentDeleteSchema,
   fileContentsQuerySchema,
@@ -76,6 +77,12 @@ export async function startServer(opts: {
   app.delete('/api/viewed', zValidator('json', viewedDeleteSchema), async (c) => {
     const { file, hash } = c.req.valid('json')
     await unmarkViewed(cwd, file, hash)
+    return c.json({ ok: true } satisfies OkResponse)
+  })
+
+  app.delete('/api/viewed-all', zValidator('json', viewedDeleteAllSchema), async (c) => {
+    const { files } = c.req.valid('json')
+    await unmarkViewedAll(cwd, files)
     return c.json({ ok: true } satisfies OkResponse)
   })
 

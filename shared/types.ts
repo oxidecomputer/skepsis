@@ -20,6 +20,10 @@ export const viewedDeleteSchema = z.object({
   hash: z.string(),
 })
 
+export const viewedDeleteAllSchema = z.object({
+  files: z.array(viewedDeleteSchema),
+})
+
 export const commentRequestSchema = z.object({
   file: z.string(),
   afterLine: z.number(),

@@ -512,9 +512,11 @@ function FileHeader({
 function ProgressBar({
   fileHashes,
   viewed,
+  onUnviewAll,
 }: {
   fileHashes: FileHashes
   viewed: ViewedMap
+  onUnviewAll: () => void
 }) {
   const total = Object.keys(fileHashes).length
   const viewedCount = Object.entries(fileHashes).filter(
@@ -528,6 +530,18 @@ function ProgressBar({
       <span>
         {viewedCount}/{total} files viewed
       </span>
+      <Tip text="Mark all files unviewed">
+        <button
+          type="button"
+          className={'unview-all-button' + (viewedCount === 0 ? ' disabled' : '')}
+          aria-disabled={viewedCount === 0}
+          onClick={() => {
+            if (viewedCount > 0) onUnviewAll()
+          }}
+        >
+          Clear
+        </button>
+      </Tip>
       <div className="progress-track">
         <div
           className="progress-fill"
@@ -722,6 +736,12 @@ function DiffView() {
     onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
   })
 
+  const unviewAllMutation = useMutation({
+    mutationFn: (files: { file: string; hash: string }[]) =>
+      apiFetch('/api/viewed-all', { method: 'DELETE', body: { files } }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
+  })
+
   const commentMutation = useMutation({
     mutationFn: ({
       file,
@@ -870,7 +890,7 @@ function DiffView() {
   const cursorRef = useRef(cursor)
   cursorRef.current = cursor
 
-  // Derive optimistic viewed state from pending mutation
+  // Derive optimistic viewed state from pending mutations
   const viewed = useMemo(() => {
     const base = { ...data?.viewed }
     if (markMutation.isPending && markMutation.variables) {
@@ -878,8 +898,17 @@ function DiffView() {
       if (mark) base[file] = hash
       else delete base[file]
     }
+    if (unviewAllMutation.isPending && unviewAllMutation.variables) {
+      for (const { file } of unviewAllMutation.variables) delete base[file]
+    }
     return base
-  }, [data, markMutation.isPending, markMutation.variables])
+  }, [
+    data,
+    markMutation.isPending,
+    markMutation.variables,
+    unviewAllMutation.isPending,
+    unviewAllMutation.variables,
+  ])
 
   const commentsEnabled = data?.commentsEnabled ?? false
 
@@ -1459,7 +1488,21 @@ function DiffView() {
         />
       )}
       <div className="diff-container">
-        <ProgressBar fileHashes={fileHashes} viewed={viewed} />
+        <ProgressBar
+          fileHashes={fileHashes}
+          viewed={viewed}
+          onUnviewAll={() => {
+            const entries = Object.entries(viewed).map(([file, hash]) => ({ file, hash }))
+            if (entries.length === 0) return
+            // Mirror single-file unview, which also opens the file.
+            setCollapsed((prev) => {
+              const next = { ...prev }
+              for (const { file } of entries) next[file] = false
+              return next
+            })
+            unviewAllMutation.mutate(entries)
+          }}
+        />
         {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
         {showCommentsInfo && (
           <CommentsModal vcs={data.vcs} onClose={() => setShowCommentsInfo(false)} />
