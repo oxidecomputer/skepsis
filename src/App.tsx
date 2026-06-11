@@ -22,6 +22,8 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
+import type { ReactElement } from 'react'
+import { Tooltip } from '@base-ui/react/tooltip'
 import { parsePatchFiles } from '@pierre/diffs'
 import { CodeView } from '@pierre/diffs/react'
 import type { CodeViewHandle } from '@pierre/diffs/react'
@@ -291,7 +293,60 @@ function CommentForm({
   )
 }
 
+/* Tooltip for the header buttons, portaled to document.body so it paints over
+   the diff bodies — a CSS ::after tooltip on the buttons is trapped one
+   stacking context below them and interleaves with the code text. `children`
+   is the trigger button itself (Base UI merges its hover/focus handlers onto
+   it). Replaces the native `title`, whose ~1s delay felt sluggish. */
+function Tip({
+  text,
+  closeOnClick,
+  children,
+}: {
+  text: string
+  closeOnClick?: boolean
+  children: ReactElement
+}) {
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger delay={150} closeOnClick={closeOnClick} render={children} />
+      <Tooltip.Portal>
+        <Tooltip.Positioner className="tooltip-positioner" side="bottom" sideOffset={6}>
+          <Tooltip.Popup className="tooltip-popup">{text}</Tooltip.Popup>
+        </Tooltip.Positioner>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  )
+}
+
 // --- File header (rendered into each CodeView item's custom-header slot) ---
+
+// GitHub-style copy/check glyphs for the filename copy button (16x16 octicons).
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"
+      />
+      <path
+        fill="currentColor"
+        d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"
+      />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"
+      />
+    </svg>
+  )
+}
 
 function FileHeader({
   fileDiff,
@@ -311,12 +366,37 @@ function FileHeader({
   onToggleViewed: () => void
 }) {
   const { additions, deletions } = getFileStats(fileDiff)
+  const [copied, setCopied] = useState(false)
   return (
     <div className={'file-header' + (focused ? ' focused' : '')} onClick={onToggleCollapse}>
       <span className={'collapse-chevron' + (collapsed ? ' collapsed' : '')}>
         {'\u25B6'}
       </span>
       <span className="file-header-name">{fileDiff.name}</span>
+      {/* closeOnClick={false} so the tooltip stays up and flips to "Copied!". */}
+      <Tip text={copied ? 'Copied!' : 'Copy file name to clipboard'} closeOnClick={false}>
+        <button
+          type="button"
+          className={'copy-name-button' + (copied ? ' copied' : '')}
+          aria-label="Copy file name to clipboard"
+          onClick={(e) => {
+            e.stopPropagation()
+            void navigator.clipboard.writeText(fileDiff.name).then(() => {
+              setCopied(true)
+              // Hold the check long enough that attention moves on before it
+              // cross-fades back to the clipboard.
+              setTimeout(() => setCopied(false), 2000)
+            })
+          }}
+        >
+          {/* Both glyphs stay mounted and cross-fade so the swap back to the
+              clipboard isn't an abrupt cut. */}
+          <span className="copy-icon-stack">
+            <CopyIcon />
+            <CheckIcon />
+          </span>
+        </button>
+      </Tip>
       <span className="file-header-stats">
         {additions > 0 && <span className="stat-add">+{additions}</span>}
         {deletions > 0 && <span className="stat-del">-{deletions}</span>}
@@ -1183,7 +1263,9 @@ function DiffView() {
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <DiffView />
+      <Tooltip.Provider>
+        <DiffView />
+      </Tooltip.Provider>
     </QueryClientProvider>
   )
 }
