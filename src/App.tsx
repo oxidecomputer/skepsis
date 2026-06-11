@@ -171,10 +171,11 @@ function tagReviewLines(
   ranges: Array<{ start: number; end: number }>,
 ): void {
   const sr = node.shadowRoot
-  const pre = sr?.querySelector('pre')
+  if (!sr) return
+  const pre = sr.querySelector('pre')
   if (!pre) return
 
-  for (const el of sr!.querySelectorAll('[data-review-comment]')) {
+  for (const el of sr.querySelectorAll('[data-review-comment]')) {
     el.removeAttribute('data-review-comment')
   }
   if (ranges.length === 0) return
@@ -675,7 +676,13 @@ function DiffView() {
   // `version` changes, so we bump version whenever any rendered input for a
   // file changes: its content hash (which also covers review annotations,
   // since those are derived from diff content), the composing-form line, or
-  // its collapsed state.
+  // its collapsed state. diffStyle is deliberately not in the key: an
+  // `options` change makes the library re-render every item on its own.
+  //
+  // The map is mutated during render, which is safe here: writes are
+  // idempotent per key and versions only increase, so a StrictMode double
+  // render or a discarded concurrent render can't produce an inconsistent
+  // version for a given key.
   const versionsRef = useRef(new Map<string, { key: string; version: number }>())
   const items = useMemo<CodeViewDiffItem<AnnotationMeta>[]>(() => {
     if (!data) return []
@@ -708,8 +715,14 @@ function DiffView() {
   }, [files, data, composing, collapsed, commentsEnabled])
   itemsRef.current = items
 
-  // The header highlight falls back to the first file before any focus exists.
-  const effectiveFocused = focusedFile ?? items[0]?.id ?? null
+  // The header highlight falls back to the first file before any focus exists
+  // or when the focused file is no longer in the diff (e.g. removed by a
+  // refetch) — matching currentIndex()'s fallback so the highlight always
+  // agrees with the file the shortcuts act on.
+  const effectiveFocused =
+    focusedFile != null && items.some((it) => it.id === focusedFile)
+      ? focusedFile
+      : (items[0]?.id ?? null)
 
   // CodeView's controlled setItems path doesn't scroll-anchor across layout
   // changes, so collapsing the file pinned to the top of the viewport leaves
@@ -972,7 +985,8 @@ function DiffView() {
           const cur = currentIndex()
           let target: number
           if (e.key === 'n') {
-            target = Math.min(cur + 1, items.length - 1)
+            if (cur === items.length - 1) break // already at the last file
+            target = cur + 1
           } else {
             const curTop = inst.getTopForItem(items[cur]!.id) ?? 0
             // If scrolled into the body of the current file, snap to its top
