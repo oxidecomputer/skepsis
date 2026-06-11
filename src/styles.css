@@ -115,6 +115,13 @@ body,
   --diffs-modified-color-override: var(--blue);
 }
 
+/* The library focuses the scroll container (tabindex="-1") after programmatic
+   scrolls to keep keyboard scrolling working; don't draw a focus ring around
+   the whole file list when it does. */
+.codeview-root:focus {
+  outline: none;
+}
+
 /* Don't draw a card (border/radius/overflow) on the per-file host. The host
    scrolls, so any top chrome would scroll off and leave the pinned sticky header
    flush and square against the scroll edge ("cut off") — fighting the library,

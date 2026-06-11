@@ -389,10 +389,12 @@ function Modal({ onClose, children }: { onClose: () => void; children: React.Rea
 }
 
 const SHORTCUTS: [string, string][] = [
+  ['j / k', 'Next / previous line'],
   ['n / p', 'Next / previous file'],
   ['v', 'Toggle viewed'],
   ['e / E', 'Toggle collapse file / all files'],
   ['s', 'Toggle split mode (responsive / unified)'],
+  ['c', 'Comment on line'],
   ['Esc', 'Close / cancel'],
   ['?', 'Toggle this help'],
 ]
@@ -565,6 +567,28 @@ function DiffView() {
     [patch],
   )
 
+  // Navigable lines per file for the j/k cursor: addition-side line numbers
+  // (context + additions; deletions are skipped), derived from hunk metadata
+  // rather than the DOM.
+  const fileLines = useMemo(() => {
+    const map = new Map<string, number[]>()
+    for (const f of files) {
+      const lines: number[] = []
+      for (const h of f.hunks) {
+        for (let i = 0; i < h.additionCount; i++) lines.push(h.additionStart + i)
+      }
+      map.set(f.name, lines)
+    }
+    return map
+  }, [files])
+
+  // j/k line cursor: a (file, line) position on the additions side. Rendered
+  // through CodeView's native line selection (see effect below) so cursor
+  // moves don't bump item versions. Ref-mirrored for the key handler.
+  const [cursor, setCursor] = useState<{ file: string; line: number } | null>(null)
+  const cursorRef = useRef(cursor)
+  cursorRef.current = cursor
+
   // Derive optimistic viewed state from pending mutation
   const viewed = useMemo(() => {
     const base = { ...data?.viewed }
@@ -648,6 +672,22 @@ function DiffView() {
       behavior: 'instant',
     })
   }, [items])
+
+  // Render the cursor through CodeView's native line selection. Re-applied on
+  // items changes too because a version bump re-renders the item's element,
+  // which would otherwise drop the selection styling.
+  useEffect(() => {
+    const inst = codeViewRef.current?.getInstance()
+    if (!inst) return
+    if (cursor) {
+      inst.setSelectedLines({
+        id: cursor.file,
+        range: { start: cursor.line, end: cursor.line, side: 'additions' },
+      })
+    } else {
+      inst.clearSelectedLines()
+    }
+  }, [cursor, items])
 
   const renderCustomHeader = useCallback(
     (item: CodeViewItem<AnnotationMeta>) => {
@@ -762,9 +802,21 @@ function DiffView() {
       // Re-tag review-comment lines whenever an item (re)renders. Runs per item
       // and re-derives tags from scratch, so pooled/recycled elements never keep
       // stale highlights from a previously-rendered file.
-      onPostRender: (node, _instance, phase, context) => {
+      onPostRender: (node, instance, phase, context) => {
         if (phase === 'unmount') return
         tagReviewLines(node, reviewRanges(context.item.annotations))
+        // Re-apply the cursor selection: a re-rendered (version-bumped) or
+        // pooled element loses its selection styling, and the library's own
+        // re-sync short-circuits when the range is unchanged — so force it by
+        // clearing first.
+        const cur = cursorRef.current
+        if (cur?.file === context.item.id) {
+          instance.setSelectedLines(null, { notify: false })
+          instance.setSelectedLines(
+            { start: cur.line, end: cur.line, side: 'additions' },
+            { notify: false },
+          )
+        }
       },
     }),
     [diffStyle, commentsEnabled],
@@ -772,8 +824,8 @@ function DiffView() {
 
   // Keyboard shortcuts. File navigation (n/p) and the focused-file actions
   // (e/v) operate on the "top file": the item whose top edge is at or above
-  // the current scroll offset. Per-line cursor navigation (j/k/c) is not yet
-  // rebuilt on CodeView's APIs.
+  // the current scroll offset. The j/k line cursor moves within the top file
+  // and c comments on the cursor line.
   useEffect(() => {
     // Index of the file currently pinned to the top of the viewport.
     function topFileIndex(): number {
@@ -789,6 +841,55 @@ function DiffView() {
         else break
       }
       return idx
+    }
+
+    // Per-item virtualized instance, only available while the item is rendered.
+    function renderedInstance(id: string) {
+      const inst = codeViewRef.current?.getInstance()
+      const rendered = inst?.getRenderedItems().find((r) => r.id === id)
+      return rendered?.type === 'diff' ? rendered.instance : undefined
+    }
+
+    // Height of the sticky file header, which occludes the top of the viewport.
+    function headerHeight(): number {
+      return document.querySelector('.file-header')?.getBoundingClientRect().height ?? 0
+    }
+
+    // Is the line fully visible (below the sticky header, above the bottom)?
+    function isLineVisible(file: string, line: number): boolean {
+      const inst = codeViewRef.current?.getInstance()
+      const itemTop = inst?.getTopForItem(file)
+      const pos = renderedInstance(file)?.getLinePosition(line, 'additions')
+      if (inst == null || itemTop == null || pos == null) return false
+      const absTop = itemTop + pos.top
+      const st = scrollTopRef.current
+      return absTop >= st + headerHeight() && absTop + pos.height <= st + inst.getHeight()
+    }
+
+    // First navigable line of `file` at or below the viewport top, or null.
+    function firstVisibleLine(file: string): number | null {
+      const lines = fileLines.get(file)
+      const inst = codeViewRef.current?.getInstance()
+      const itemTop = inst?.getTopForItem(file)
+      const ri = renderedInstance(file)
+      if (!lines?.length || inst == null || itemTop == null || ri == null) return null
+      const viewTop = scrollTopRef.current + headerHeight() - itemTop
+      // Lines are in layout order: binary search for the first one below viewTop.
+      let lo = 0
+      let hi = lines.length - 1
+      let ans = -1
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1
+        const pos = ri.getLinePosition(lines[mid]!, 'additions')
+        if (pos == null) return null
+        if (pos.top >= viewTop) {
+          ans = mid
+          hi = mid - 1
+        } else {
+          lo = mid + 1
+        }
+      }
+      return ans >= 0 ? lines[ans]! : null
     }
 
     function handler(e: KeyboardEvent) {
@@ -813,11 +914,62 @@ function DiffView() {
             // first; otherwise step to the previous file.
             target = scrollTopRef.current > curTop + 4 ? cur : Math.max(cur - 1, 0)
           }
+          const targetId = items[target]!.id
+          codeViewRef.current?.scrollTo({ type: 'item', id: targetId, align: 'start' })
+          const lines = fileLines.get(targetId)
+          setCursor(lines?.length ? { file: targetId, line: lines[0]! } : null)
+          break
+        }
+        case 'j':
+        case 'k': {
+          if (showHelp || composing || items.length === 0) break
+          e.preventDefault()
+          const name = items[topFileIndex()]!.id
+          if (collapsed[name] ?? false) break
+          const lines = fileLines.get(name)
+          if (!lines?.length) break
+          const cur = cursorRef.current
+          let nextLine: number
+          if (cur && cur.file === name && isLineVisible(name, cur.line)) {
+            const idx = lines.indexOf(cur.line)
+            const moved = Math.max(
+              0,
+              Math.min(idx + (e.key === 'j' ? 1 : -1), lines.length - 1),
+            )
+            nextLine = lines[moved]!
+          } else {
+            // Cursor offscreen or in another file: snap to the first visible
+            // line instead of moving.
+            nextLine = firstVisibleLine(name) ?? lines[0]!
+          }
+          if (cur?.file === name && cur.line === nextLine) break
+          setCursor({ file: name, line: nextLine })
           codeViewRef.current?.scrollTo({
-            type: 'item',
-            id: items[target]!.id,
-            align: 'start',
+            type: 'line',
+            id: name,
+            lineNumber: nextLine,
+            side: 'additions',
+            align: 'nearest',
+            behavior: 'instant',
           })
+          break
+        }
+        case 'c': {
+          if (!commentsEnabled || showHelp || composing) break
+          e.preventDefault()
+          const cur = cursorRef.current
+          if (!cur || (collapsed[cur.file] ?? false)) break
+          // Same guard as gutter clicks: no comments inside an existing review block.
+          const item = items.find((i) => i.id === cur.file)
+          const insideReview = (item?.annotations ?? []).some(
+            (a) =>
+              a.metadata?.type === 'review' &&
+              cur.line >= a.metadata.startLine &&
+              cur.line <= a.metadata.endLine,
+          )
+          if (insideReview) break
+          commentMutation.reset()
+          setComposing({ file: cur.file, line: cur.line })
           break
         }
         case 'e': {
@@ -892,6 +1044,9 @@ function DiffView() {
     viewed,
     markMutation,
     anchorIfTopFile,
+    fileLines,
+    commentsEnabled,
+    commentMutation,
   ])
 
   if (isLoading || !data) return <div className="empty-diff">Loading...</div>
