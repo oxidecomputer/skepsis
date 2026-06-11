@@ -16,6 +16,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -623,6 +624,31 @@ function DiffView() {
     })
   }, [files, data, composing, collapsed, commentsEnabled])
 
+  // CodeView's controlled setItems path doesn't scroll-anchor across layout
+  // changes, so collapsing the file pinned to the top of the viewport leaves
+  // scrollTop pointing at whatever content slid up into its place. Before
+  // toggling collapse on a file whose top is at or above the viewport top,
+  // record it here; after the items rebuild, re-anchor its header to the top.
+  const pendingAnchorRef = useRef<string | null>(null)
+  const anchorIfTopFile = useCallback((name: string) => {
+    const top = codeViewRef.current?.getInstance()?.getTopForItem(name)
+    if (top != null && top <= scrollTopRef.current + 4) {
+      pendingAnchorRef.current = name
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    const name = pendingAnchorRef.current
+    if (!name) return
+    pendingAnchorRef.current = null
+    codeViewRef.current?.scrollTo({
+      type: 'item',
+      id: name,
+      align: 'start',
+      behavior: 'instant',
+    })
+  }, [items])
+
   const renderCustomHeader = useCallback(
     (item: CodeViewItem<AnnotationMeta>) => {
       if (item.type !== 'diff') return null
@@ -638,19 +664,21 @@ function DiffView() {
           isViewed={isViewed}
           isStale={isStale}
           collapsed={isCollapsed}
-          onToggleCollapse={() =>
+          onToggleCollapse={() => {
+            anchorIfTopFile(name)
             setCollapsed((prev) => ({ ...prev, [name]: !isCollapsed }))
-          }
+          }}
           onToggleViewed={() => {
             if (!hash) return
             const mark = !isViewed
+            anchorIfTopFile(name)
             setCollapsed((prev) => ({ ...prev, [name]: mark }))
             markMutation.mutate({ file: name, hash, mark })
           }}
         />
       )
     },
-    [data, viewed, collapsed, markMutation],
+    [data, viewed, collapsed, markMutation, anchorIfTopFile],
   )
 
   const renderAnnotation = useCallback(
@@ -796,6 +824,7 @@ function DiffView() {
           if (showHelp || composing || items.length === 0) break
           e.preventDefault()
           const name = items[topFileIndex()]!.id
+          anchorIfTopFile(name)
           setCollapsed((prev) => ({ ...prev, [name]: !(prev[name] ?? false) }))
           break
         }
@@ -806,6 +835,7 @@ function DiffView() {
           const hash = data?.fileHashes[name]
           if (!hash) break
           const mark = viewed[name] !== hash
+          anchorIfTopFile(name)
           setCollapsed((prev) => ({ ...prev, [name]: mark }))
           markMutation.mutate({ file: name, hash, mark })
           break
@@ -842,6 +872,7 @@ function DiffView() {
           e.preventDefault()
           // If any file is expanded, collapse all; otherwise expand all
           const anyExpanded = files.some((f) => !(collapsed[f.name] ?? false))
+          if (items.length > 0) anchorIfTopFile(items[topFileIndex()]!.id)
           setCollapsed(Object.fromEntries(files.map((f) => [f.name, anyExpanded])))
           break
         }
@@ -850,7 +881,18 @@ function DiffView() {
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [showHelp, composing, files, collapsed, showToast, items, data, viewed, markMutation])
+  }, [
+    showHelp,
+    composing,
+    files,
+    collapsed,
+    showToast,
+    items,
+    data,
+    viewed,
+    markMutation,
+    anchorIfTopFile,
+  ])
 
   if (isLoading || !data) return <div className="empty-diff">Loading...</div>
   if (error) return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
