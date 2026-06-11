@@ -297,6 +297,7 @@ function FileHeader({
   isViewed,
   isStale,
   collapsed,
+  focused,
   onToggleCollapse,
   onToggleViewed,
 }: {
@@ -304,12 +305,13 @@ function FileHeader({
   isViewed: boolean
   isStale: boolean
   collapsed: boolean
+  focused: boolean
   onToggleCollapse: () => void
   onToggleViewed: () => void
 }) {
   const { additions, deletions } = getFileStats(fileDiff)
   return (
-    <div className="file-header" onClick={onToggleCollapse}>
+    <div className={'file-header' + (focused ? ' focused' : '')} onClick={onToggleCollapse}>
       <span className={'collapse-chevron' + (collapsed ? ' collapsed' : '')}>
         {'\u25B6'}
       </span>
@@ -488,6 +490,24 @@ function CommentsDisabledBanner({
 type SplitMode = 'responsive' | 'unified'
 const SPLIT_CYCLE: SplitMode[] = ['responsive', 'unified']
 
+/** The file pinned to the top of the viewport: the last item whose top edge is
+ *  at or above the scroll offset (4px slop so a header sitting flush still
+ *  counts). Returns null only when there are no items. */
+function topFileName(
+  inst: { getTopForItem(id: string): number | undefined },
+  scrollTop: number,
+  items: readonly CodeViewDiffItem<AnnotationMeta>[],
+): string | null {
+  let name = items[0]?.id ?? null
+  for (const item of items) {
+    const top = inst.getTopForItem(item.id)
+    if (top == null) continue
+    if (top <= scrollTop + 4) name = item.id
+    else break
+  }
+  return name
+}
+
 function DiffView() {
   const isWide = useIsWide()
   const [splitMode, setSplitMode] = useState<SplitMode>('responsive')
@@ -608,9 +628,48 @@ function DiffView() {
   // Latest scroll offset, tracked for file navigation (n/p). Kept in a ref so
   // scrolling doesn't trigger re-renders; the key handler reads it on demand.
   const scrollTopRef = useRef(0)
-  const onScroll = useCallback((scrollTop: number) => {
-    scrollTopRef.current = scrollTop
+
+  // The focused file: the target of the file-scoped shortcuts (n/p, j/k, e, v)
+  // and the header highlight. Stepped directly by n/p — on an all-collapsed
+  // diff the scroll may not move at all, so focus can't be derived from scroll
+  // position alone — and re-synced to the top-of-viewport file when the user
+  // scrolls. A ref mirrors the state so the window-level key handler reads the
+  // live value without re-subscribing on every scroll.
+  const [focusedFile, setFocusedFile] = useState<string | null>(null)
+  const focusedFileRef = useRef<string | null>(null)
+  const setFocused = useCallback((name: string | null) => {
+    focusedFileRef.current = name
+    setFocusedFile(name)
   }, [])
+
+  // Programmatic scrolls (n/p, j/k, collapse re-anchoring) must not re-derive
+  // focus from intermediate scroll positions — n/p already set it. Mark before
+  // issuing a scrollTo; onScroll skips focus sync while marked, and the mark
+  // expires shortly after scrolling settles (or immediately if no scroll
+  // event ever fires) so user scrolls sync focus again.
+  const programmaticScrollRef = useRef(false)
+  const scrollSettleTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const markProgrammaticScroll = useCallback(() => {
+    programmaticScrollRef.current = true
+    clearTimeout(scrollSettleTimer.current)
+    scrollSettleTimer.current = setTimeout(() => {
+      programmaticScrollRef.current = false
+    }, 200)
+  }, [])
+
+  // Mirror items in a ref so onScroll can stay identity-stable.
+  const itemsRef = useRef<readonly CodeViewDiffItem<AnnotationMeta>[]>([])
+  const onScroll = useCallback(
+    (scrollTop: number, viewer: { getTopForItem(id: string): number | undefined }) => {
+      scrollTopRef.current = scrollTop
+      if (programmaticScrollRef.current) {
+        markProgrammaticScroll() // push the expiry out while frames keep coming
+        return
+      }
+      setFocused(topFileName(viewer, scrollTop, itemsRef.current))
+    },
+    [setFocused, markProgrammaticScroll],
+  )
 
   // Build the CodeView item list. CodeView only re-renders an item when its
   // `version` changes, so we bump version whenever any rendered input for a
@@ -647,6 +706,10 @@ function DiffView() {
       }
     })
   }, [files, data, composing, collapsed, commentsEnabled])
+  itemsRef.current = items
+
+  // The header highlight falls back to the first file before any focus exists.
+  const effectiveFocused = focusedFile ?? items[0]?.id ?? null
 
   // CodeView's controlled setItems path doesn't scroll-anchor across layout
   // changes, so collapsing the file pinned to the top of the viewport leaves
@@ -665,13 +728,14 @@ function DiffView() {
     const name = pendingAnchorRef.current
     if (!name) return
     pendingAnchorRef.current = null
+    markProgrammaticScroll()
     codeViewRef.current?.scrollTo({
       type: 'item',
       id: name,
       align: 'start',
       behavior: 'instant',
     })
-  }, [items])
+  }, [items, markProgrammaticScroll])
 
   // Render the cursor through CodeView's native line selection. Re-applied on
   // items changes too because a version bump re-renders the item's element,
@@ -704,6 +768,7 @@ function DiffView() {
           isViewed={isViewed}
           isStale={isStale}
           collapsed={isCollapsed}
+          focused={name === effectiveFocused}
           onToggleCollapse={() => {
             anchorIfTopFile(name)
             setCollapsed((prev) => ({ ...prev, [name]: !isCollapsed }))
@@ -718,7 +783,7 @@ function DiffView() {
         />
       )
     },
-    [data, viewed, collapsed, markMutation, anchorIfTopFile],
+    [data, viewed, collapsed, markMutation, anchorIfTopFile, effectiveFocused],
   )
 
   const renderAnnotation = useCallback(
@@ -788,6 +853,16 @@ function DiffView() {
     () => ({
       theme: 'github-dark-default',
       diffStyle,
+      // The library lays out collapsed files (and unmeasured estimates) from
+      // these metrics rather than the DOM. Its diffHeaderHeight default (44)
+      // is for its own header; ours renders at 40px (.file-header: 28px
+      // controls + 2*5px padding + 2*1px borders). With the wrong value,
+      // computed scroll height overshoots actual content by 4px per collapsed
+      // file, and the sticky container's bottom-clamp turns that into a
+      // visible downward shift of all content whenever the diff fits the
+      // viewport (e.g. everything collapsed) — content then "jumps" on any
+      // fits/overflows transition.
+      itemMetrics: { diffHeaderHeight: 40 },
       diffIndicators: 'classic',
       hunkSeparators: 'line-info-basic',
       overflow: 'wrap',
@@ -823,24 +898,14 @@ function DiffView() {
   )
 
   // Keyboard shortcuts. File navigation (n/p) and the focused-file actions
-  // (e/v) operate on the "top file": the item whose top edge is at or above
-  // the current scroll offset. The j/k line cursor moves within the top file
-  // and c comments on the cursor line.
+  // (e/v) operate on the focused file (header highlight); the j/k line cursor
+  // moves within it and c comments on the cursor line.
   useEffect(() => {
-    // Index of the file currently pinned to the top of the viewport.
-    function topFileIndex(): number {
-      const inst = codeViewRef.current?.getInstance()
-      if (!inst) return 0
-      const st = scrollTopRef.current
-      let idx = 0
-      for (let i = 0; i < items.length; i++) {
-        const top = inst.getTopForItem(items[i]!.id)
-        if (top == null) continue
-        // 4px slop so a header sitting flush at the top still counts as the top file.
-        if (top <= st + 4) idx = i
-        else break
-      }
-      return idx
+    // Index of the focused file (0 before any focus exists, matching the
+    // effectiveFocused fallback).
+    function currentIndex(): number {
+      const idx = items.findIndex((it) => it.id === focusedFileRef.current)
+      return idx < 0 ? 0 : idx
     }
 
     // Per-item virtualized instance, only available while the item is rendered.
@@ -904,7 +969,7 @@ function DiffView() {
           e.preventDefault()
           const inst = codeViewRef.current?.getInstance()
           if (!inst) break
-          const cur = topFileIndex()
+          const cur = currentIndex()
           let target: number
           if (e.key === 'n') {
             target = Math.min(cur + 1, items.length - 1)
@@ -915,6 +980,10 @@ function DiffView() {
             target = scrollTopRef.current > curTop + 4 ? cur : Math.max(cur - 1, 0)
           }
           const targetId = items[target]!.id
+          // Move focus immediately rather than waiting for the scroll-driven
+          // sync, which may never fire (all-collapsed diffs don't scroll).
+          setFocused(targetId)
+          markProgrammaticScroll()
           codeViewRef.current?.scrollTo({ type: 'item', id: targetId, align: 'start' })
           const lines = fileLines.get(targetId)
           setCursor(lines?.length ? { file: targetId, line: lines[0]! } : null)
@@ -924,7 +993,7 @@ function DiffView() {
         case 'k': {
           if (showHelp || composing || items.length === 0) break
           e.preventDefault()
-          const name = items[topFileIndex()]!.id
+          const name = items[currentIndex()]!.id
           if (collapsed[name] ?? false) break
           const lines = fileLines.get(name)
           if (!lines?.length) break
@@ -944,6 +1013,7 @@ function DiffView() {
           }
           if (cur?.file === name && cur.line === nextLine) break
           setCursor({ file: name, line: nextLine })
+          markProgrammaticScroll()
           codeViewRef.current?.scrollTo({
             type: 'line',
             id: name,
@@ -975,7 +1045,7 @@ function DiffView() {
         case 'e': {
           if (showHelp || composing || items.length === 0) break
           e.preventDefault()
-          const name = items[topFileIndex()]!.id
+          const name = items[currentIndex()]!.id
           anchorIfTopFile(name)
           setCollapsed((prev) => ({ ...prev, [name]: !(prev[name] ?? false) }))
           break
@@ -983,7 +1053,7 @@ function DiffView() {
         case 'v': {
           if (showHelp || composing || items.length === 0) break
           e.preventDefault()
-          const name = items[topFileIndex()]!.id
+          const name = items[currentIndex()]!.id
           const hash = data?.fileHashes[name]
           if (!hash) break
           const mark = viewed[name] !== hash
@@ -1024,7 +1094,7 @@ function DiffView() {
           e.preventDefault()
           // If any file is expanded, collapse all; otherwise expand all
           const anyExpanded = files.some((f) => !(collapsed[f.name] ?? false))
-          if (items.length > 0) anchorIfTopFile(items[topFileIndex()]!.id)
+          if (items.length > 0) anchorIfTopFile(items[currentIndex()]!.id)
           setCollapsed(Object.fromEntries(files.map((f) => [f.name, anyExpanded])))
           break
         }
@@ -1047,6 +1117,8 @@ function DiffView() {
     fileLines,
     commentsEnabled,
     commentMutation,
+    setFocused,
+    markProgrammaticScroll,
   ])
 
   if (isLoading || !data) return <div className="empty-diff">Loading...</div>

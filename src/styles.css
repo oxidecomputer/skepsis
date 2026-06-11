@@ -154,6 +154,19 @@ body,
   user-select: none;
 }
 
+/* The focused file — the one n/p step through and e/v/j/k act on. Raised one
+   elevation step above the resting header (with borders to match) so it reads
+   as the active bar within the existing lightness ramp, rather than tagged
+   with an accent stripe. */
+.file-header.focused {
+  background: var(--bg-control-hover);
+  border-color: var(--border-strong);
+}
+
+.file-header.focused .collapse-chevron {
+  color: var(--fg-bright);
+}
+
 .collapse-chevron {
   font-size: 10px;
   color: var(--fg-muted);
