@@ -133,6 +133,17 @@ function detectReviewComments(
   return annotations
 }
 
+// In split mode the diffs library renders pure adds ('new') and pure deletes
+// ('deleted') as a single full-width column. We want them laid out like every
+// other file — additions on the right, an empty deletions side on the left —
+// and the column-dropping is the only thing the renderer keys off the type
+// (we render our own headers), so coerce it before handing files to CodeView.
+// Mutates in place to keep object identity stable across renders.
+function normalizeFileType(f: FileDiffMetadata): FileDiffMetadata {
+  if (f.type === 'new' || f.type === 'deleted') f.type = 'change'
+  return f
+}
+
 function getFileStats(fileDiff: FileDiffMetadata) {
   let additions = 0
   let deletions = 0
@@ -774,7 +785,12 @@ function DiffView() {
   // the fallback when full contents aren't available.
   const patch = data?.patch
   const patchFiles = useMemo(
-    () => (patch ? parsePatchFiles(patch).flatMap((p) => p.files) : []),
+    () =>
+      patch
+        ? parsePatchFiles(patch)
+            .flatMap((p) => p.files)
+            .map(normalizeFileType)
+        : [],
     [patch],
   )
 
@@ -853,10 +869,12 @@ function DiffView() {
       // context: 3 matches git's default so the visible context doesn't jump
       // when a file upgrades from its patch parse to the full-content diff.
       // Expand-all uses whole-file context so the entire file shows as one hunk.
-      const diff = parseDiffFromFile(
-        { name: f.prevName ?? f.name, contents: c.oldContents ?? '' },
-        { name: f.name, contents: c.newContents ?? '' },
-        { context: isExpanded ? Number.MAX_SAFE_INTEGER : 3 },
+      const diff = normalizeFileType(
+        parseDiffFromFile(
+          { name: f.prevName ?? f.name, contents: c.oldContents ?? '' },
+          { name: f.name, contents: c.newContents ?? '' },
+          { context: isExpanded ? Number.MAX_SAFE_INTEGER : 3 },
+        ),
       )
       parsedCacheRef.current.set(f.name, {
         old: c.oldContents,
