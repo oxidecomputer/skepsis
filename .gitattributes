@@ -1,0 +1,3 @@
+# dist/ is committed so illumos users can run without building (see CLAUDE.md).
+# Mark it generated so GitHub collapses it in PR diffs and excludes it from stats.
+dist/** linguist-generated=true
