@@ -238,7 +238,7 @@ body,
   cursor: pointer;
   flex-shrink: 0;
   /* Pull slightly closer to the filename than the header's 12px flex gap. */
-  margin-left: -5px;
+  margin-left: -2px;
   transition:
     color 0.12s ease,
     background 0.12s ease,
@@ -306,7 +306,7 @@ body,
   cursor: pointer;
   flex-shrink: 0;
   /* Sit snug against the copy button rather than a full header gap away. */
-  margin-left: -6px;
+  margin-left: -8px;
   transition:
     color 0.12s ease,
     background 0.12s ease,
