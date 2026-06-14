@@ -14,6 +14,7 @@
     "ci": "npm run build && npm run tsc && npm run lint && npm run fmt:check && npm test"
   },
   "dependencies": {
+    "@base-ui/react": "^1.5.0",
     "@commander-js/extra-typings": "^14.0.0",
     "@hono/node-server": "^1.19.12",
     "@hono/zod-validator": "^0.7.6",

@@ -113,11 +113,22 @@ export async function markViewed(cwd: string, file: string, hash: string): Promi
 }
 
 export async function unmarkViewed(cwd: string, file: string, hash: string): Promise<void> {
+  await unmarkViewedAll(cwd, [{ file, hash }])
+}
+
+/** Unmark several files in one read-modify-write pass so concurrent
+ *  per-file deletes can't clobber each other's saves. */
+export async function unmarkViewedAll(
+  cwd: string,
+  files: { file: string; hash: string }[],
+): Promise<void> {
   const all = await loadAll(cwd)
-  const entries = all.get(file)
-  if (!entries) return
-  const filtered = entries.filter((e) => e.hash !== hash)
-  if (filtered.length === 0) all.delete(file)
-  else all.set(file, filtered)
+  for (const { file, hash } of files) {
+    const entries = all.get(file)
+    if (!entries) continue
+    const filtered = entries.filter((e) => e.hash !== hash)
+    if (filtered.length === 0) all.delete(file)
+    else all.set(file, filtered)
+  }
   await saveAll(cwd, all)
 }
