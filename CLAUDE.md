@@ -7,7 +7,7 @@ comment lines).
 
 After changes, run `npm run tsc` (type-check), `npm run lint` (oxlint), and
 `npm run fmt` (oxfmt) — not prettier/eslint. To try the app against a
-real repo, run `npm start -- --dev` in that repo (`--host 127.0.0.1`
+real repo, run `node cli.ts --dev` in that repo (`--host 127.0.0.1`
 suppresses auto-opening a browser).
 
 ## dist/ is committed on purpose

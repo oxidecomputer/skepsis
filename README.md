@@ -14,7 +14,8 @@ https://github.com/user-attachments/assets/698365ab-964c-4e38-a605-82bec4879f60
 
 ## Setup
 
-Requires [Node.js](https://nodejs.org/) (v22+).
+Requires [Node.js](https://nodejs.org/) v22.18+ (it runs the TypeScript CLI
+directly via Node's built-in type stripping).
 
 ```
 git clone https://github.com/oxidecomputer/skepsis.git
@@ -24,7 +25,7 @@ cd skepsis && npm install
 Add an alias pointing to your clone so you can run it from any repo:
 
 ```
-alias sk="npx --prefix ~/repos/skepsis tsx ~/repos/skepsis/cli.ts"
+alias sk="node ~/repos/skepsis/cli.ts"
 ```
 
 ## Usage
