@@ -22,7 +22,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "commander": "^15.0.0",
-    "hono": "^4.12.9",
+    "hono": "^4.12.25",
     "linguist-languages": "^9.3.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
