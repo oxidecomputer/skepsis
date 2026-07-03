@@ -98,9 +98,12 @@ export async function startServer(opts: {
     return c.json({ ok: true } satisfies OkResponse)
   })
 
-  // Serve built frontend assets in production mode
-  const distDir = join(import.meta.dirname, '..', 'dist')
+  // Keep this path valid from source (`server/`) and from the published bundle
+  // (`dist/cli.js`): both are one directory below the package root.
+  const distDir = join(import.meta.dirname, '..', 'dist', 'web')
 
+  // @hono/node-server resolves `root` relative to cwd. On Windows, this cannot
+  // cross drive letters; installed-package use is expected on Unix-like hosts.
   app.use('*', serveStatic({ root: relative(cwd, distDir) }))
 
   // SPA fallback

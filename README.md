@@ -14,18 +14,32 @@ https://github.com/user-attachments/assets/698365ab-964c-4e38-a605-82bec4879f60
 
 ## Setup
 
-Requires [Node.js](https://nodejs.org/) v22.18+ (it runs the TypeScript CLI
-directly via Node's built-in type stripping).
+Requires [Node.js](https://nodejs.org/) v22+.
+
+Run it without installing:
 
 ```
-git clone https://github.com/oxidecomputer/skepsis.git
-cd skepsis && npm install
+npx @oxide/skepsis
 ```
 
-Add an alias pointing to your clone so you can run it from any repo:
+`npx` may reuse a cached package version. To force the newest published
+version, run:
 
 ```
-alias sk="node ~/repos/skepsis/cli.ts"
+npx @oxide/skepsis@latest
+```
+
+To install a persistent command:
+
+```
+npm install --global @oxide/skepsis
+skepsis
+```
+
+Either way, you may want a shorter alias:
+
+```
+alias sk="npx @oxide/skepsis"
 ```
 
 ## Usage
@@ -39,13 +53,14 @@ Each invocation picks a free port, so you can run multiple instances simultaneou
 
 ### jj examples
 
-`sk` is just an alias (see above). You can name it whatever you want.
+The examples use `skepsis`, the installed bin name. An `sk` alias works the
+same way.
 
 ```
-sk                          # review trunk()..@
-sk -r @                     # review working copy only
-sk -r 'mybranch..@'         # review a range
-sk -f main -t @             # diff between two revisions
+skepsis                          # review trunk()..@
+skepsis -r @                     # review working copy only
+skepsis -r 'mybranch..@'         # review a range
+skepsis -f main -t @             # diff between two revisions
 ```
 
 ### git examples
@@ -53,12 +68,12 @@ sk -f main -t @             # diff between two revisions
 Ranges passed with `-r` are passed through verbatim to `git diff`.
 
 ```
-sk                          # git diff origin/HEAD..HEAD
-sk -f main                  # diff since main: git diff main HEAD
-sk -r main..my-branch       # review commits on my-branch
-sk -r HEAD~5..HEAD          # review the last 5 commits
-sk -f v1.2.0 -t v1.3.0      # compare two tags
-sk --git                    # force git in a jj-colocated repo
+skepsis                          # git diff origin/HEAD..HEAD
+skepsis -f main                  # diff since main: git diff main HEAD
+skepsis -r main..my-branch       # review commits on my-branch
+skepsis -r HEAD~5..HEAD          # review the last 5 commits
+skepsis -f v1.2.0 -t v1.3.0      # compare two tags
+skepsis --git                    # force git in a jj-colocated repo
 ```
 
 ## How it works
@@ -67,9 +82,10 @@ The CLI starts a local HTTP server that shells out to `jj diff`
 or `git diff`, then serves the diff to a React frontend that uses
 [`@pierre/diffs`](https://diffs.com/) to render it with syntax highlighting.
 
-The built frontend bundle is checked into `dist/` so that the production path
-has no build step — the server serves it directly. In dev mode (`--dev`), a
-Vite dev server runs alongside the API server with hot reload.
+The npm package ships compiled CLI/server JavaScript plus a prebuilt frontend
+bundle, so installing or running with `npx` does not build anything. In dev
+mode (`--dev`), a Vite dev server runs alongside the API server with hot
+reload from a source checkout.
 
 ### Comments
 
@@ -87,13 +103,29 @@ hash no longer matches and it automatically shows as unviewed again.
 
 ## Development
 
-```
-npm install
-sk --dev    # Vite dev server with hot reload + API server
-```
-
-After changing frontend code, rebuild the checked-in bundle:
+Clone the repo when working on skepsis itself:
 
 ```
-npm run build
+git clone https://github.com/oxidecomputer/skepsis.git
+cd skepsis && npm install
+```
+
+Running from a checkout requires Node v22.18+, since the CLI runs as
+TypeScript directly via Node's built-in type stripping. Point an alias at the
+clone to run it from any repo:
+
+```
+alias sk="node ~/repos/skepsis/cli.ts"
+```
+
+`--dev` runs a Vite dev server with hot reload alongside the API server:
+
+```
+sk --dev
+```
+
+Before committing changes, run:
+
+```
+npm run ci
 ```

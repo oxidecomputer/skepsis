@@ -17,6 +17,9 @@ const apiPort = process.env['API_PORT'] || 3742
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    outDir: 'dist/web',
+  },
   server: {
     proxy: {
       '/api': `http://${apiHost}:${apiPort}`,
