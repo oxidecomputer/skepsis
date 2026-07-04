@@ -3,7 +3,9 @@
 # generated automatically (https://docs.npmjs.com/trusted-publishers).
 #
 # Two modes:
-#   Release: push a tag — npm version patch && jj git push (or git push --tags)
+#   Release: bump the version in package.json and land it on main. The
+#     workflow publishes any version not yet on the registry and pushes a
+#     matching v* tag as a record. Full recipe in the README.
 #   Canary:  Actions tab → Release → Run workflow → enter a PR number.
 #     Publishes that PR's head as <version>-canary.<pr>.<sha> under the
 #     `canary` dist-tag and comments the version on the PR. Dispatching
@@ -13,52 +15,72 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch:
     inputs:
       pr-number:
         description: 'PR number to publish a canary for'
         required: true
 
-permissions:
-  contents: read
-  id-token: write # required for OIDC trusted publishing
-
 jobs:
   publish:
     if: github.event_name == 'push'
     timeout-minutes: 10
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # to push the release tag
+      id-token: write # required for OIDC trusted publishing
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - name: Check tag matches package.json version
+      - name: Check whether package.json version is already published
+        id: check
         run: |
           VERSION=$(node --print "require('./package.json').version")
-          if [ "${GITHUB_REF_NAME}" != "v${VERSION}" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${VERSION} (expected v${VERSION})."
-            exit 1
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          # empty output = version not on the registry. (npm view's exit code
+          # for a missing version has varied across npm versions; its output
+          # hasn't.)
+          if [ -n "$(npm view "@oxide/skepsis@${VERSION}" version 2>/dev/null)" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        if: steps.check.outputs.published == 'false'
         with:
           node-version: 24 # npm >=11.5.1 required for trusted publishing
           registry-url: 'https://registry.npmjs.org'
           # npm recommends not restoring a dependency cache in release builds
           package-manager-cache: false
       - name: Install
+        if: steps.check.outputs.published == 'false'
         run: npm ci
       - name: Check and build
+        if: steps.check.outputs.published == 'false'
         run: npm run ci
       - name: Publish
+        if: steps.check.outputs.published == 'false'
         run: npm publish
+      # Runs even when publish was skipped, so a rerun after a failed tag push
+      # can still create the tag. No-op when the tag already exists.
+      - name: Tag release
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" > /dev/null; then
+            echo "Tag v${VERSION} already exists"
+          else
+            git tag "v${VERSION}"
+            git push origin "v${VERSION}"
+          fi
 
   canary:
     if: github.event_name == 'workflow_dispatch'
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    # job-level permissions replace the workflow-level block, so repeat it
     permissions:
       contents: read
-      id-token: write
+      id-token: write # required for OIDC trusted publishing
       pull-requests: write # to comment the canary version on the PR
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

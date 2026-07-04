@@ -137,3 +137,22 @@ npm run ci
 - **major** — breaking changes to anything scriptable or on disk: removed or
   renamed flags, changed flag defaults, changed `<review>` comment or
   viewed-state formats
+
+## Releases
+
+To publish a release, bump the version and land the change on `main`:
+
+```
+npm version patch --no-git-tag-version   # or minor/major — bumps package.json
+jj commit -m 'v0.1.1'                    # land the bump on main via PR
+```
+
+On every push to `main`, CI checks whether the `package.json` version is
+already on the registry. If not, it publishes and pushes a matching tag like
+`v0.1.1` as a record.
+
+To publish a canary build of a PR, go to the [Release
+workflow](https://github.com/oxidecomputer/skepsis/actions/workflows/release.yml),
+click "Run workflow", and enter the PR number. It publishes the PR's head as
+`<version>-canary.<pr>.<sha>` under the `canary` dist-tag and comments the
+version on the PR.
