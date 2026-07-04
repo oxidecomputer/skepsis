@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -7,6 +8,8 @@
  */
 
 import { spawn, execFileSync } from 'child_process'
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { Command } from '@commander-js/extra-typings'
 import { startServer } from './server/main.ts'
 import type { DiffArgs, DiffEndpoints } from './shared/types.ts'
@@ -119,17 +122,39 @@ function buildDiffSource(): DiffArgs {
 const diffSource = buildDiffSource()
 
 const cwd = process.cwd()
-const projectRoot = import.meta.dirname
 const children: ReturnType<typeof spawn>[] = []
 
-function cleanup(code = 0) {
+function findCheckoutRoot(): string | null {
+  const sourceRoot = import.meta.dirname
+  if (existsSync(join(sourceRoot, 'vite.config.ts'))) return sourceRoot
+
+  const packageRoot = dirname(sourceRoot)
+  if (existsSync(join(packageRoot, 'vite.config.ts'))) return packageRoot
+
+  return null
+}
+
+function cleanup(code = 0): never {
   for (const child of children) child.kill()
   process.exit(code)
+}
+
+function requireCheckoutRoot(): string {
+  const checkoutRoot = findCheckoutRoot()
+  if (checkoutRoot === null) {
+    console.error(
+      '--dev only works from a skepsis source checkout, not the installed package.\n' +
+        'Clone https://github.com/oxidecomputer/skepsis and run: node cli.ts --dev',
+    )
+    cleanup(1)
+  }
+  return checkoutRoot
 }
 
 process.on('SIGINT', () => cleanup())
 process.on('SIGTERM', () => cleanup())
 
+const checkoutRoot = opts.dev ? requireCheckoutRoot() : undefined
 const apiPort = await startServer({ diffSource, cwd, hostname })
 
 function urlOpenCommand(url: string): { cmd: string; args: string[] } {
@@ -152,7 +177,7 @@ if (opts.dev) {
   const viteArgs = ['vite', '--host', hostname]
   if (shouldAutoOpen) viteArgs.push('--open')
   const vite = spawn('npx', viteArgs, {
-    cwd: projectRoot,
+    cwd: checkoutRoot,
     stdio: 'inherit',
     env: { ...process.env, API_HOST: hostname, API_PORT: String(apiPort) },
   })

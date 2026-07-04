@@ -5,16 +5,22 @@ reviewing a jj/git diff in the browser, GitHub-PR-style (per-file viewed
 state, keyboard navigation, review comments written into the working copy as
 comment lines).
 
-After changes, run `npm run tsc` (type-check), `npm run lint` (oxlint), and
-`npm run fmt` (oxfmt) — not prettier/eslint. To try the app against a
-real repo, run `node cli.ts --dev` in that repo (`--host 127.0.0.1`
-suppresses auto-opening a browser).
+After changes, run `npm run ci` unless narrowing is clearly justified. That
+runs the build, type-check, oxlint, oxfmt check, and tests. Use `npm run fmt`
+to apply formatting — not prettier/eslint. To try the app against a real repo,
+run `node cli.ts --dev` in that repo (`--host 127.0.0.1` suppresses
+auto-opening a browser).
 
-## dist/ is committed on purpose
+## npm package build
 
-`dist/` (the built frontend) is versioned so people on illumos can run the
-tool without building the frontend, which doesn't work on illumos. Rebuilt
-`dist/` churn in a commit is legitimate content, not noise.
+The npm package is a bin-only package named `@oxide/skepsis`. `npm run build`
+removes `dist/`, builds the frontend into `dist/web`, then bundles the CLI and
+server into `dist/cli.js` with tsdown. Runtime dependencies are bundled into
+the CLI output, so the published package has no production dependencies and
+`npx @oxide/skepsis` does not run a build step.
+
+`dist/` is ignored build output. Do not edit it by hand or include it in
+reviews; regenerate it with `npm run build` when checking package behavior.
 
 ## Code map
 
@@ -24,7 +30,7 @@ cli.ts                CLI entry (commander). Detects jj/git, builds DiffArgs
                       starts the API server, spawns Vite in --dev mode.
 server/
   main.ts             Hono server. GET /api/diff; POST/DELETE /api/viewed;
-                      POST/DELETE /api/comment; serves dist/ statics.
+                      POST/DELETE /api/comment; serves dist/web statics.
   diff.ts             Runs `jj diff --git`/`git diff`, extracts per-file blob
                       hashes from index lines.
   viewed.ts           Viewed state, content-addressed by git blob ID — files

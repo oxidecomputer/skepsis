@@ -1,10 +1,21 @@
 {
-  "name": "skepsis",
-  "private": true,
+  "name": "@oxide/skepsis",
+  "version": "0.0.2",
+  "repository": "github:oxidecomputer/skepsis",
+  "bin": {
+    "skepsis": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "rm -rf dist && vite build && tsdown",
+    "prepack": "npm run build",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
     "lint": "oxlint",
@@ -12,32 +23,31 @@
     "test": "vitest run",
     "ci": "npm run build && npm run tsc && npm run lint && npm run fmt:check && npm test"
   },
-  "dependencies": {
+  "devDependencies": {
     "@base-ui/react": "^1.5.0",
     "@commander-js/extra-typings": "^15.0.0",
     "@hono/node-server": "^1.19.12",
     "@hono/zod-validator": "^0.7.6",
     "@pierre/diffs": "^1.2.9",
     "@tanstack/react-query": "^5.96.0",
+    "@types/node": "^22",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@typescript/native-preview": "7.0.0-dev.20260615.1",
+    "@vitejs/plugin-react": "^6.0.2",
     "commander": "^15.0.0",
     "hono": "^4.12.9",
     "linguist-languages": "^9.3.2",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "@types/node": "^22",
-    "@typescript/native-preview": "7.0.0-dev.20260615.1",
-    "@vitejs/plugin-react": "^6.0.2",
     "oxfmt": "^0.55.0",
     "oxlint": "^1.70.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tsdown": "^0.22.3",
     "vite": "^8.0.16",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "zod": "^4.3.6"
   },
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=22"
   }
 }
