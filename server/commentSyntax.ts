@@ -7,10 +7,11 @@
  */
 
 import { basename, extname } from 'node:path'
-import * as languages from 'linguist-languages'
 import type { Language, LanguageName } from 'linguist-languages'
+import * as languages from 'linguist-languages'
 import {
   BLOCK_COMMENT,
+  type CommentSyntax,
   DASH_COMMENT,
   HASH_COMMENT,
   PERCENT_COMMENT,
@@ -18,7 +19,6 @@ import {
   SEMICOLON_COMMENT,
   SLASH_COMMENT,
   XML_COMMENT,
-  type CommentSyntax,
 } from '../shared/reviewComments.ts'
 
 // Hand-maintained table of linguist language name → line-comment syntax,
@@ -107,6 +107,7 @@ const EXTENSION_OVERRIDES: Partial<Record<string, LanguageName>> = {
   '.ts': 'TypeScript',
   '.cls': 'TeX',
   '.php': 'PHP',
+  '.cs': 'C#',
 }
 
 const EXTENSION_SYNTAX_OVERRIDES: Partial<Record<string, CommentSyntax>> = {
