@@ -3,7 +3,8 @@
 # generated automatically (https://docs.npmjs.com/trusted-publishers).
 #
 # Two modes:
-#   Release: push a tag — npm version patch && jj git push (or git push --tags)
+#   Release: push a tag matching package.json (git tag v0.1.1 && git push
+#     origin v0.1.1 — jj can't push tags). Full recipe in the README.
 #   Canary:  Actions tab → Release → Run workflow → enter a PR number.
 #     Publishes that PR's head as <version>-canary.<pr>.<sha> under the
 #     `canary` dist-tag and comments the version on the PR. Dispatching
