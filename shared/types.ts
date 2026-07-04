@@ -65,6 +65,10 @@ export type DiffArgs = ({ vcs: 'jj'; args: string[] } | { vcs: 'git'; args: stri
   commentsEnabled: boolean
   files: string[]
   endpoints: DiffEndpoints
+  /** Args to show in the UI/log command string in place of `args`, for when
+   *  the executed args (e.g., a resolved sha) are less readable than the
+   *  user-facing form. */
+  displayArgs?: string[]
 }
 
 // --- Response types (checked via satisfies on the server) ---
