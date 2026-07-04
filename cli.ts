@@ -142,15 +142,18 @@ function buildDiffSource(): DiffArgs {
         endpoints = { left: opts.from!, right: 'workingCopy' }
       }
     } else if (!opts.revisions) {
-      // Default: GitHub-PR-style three-dot diff, i.e. from merge-base(A, B)
-      // to B, so upstream commits the branch doesn't have don't show up as
-      // reversions (two-dot `git diff A..B` compares A and B directly).
+      // Default: the git translation of the jj default — diff the working
+      // tree against the fork point with trunk. `git diff --merge-base A` is
+      // equivalent to `git diff $(git merge-base A HEAD)` (git >= 2.30).
+      // Using the merge base keeps upstream commits the branch doesn't have
+      // from showing up as reversions, and ending at the working tree means
+      // review comments work out of the box.
       const base = resolveGitBase()
-      args = [`${base}...HEAD`]
-      commentsEnabled = false
-      // `git show 'A...B:path'` isn't valid, so resolve the merge base up
-      // front for the left endpoint. If it fails (e.g. unrelated histories),
-      // leave expansion disabled and let diff validation report any error.
+      args = ['--merge-base', base]
+      commentsEnabled = true
+      // `git show` has no --merge-base, so resolve the sha up front for the
+      // left endpoint. If it fails (e.g. unrelated histories), leave
+      // expansion disabled and let diff validation report any error.
       let mergeBase: string | null = null
       try {
         mergeBase = execFileSync('git', ['merge-base', base, 'HEAD'], {
@@ -160,7 +163,7 @@ function buildDiffSource(): DiffArgs {
       } catch {
         mergeBase = null
       }
-      endpoints = mergeBase ? { left: mergeBase, right: { rev: 'HEAD' } } : null
+      endpoints = mergeBase ? { left: mergeBase, right: 'workingCopy' } : null
     } else {
       const rev = opts.revisions
       // No .. means single ref, which diffs against working tree

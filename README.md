@@ -69,9 +69,10 @@ skepsis -f main -t @             # diff between two revisions
 Ranges passed with `-r` are passed through verbatim to `git diff`.
 
 ```
-skepsis                          # review branch vs origin, GitHub PR style
-                                 # (git diff origin/HEAD...HEAD, falling back
-                                 # to origin/main, origin/master, main, master)
+skepsis                          # review branch + working tree vs origin
+                                 # (git diff --merge-base origin/HEAD; falls
+                                 # back to origin/main, origin/master, main,
+                                 # master)
 skepsis -f main                  # diff since main: git diff main HEAD
 skepsis -r main..my-branch       # review commits on my-branch
 skepsis -r HEAD~5..HEAD          # review the last 5 commits
@@ -96,7 +97,8 @@ Review comments are inserted into the source files, so they show up in your VCS
 diff and are visible to coding agents. They can be resolved (deleted) from the
 UI. Comments are only enabled when the diff includes the working copy (e.g.,
 a revset ending in `@` for jj, or an open-ended range ending at the working
-tree for git), since that's where the inserted lines land.
+tree for git), since that's where the inserted lines land. The default diff
+in both modes ends at the working copy, so comments are enabled by default.
 
 ### Marking files viewed
 
