@@ -70,7 +70,8 @@ Ranges passed with `-r` are passed through verbatim to `git diff`.
 
 ```
 skepsis                          # review branch vs origin, GitHub PR style
-                                 # (git diff origin/HEAD...HEAD)
+                                 # (git diff origin/HEAD...HEAD, falling back
+                                 # to origin/main, origin/master, main, master)
 skepsis -f main                  # diff since main: git diff main HEAD
 skepsis -r main..my-branch       # review commits on my-branch
 skepsis -r HEAD~5..HEAD          # review the last 5 commits

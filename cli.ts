@@ -46,6 +46,36 @@ function detectVcs(): 'jj' | 'git' {
 
 const vcs = opts.git ? 'git' : detectVcs()
 
+/* Base rev candidates for the default git diff. origin/HEAD only exists when
+ * a clone set it (git clone does, git remote add does not), so fall back to
+ * common default-branch names, remote-tracking first — a poor man's version
+ * of what jj's trunk() does. */
+const GIT_BASE_CANDIDATES = [
+  'origin/HEAD',
+  'origin/main',
+  'origin/master',
+  'main',
+  'master',
+]
+
+function resolveGitBase(): string {
+  for (const rev of GIT_BASE_CANDIDATES) {
+    try {
+      execFileSync('git', ['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], {
+        stdio: 'ignore',
+      })
+      return rev
+    } catch {
+      // try the next candidate
+    }
+  }
+  console.error(
+    `No base revision found for the default diff (tried ${GIT_BASE_CANDIDATES.join(', ')}).\n` +
+      'Specify a range explicitly with -r or -f/-t.',
+  )
+  process.exit(1)
+}
+
 /** Split an `A..B` range into its two revs. Returns null for anything that
  *  isn't a simple two-sided range with both sides non-empty. */
 function parseRange(rev: string): { left: string; right: string } | null {
@@ -115,14 +145,15 @@ function buildDiffSource(): DiffArgs {
       // Default: GitHub-PR-style three-dot diff, i.e. from merge-base(A, B)
       // to B, so upstream commits the branch doesn't have don't show up as
       // reversions (two-dot `git diff A..B` compares A and B directly).
-      args = ['origin/HEAD...HEAD']
+      const base = resolveGitBase()
+      args = [`${base}...HEAD`]
       commentsEnabled = false
       // `git show 'A...B:path'` isn't valid, so resolve the merge base up
-      // front for the left endpoint. If it fails (e.g. origin/HEAD is not
-      // set), leave expansion disabled and let diff validation report it.
+      // front for the left endpoint. If it fails (e.g. unrelated histories),
+      // leave expansion disabled and let diff validation report any error.
       let mergeBase: string | null = null
       try {
-        mergeBase = execFileSync('git', ['merge-base', 'origin/HEAD', 'HEAD'], {
+        mergeBase = execFileSync('git', ['merge-base', base, 'HEAD'], {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'ignore'],
         }).trim()
