@@ -69,8 +69,18 @@ function buildDiffSource(): DiffArgs {
       commentsEnabled = !opts.to || opts.to === '@'
       // jj defaults both --from and --to to @
       endpoints = { left: opts.from ?? '@', right: { rev: opts.to ?? '@' } }
+    } else if (!opts.revisions) {
+      // Default: GitHub-PR-style diff from the fork point of trunk and @.
+      // Same output as `-r 'trunk()..@'` for a linear branch, but still works
+      // after trunk has been merged into the branch, where jj rejects
+      // `trunk()..@` ("Cannot diff revsets with gaps in"). fork_point()
+      // requires jj >= 0.24.
+      const from = 'fork_point(trunk() | @)'
+      args.push('--from', from)
+      commentsEnabled = true
+      endpoints = { left: from, right: { rev: '@' } }
     } else {
-      const rev = opts.revisions ?? 'trunk()..@'
+      const rev = opts.revisions
       args.push('-r', rev)
       // Comments enabled if the revset's "to" side is @
       commentsEnabled = rev === '@' || rev.endsWith('..@')
@@ -101,8 +111,27 @@ function buildDiffSource(): DiffArgs {
         commentsEnabled = true
         endpoints = { left: opts.from!, right: 'workingCopy' }
       }
+    } else if (!opts.revisions) {
+      // Default: GitHub-PR-style three-dot diff, i.e. from merge-base(A, B)
+      // to B, so upstream commits the branch doesn't have don't show up as
+      // reversions (two-dot `git diff A..B` compares A and B directly).
+      args = ['origin/HEAD...HEAD']
+      commentsEnabled = false
+      // `git show 'A...B:path'` isn't valid, so resolve the merge base up
+      // front for the left endpoint. If it fails (e.g. origin/HEAD is not
+      // set), leave expansion disabled and let diff validation report it.
+      let mergeBase: string | null = null
+      try {
+        mergeBase = execFileSync('git', ['merge-base', 'origin/HEAD', 'HEAD'], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim()
+      } catch {
+        mergeBase = null
+      }
+      endpoints = mergeBase ? { left: mergeBase, right: { rev: 'HEAD' } } : null
     } else {
-      const rev = opts.revisions ?? 'origin/HEAD..HEAD'
+      const rev = opts.revisions
       // No .. means single ref, which diffs against working tree
       commentsEnabled = !rev.includes('..')
       args = [rev]

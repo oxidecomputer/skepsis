@@ -57,7 +57,8 @@ The examples use `skepsis`, the installed bin name. An `sk` alias works the
 same way.
 
 ```
-skepsis                          # review trunk()..@
+skepsis                          # review branch vs trunk, GitHub PR style
+                                 # (jj diff --from 'fork_point(trunk() | @)')
 skepsis -r @                     # review working copy only
 skepsis -r 'mybranch..@'         # review a range
 skepsis -f main -t @             # diff between two revisions
@@ -68,7 +69,8 @@ skepsis -f main -t @             # diff between two revisions
 Ranges passed with `-r` are passed through verbatim to `git diff`.
 
 ```
-skepsis                          # git diff origin/HEAD..HEAD
+skepsis                          # review branch vs origin, GitHub PR style
+                                 # (git diff origin/HEAD...HEAD)
 skepsis -f main                  # diff since main: git diff main HEAD
 skepsis -r main..my-branch       # review commits on my-branch
 skepsis -r HEAD~5..HEAD          # review the last 5 commits
