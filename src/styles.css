@@ -449,8 +449,35 @@ body,
   color: var(--fg-muted);
 }
 
+/* The diff command behind the current view, so the range being reviewed is
+   visible without checking the terminal. Truncates first when the row runs
+   out of room; hover shows the full command. */
+.diff-command {
+  padding: 3px 6px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.progress-bar > span {
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: var(--fg-dim);
+}
+
+/* Kept small and right next to the counter so it reads as viewed-progress
+   rather than something about the diff as a whole. margin-left: auto pushes
+   the whole progress group to the right end of the row. */
 .progress-track {
-  flex: 1;
+  flex: 0 0 96px;
+  margin-left: auto;
   height: 4px;
   background: var(--bg-muted);
   border-radius: 2px;
@@ -491,7 +518,7 @@ body,
    aria-disabled rather than the disabled attribute, since disabled buttons
    don't fire :hover. */
 .unview-all-button.disabled {
-  opacity: 0.4;
+  opacity: 0.6;
   cursor: default;
 }
 
