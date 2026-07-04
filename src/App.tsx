@@ -521,10 +521,12 @@ function FileHeader({
 }
 
 function ProgressBar({
+  command,
   fileHashes,
   viewed,
   onUnviewAll,
 }: {
+  command: string
   fileHashes: FileHashes
   viewed: ViewedMap
   onUnviewAll: () => void
@@ -538,6 +540,13 @@ function ProgressBar({
 
   return (
     <div className="progress-bar">
+      <code className="diff-command">{command}</code>
+      <div className="progress-track">
+        <div
+          className="progress-fill"
+          style={{ width: `${(viewedCount / total) * 100}%` }}
+        />
+      </div>
       <span>
         {viewedCount}/{total} files viewed
       </span>
@@ -553,12 +562,6 @@ function ProgressBar({
           Clear
         </button>
       </Tip>
-      <div className="progress-track">
-        <div
-          className="progress-fill"
-          style={{ width: `${(viewedCount / total) * 100}%` }}
-        />
-      </div>
     </div>
   )
 }
@@ -1507,6 +1510,7 @@ function DiffView() {
       )}
       <div className="diff-container">
         <ProgressBar
+          command={data.revset}
           fileHashes={fileHashes}
           viewed={viewed}
           onUnviewAll={() => {
