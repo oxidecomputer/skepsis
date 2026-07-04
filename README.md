@@ -129,3 +129,11 @@ Before committing changes, run:
 ```
 npm run ci
 ```
+
+## Versioning
+
+- **patch** — bug fixes, dependency bumps, internal changes
+- **minor** — new features: flags, keyboard shortcuts, UI capabilities
+- **major** — breaking changes to anything scriptable or on disk: removed or
+  renamed flags, changed flag defaults, changed `<review>` comment or
+  viewed-state formats
