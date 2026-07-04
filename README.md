@@ -140,17 +140,16 @@ npm run ci
 
 ## Releases
 
-To publish a release, push a tag like `v0.1.0` pointing at a commit whose
-`package.json` has the matching version (the workflow fails on a mismatch):
+To publish a release, bump the version and land the change on `main`:
 
 ```
 npm version patch --no-git-tag-version   # or minor/major — bumps package.json
 jj commit -m 'v0.1.1'                    # land the bump on main via PR
-git tag v0.1.1 <commit>                  # then tag the commit on main
-git push origin v0.1.1                   # tag push triggers the publish
 ```
 
-Tags have to be pushed with git; jj can't do it.
+On every push to `main`, CI checks whether the `package.json` version is
+already on the registry. If not, it publishes and pushes a matching tag like
+`v0.1.1` as a record.
 
 To publish a canary build of a PR, go to the [Release
 workflow](https://github.com/oxidecomputer/skepsis/actions/workflows/release.yml),
