@@ -1,6 +1,6 @@
 {
   "name": "@oxide/skepsis",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "repository": "github:oxidecomputer/skepsis",
   "bin": {
     "skepsis": "dist/cli.js"
