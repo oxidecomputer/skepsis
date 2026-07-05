@@ -4,8 +4,10 @@
 #
 # Two modes:
 #   Release: bump the version in package.json and land it on main. The
-#     workflow publishes any version not yet on the registry and pushes a
-#     matching v* tag as a record. Full recipe in the README.
+#     workflow publishes any version not yet on the registry and creates a
+#     matching v* GitHub release with generated notes (customizable via
+#     .github/release.yml config if we ever want categories). Full recipe in
+#     the README.
 #   Canary:  Actions tab → Release → Run workflow → enter a PR number.
 #     Publishes that PR's head as <version>-canary.<pr>.<sha> under the
 #     `canary` dist-tag and comments the version on the PR. Dispatching
@@ -28,7 +30,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     permissions:
-      contents: write # to push the release tag
+      contents: write # to create the release and its tag
       id-token: write # required for OIDC trusted publishing
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -61,17 +63,21 @@ jobs:
       - name: Publish
         if: steps.check.outputs.published == 'false'
         run: npm publish
-      # Runs even when publish was skipped, so a rerun after a failed tag push
-      # can still create the tag. No-op when the tag already exists.
-      - name: Tag release
+      # Runs even when publish was skipped, so a rerun after a failed release
+      # step can still create the release. No-op when it already exists.
+      # `gh release create` also creates the tag; --generate-notes produces
+      # the same notes as the web UI's "Generate release notes" button, from
+      # PRs merged since the previous release.
+      - name: Create GitHub release
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.check.outputs.version }}
         run: |
-          if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" > /dev/null; then
-            echo "Tag v${VERSION} already exists"
+          if gh release view "v${VERSION}" --repo ${{ github.repository }} > /dev/null 2>&1; then
+            echo "Release v${VERSION} already exists"
           else
-            git tag "v${VERSION}"
-            git push origin "v${VERSION}"
+            gh release create "v${VERSION}" --generate-notes \
+              --target ${{ github.sha }} --repo ${{ github.repository }}
           fi
 
   canary:
