@@ -153,8 +153,9 @@ jj commit -m 'v0.1.1'                    # land the bump on main via PR
 ```
 
 On every push to `main`, CI checks whether the `package.json` version is
-already on the registry. If not, it publishes and pushes a matching tag like
-`v0.1.1` as a record.
+already on the registry. If not, it publishes and creates a matching [GitHub
+release](https://github.com/oxidecomputer/skepsis/releases) like `v0.1.1` with
+auto-generated notes listing the PRs merged since the previous release.
 
 To publish a canary build of a PR, go to the [Release
 workflow](https://github.com/oxidecomputer/skepsis/actions/workflows/release.yml),
