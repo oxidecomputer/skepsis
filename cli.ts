@@ -46,8 +46,9 @@ function detectVcs(): 'jj' | 'git' {
 
 const vcs = opts.git ? 'git' : detectVcs()
 
-/* Base rev candidates for the default git diff. origin/HEAD only exists when
- * a clone set it (git clone does, git remote add does not), so fall back to
+/* Base rev candidates for the default git diff. A remote's default branch
+ * (origin/HEAD) is optional — "Having a default branch for a remote is not
+ * required" (https://git-scm.com/docs/git-remote, set-head) — so fall back to
  * common default-branch names, remote-tracking first — a poor man's version
  * of what jj's trunk() does. */
 const GIT_BASE_CANDIDATES = [
@@ -58,15 +59,27 @@ const GIT_BASE_CANDIDATES = [
   'master',
 ]
 
-function resolveGitBase(): string {
-  for (const rev of GIT_BASE_CANDIDATES) {
+/** Find the trunk-ish base for the default diff, plus its merge base with
+ *  HEAD. Probing with `git merge-base` both verifies the candidate exists and
+ *  yields the fork-point sha in one step. */
+function resolveGitBase(): { base: string; mergeBase: string } {
+  for (const base of GIT_BASE_CANDIDATES) {
     try {
-      execFileSync('git', ['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], {
-        stdio: 'ignore',
-      })
-      return rev
-    } catch {
-      // try the next candidate
+      const mergeBase = execFileSync('git', ['merge-base', base, 'HEAD'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim()
+      return { base, mergeBase }
+    } catch (error) {
+      // A missing candidate or no common ancestor means try the next one, but
+      // outside a repo or without git installed every candidate fails the
+      // same way — git's own error beats a misleading "no base revision
+      // found" that suggests -r/-f flags that would also fail.
+      const { code, stderr } = error as { code?: string; stderr?: string }
+      if (code === 'ENOENT' || stderr?.includes('not a git repository')) {
+        console.error(stderr?.trim() || (error as Error).message)
+        process.exit(1)
+      }
     }
   }
   console.error(
@@ -92,23 +105,20 @@ function buildDiffSource(): DiffArgs {
     const args: string[] = []
     let commentsEnabled: boolean
     let endpoints: DiffEndpoints
-    if (opts.from || opts.to) {
-      if (opts.from) args.push('--from', opts.from)
+    if (opts.from || opts.to || !opts.revisions) {
+      // With no range flags at all, --from defaults to a GitHub-PR-style diff
+      // from the fork point of trunk and @. Same output as `-r 'trunk()..@'`
+      // for a linear branch, but still works after trunk has been merged into
+      // the branch, where jj rejects `trunk()..@` ("Cannot diff revsets with
+      // gaps in"). fork_point() requires jj >= 0.24
+      // (https://github.com/jj-vcs/jj/releases/tag/v0.24.0).
+      const from = opts.from ?? (opts.to ? undefined : 'fork_point(trunk() | @)')
+      if (from) args.push('--from', from)
       if (opts.to) args.push('--to', opts.to)
       // Comments enabled if --to is @ or omitted (jj defaults --to to @)
       commentsEnabled = !opts.to || opts.to === '@'
       // jj defaults both --from and --to to @
-      endpoints = { left: opts.from ?? '@', right: { rev: opts.to ?? '@' } }
-    } else if (!opts.revisions) {
-      // Default: GitHub-PR-style diff from the fork point of trunk and @.
-      // Same output as `-r 'trunk()..@'` for a linear branch, but still works
-      // after trunk has been merged into the branch, where jj rejects
-      // `trunk()..@` ("Cannot diff revsets with gaps in"). fork_point()
-      // requires jj >= 0.24.
-      const from = 'fork_point(trunk() | @)'
-      args.push('--from', from)
-      commentsEnabled = true
-      endpoints = { left: from, right: { rev: '@' } }
+      endpoints = { left: from ?? '@', right: { rev: opts.to ?? '@' } }
     } else {
       const rev = opts.revisions
       args.push('-r', rev)
@@ -129,6 +139,7 @@ function buildDiffSource(): DiffArgs {
     let args: string[]
     let commentsEnabled: boolean
     let endpoints: DiffEndpoints
+    let displayArgs: string[] | undefined
     if (opts.from || opts.to) {
       if (opts.to) {
         // Explicit --to: commit-to-commit diff, no working copy
@@ -143,27 +154,21 @@ function buildDiffSource(): DiffArgs {
       }
     } else if (!opts.revisions) {
       // Default: the git translation of the jj default — diff the working
-      // tree against the fork point with trunk. `git diff --merge-base A` is
-      // equivalent to `git diff $(git merge-base A HEAD)` (git >= 2.30).
-      // Using the merge base keeps upstream commits the branch doesn't have
-      // from showing up as reversions, and ending at the working tree means
-      // review comments work out of the box.
-      const base = resolveGitBase()
-      args = ['--merge-base', base]
+      // tree against the branch's fork point from trunk (the merge base of
+      // the resolved base and HEAD). Using the merge base keeps upstream
+      // commits the branch doesn't have from showing up as reversions, and
+      // ending at the working tree means review comments work out of the box.
+      // Diffing against the resolved sha rather than `git diff --merge-base
+      // <base>` pins the diff and hunk expansion to the same commit — they
+      // can't drift apart if the base moves while the server runs — and
+      // avoids --merge-base's hard error when there are multiple merge bases.
+      // The sha is unreadable, so show the equivalent symbolic command in the
+      // UI and log.
+      const { base, mergeBase } = resolveGitBase()
+      args = [mergeBase]
+      displayArgs = ['--merge-base', base]
       commentsEnabled = true
-      // `git show` has no --merge-base, so resolve the sha up front for the
-      // left endpoint. If it fails (e.g. unrelated histories), leave
-      // expansion disabled and let diff validation report any error.
-      let mergeBase: string | null = null
-      try {
-        mergeBase = execFileSync('git', ['merge-base', base, 'HEAD'], {
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'ignore'],
-        }).trim()
-      } catch {
-        mergeBase = null
-      }
-      endpoints = mergeBase ? { left: mergeBase, right: 'workingCopy' } : null
+      endpoints = { left: mergeBase, right: 'workingCopy' }
     } else {
       const rev = opts.revisions
       // No .. means single ref, which diffs against working tree
@@ -178,7 +183,7 @@ function buildDiffSource(): DiffArgs {
         endpoints = null
       }
     }
-    return { vcs: 'git', args, commentsEnabled, files, endpoints }
+    return { vcs: 'git', args, commentsEnabled, files, endpoints, displayArgs }
   }
 }
 

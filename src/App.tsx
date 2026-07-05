@@ -540,7 +540,10 @@ function ProgressBar({
 
   return (
     <div className="progress-bar">
-      <code className="diff-command">{command}</code>
+      {/* title gives a native tooltip when the command is ellipsized */}
+      <code className="diff-command" title={command}>
+        {command}
+      </code>
       <div className="progress-track">
         <div
           className="progress-fill"

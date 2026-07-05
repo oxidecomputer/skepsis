@@ -14,6 +14,7 @@ import { join, relative } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
 import { getDiff, validateDiffArgs } from './diff.ts'
+import { displayCommand } from './displayCommand.ts'
 import { getFileContents } from './fileContents.ts'
 import { loadViewed, markViewed, unmarkViewed, unmarkViewedAll } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
@@ -46,14 +47,9 @@ export async function startServer(opts: {
   app.get('/api/diff', async (c) => {
     const { patch, fileHashes } = await getDiff(diffSource)
     const viewed = await loadViewed(cwd, fileHashes)
-    const fileSuffix =
-      diffSource.files.length > 0 ? ` -- ${diffSource.files.join(' ')}` : ''
     return c.json({
       patch,
-      revset:
-        diffSource.vcs === 'jj'
-          ? `jj diff ${diffSource.args.join(' ')}${fileSuffix}`
-          : `git diff ${diffSource.args.join(' ')}${fileSuffix}`,
+      revset: displayCommand(diffSource),
       vcs: diffSource.vcs,
       commentsEnabled: diffSource.commentsEnabled,
       expandable: diffSource.endpoints !== null,
@@ -120,9 +116,7 @@ export async function startServer(opts: {
     serve({ fetch: app.fetch, port, hostname }, (info) => {
       const assignedPort = typeof info === 'string' ? port : info.port
       console.info(
-        `skepsis on http://${hostname}:${assignedPort} (${diffSource.vcs}: ${diffSource.args.join(' ')}${
-          diffSource.files.length > 0 ? ` -- ${diffSource.files.join(' ')}` : ''
-        })`,
+        `skepsis on http://${hostname}:${assignedPort} (${displayCommand(diffSource)})`,
       )
       resolve(assignedPort)
     })
