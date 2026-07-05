@@ -105,24 +105,20 @@ function buildDiffSource(): DiffArgs {
     const args: string[] = []
     let commentsEnabled: boolean
     let endpoints: DiffEndpoints
-    if (opts.from || opts.to) {
-      if (opts.from) args.push('--from', opts.from)
+    if (opts.from || opts.to || !opts.revisions) {
+      // With no range flags at all, --from defaults to a GitHub-PR-style diff
+      // from the fork point of trunk and @. Same output as `-r 'trunk()..@'`
+      // for a linear branch, but still works after trunk has been merged into
+      // the branch, where jj rejects `trunk()..@` ("Cannot diff revsets with
+      // gaps in"). fork_point() requires jj >= 0.24
+      // (https://github.com/jj-vcs/jj/releases/tag/v0.24.0).
+      const from = opts.from ?? (opts.to ? undefined : 'fork_point(trunk() | @)')
+      if (from) args.push('--from', from)
       if (opts.to) args.push('--to', opts.to)
       // Comments enabled if --to is @ or omitted (jj defaults --to to @)
       commentsEnabled = !opts.to || opts.to === '@'
       // jj defaults both --from and --to to @
-      endpoints = { left: opts.from ?? '@', right: { rev: opts.to ?? '@' } }
-    } else if (!opts.revisions) {
-      // Default: GitHub-PR-style diff from the fork point of trunk and @.
-      // Same output as `-r 'trunk()..@'` for a linear branch, but still works
-      // after trunk has been merged into the branch, where jj rejects
-      // `trunk()..@` ("Cannot diff revsets with gaps in"). fork_point()
-      // requires jj >= 0.24
-      // (https://github.com/jj-vcs/jj/releases/tag/v0.24.0).
-      const from = 'fork_point(trunk() | @)'
-      args.push('--from', from)
-      commentsEnabled = true
-      endpoints = { left: from, right: { rev: '@' } }
+      endpoints = { left: from ?? '@', right: { rev: opts.to ?? '@' } }
     } else {
       const rev = opts.revisions
       args.push('-r', rev)
