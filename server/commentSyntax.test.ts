@@ -101,15 +101,15 @@ describe('getCommentSyntax', () => {
     expect(getCommentSyntax(file, firstLine)).toEqual(expected)
   })
 
-  it('throws on unrecognized file', () => {
-    expect(() => getCommentSyntax('unknown.zzz', '')).toThrow(/unrecognized file type/)
+  it('falls back to bare tags on unrecognized file', () => {
+    expect(getCommentSyntax('unknown.zzz', '')).toEqual({ prefix: '' })
   })
 
-  it('throws on ambiguous file extensions without an override', () => {
-    expect(() => getCommentSyntax('foo.m', '')).toThrow(/ambiguous file type/)
+  it('falls back to bare tags on ambiguous file extensions without an override', () => {
+    expect(getCommentSyntax('foo.m', '')).toEqual({ prefix: '' })
   })
 
-  it('throws when a detected language has no comment-syntax entry', () => {
-    expect(() => getCommentSyntax('foo.wl', '')).toThrow(/no entry for language/)
+  it('falls back to bare tags when a detected language has no comment-syntax entry', () => {
+    expect(getCommentSyntax('foo.wl', '')).toEqual({ prefix: '' })
   })
 })

@@ -25,6 +25,8 @@ describe('REVIEW_OPEN_PATTERN', () => {
     '% <review>',
     '; <review>',
     '" <review>',
+    '<review>',
+    '  <review>',
   ])('matches %j', (line) => {
     expect(REVIEW_OPEN_PATTERN.test(line)).toBe(true)
   })
@@ -45,6 +47,7 @@ describe('REVIEW_CLOSE_PATTERN', () => {
     '% </review>',
     '; </review>',
     '" </review>',
+    '</review>',
   ])('matches %j', (line) => {
     expect(REVIEW_CLOSE_PATTERN.test(line)).toBe(true)
   })

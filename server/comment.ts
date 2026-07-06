@@ -33,10 +33,9 @@ export async function insertComment(
   const targetLine = lines[afterLine - 1]!
   const indent = targetLine.match(/^(\s*)/)?.[1] ?? ''
   const { prefix, suffix } = getCommentSyntax(file, lines[0] ?? '')
-  const wrap = (body: string) => {
-    if (!body) return suffix ? `${indent}${prefix} ${suffix}` : `${indent}${prefix}`
-    return suffix ? `${indent}${prefix} ${body} ${suffix}` : `${indent}${prefix} ${body}`
-  }
+  // prefix may be empty (bare fallback for unknown file types), so join only
+  // the non-empty parts
+  const wrap = (body: string) => indent + [prefix, body, suffix].filter(Boolean).join(' ')
 
   const commentLines = [
     wrap(REVIEW_OPEN_TAG),

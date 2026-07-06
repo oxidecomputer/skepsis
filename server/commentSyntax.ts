@@ -10,6 +10,7 @@ import { basename, extname } from 'node:path'
 import type { Language, LanguageName } from 'linguist-languages'
 import * as languages from 'linguist-languages'
 import {
+  BARE_COMMENT,
   BLOCK_COMMENT,
   type CommentSyntax,
   DASH_COMMENT,
@@ -23,8 +24,8 @@ import {
 
 // Hand-maintained table of linguist language name → line-comment syntax,
 // grouped by syntax to make the source of truth compact. If a language
-// detected via linguist isn't listed here, we treat the file as unsupported
-// rather than guessing.
+// detected via linguist isn't listed here, we fall back to bare (uncommented)
+// review tags rather than guessing a syntax.
 const SYNTAX_GROUPS: Array<[CommentSyntax, LanguageName[]]> = [
   [
     HASH_COMMENT,
@@ -180,17 +181,6 @@ export function getCommentSyntax(file: string, firstLine: string): CommentSyntax
   if (syntaxOverride) return syntaxOverride
 
   const lang = detectLanguage(file, firstLine)
-  if (!lang) {
-    const reason = ambiguousExtensions.has(ext)
-      ? 'ambiguous file type'
-      : 'unrecognized file type'
-    throw new Error(`Can't determine comment syntax for ${file}: ${reason}`)
-  }
-  const syntax = COMMENT_SYNTAX.get(lang)
-  if (!syntax) {
-    throw new Error(
-      `Can't determine comment syntax for ${file}: no entry for language "${lang}"`,
-    )
-  }
-  return syntax
+  if (!lang) return BARE_COMMENT
+  return COMMENT_SYNTAX.get(lang) ?? BARE_COMMENT
 }
