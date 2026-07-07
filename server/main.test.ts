@@ -6,33 +6,16 @@
  * Copyright Oxide Computer Company
  */
 
-import { execFile } from 'node:child_process'
 import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { DiffArgs, DiffResponse, FileContentsResponse } from '../shared/types.ts'
+import { exec, isolateVcsConfig } from './testUtil.ts'
 
-const exec = promisify(execFile)
-
-// The server spawns git/jj itself, so isolation from the user's real config
-// has to happen in this process's env, not per exec call. HOME is also where
-// viewed state is stored, and it's read at module load — so all of this must
-// run before main.ts is imported, hence the dynamic import.
-const home = await mkdtemp(join(tmpdir(), 'skepsis-server-test-home-'))
-process.env.HOME = home
-process.env.GIT_CONFIG_GLOBAL = join(home, 'gitconfig')
-process.env.GIT_CONFIG_SYSTEM = '/dev/null'
-await writeFile(
-  process.env.GIT_CONFIG_GLOBAL,
-  '[user]\nemail = test@example.com\nname = Test\n',
-)
-process.env.JJ_CONFIG = join(home, 'jj-config.toml')
-await writeFile(
-  process.env.JJ_CONFIG,
-  '[user]\nname = "Test"\nemail = "test@example.com"\n',
-)
+// HOME is also where viewed state is stored, and it's read at module load —
+// so isolation must run before main.ts is imported, hence the dynamic import.
+const home = await isolateVcsConfig()
 const { startServer } = await import('./main.ts')
 
 afterAll(async () => {
