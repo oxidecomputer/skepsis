@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { DiffArgs } from '../shared/types.ts'
 import { diffCommand } from './diff.ts'
-import { exec, isolateVcsConfig, run } from './testUtil.ts'
+import { isolateVcsConfig, requireJj, run } from './testUtil.ts'
 
 const base = { commentsEnabled: true, files: [], endpoints: null }
 
@@ -79,10 +79,7 @@ describe('jj show-path-prefix override (integration)', () => {
   let repo: string
 
   beforeAll(async () => {
-    // Failing here fails only this suite; the git tests above still run.
-    await exec('jj', ['--version']).catch(() => {
-      throw new Error('these tests require jj on the PATH')
-    })
+    await requireJj()
     tmp = await mkdtemp(join(tmpdir(), 'skepsis-jj-test-'))
     await run('jj', ['git', 'init', 'repo'], tmp)
     repo = join(tmp, 'repo')

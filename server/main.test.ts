@@ -6,12 +6,12 @@
  * Copyright Oxide Computer Company
  */
 
-import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { DiffArgs, DiffResponse, FileContentsResponse } from '../shared/types.ts'
-import { exec, isolateVcsConfig } from './testUtil.ts'
+import { exec, isolateVcsConfig, requireJj } from './testUtil.ts'
 
 // HOME is also where viewed state is stored, and it's read at module load —
 // so isolation must run before main.ts is imported, hence the dynamic import.
@@ -37,11 +37,14 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
   const run = (cmd: string, args: string[]) => exec(cmd, args, { cwd: dir })
 
   beforeAll(async () => {
+    if (vcs === 'jj') await requireJj()
     dir = await mkdtemp(join(tmpdir(), `skepsis-server-test-${vcs}-`))
     await run(vcs, vcs === 'git' ? ['init', '-q'] : ['git', 'init'])
     await writeFile(join(dir, 'f.txt'), 'hello\n')
     await writeFile(join(dir, 'g.txt'), 'one\ntwo\nthree\n')
     await writeFile(join(dir, 'del.txt'), 'bye\n')
+    await writeFile(join(dir, 'r.txt'), 'rename me\n')
+    await writeFile(join(dir, 'c.ts'), 'const one = 1\n')
     if (vcs === 'git') {
       await run('git', ['add', '.'])
       await run('git', ['commit', '-qm', 'init'])
@@ -52,6 +55,9 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     await appendFile(join(dir, 'g.txt'), 'four\n')
     await writeFile(join(dir, 'added.txt'), 'new\n')
     await rm(join(dir, 'del.txt'))
+    await rename(join(dir, 'r.txt'), join(dir, 'r2.txt'))
+    await appendFile(join(dir, 'r2.txt'), 'plus\n')
+    await appendFile(join(dir, 'c.ts'), 'const two = 2\n')
 
     // getDiff and file-contents spawn git/jj in the process cwd (the CLI
     // always starts the server from inside the target repo), so chdir in.
@@ -129,6 +135,28 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     expect(diff.viewed).toEqual({})
   })
 
+  it('unmarks viewed state individually and in bulk', async () => {
+    let diff = await getDiffResponse()
+    const fHash = diff.fileHashes['f.txt']!
+    const gHash = diff.fileHashes['g.txt']!
+    await api('POST', '/api/viewed', { file: 'f.txt', hash: fHash })
+    await api('POST', '/api/viewed', { file: 'g.txt', hash: gHash })
+    diff = await getDiffResponse()
+    expect(diff.viewed).toEqual({ 'f.txt': fHash, 'g.txt': gHash })
+
+    let res = await api('DELETE', '/api/viewed', { file: 'f.txt', hash: fHash })
+    expect(await res.json()).toEqual({ ok: true })
+    diff = await getDiffResponse()
+    expect(diff.viewed).toEqual({ 'g.txt': gHash })
+
+    res = await api('DELETE', '/api/viewed-all', {
+      files: [{ file: 'g.txt', hash: gHash }],
+    })
+    expect(await res.json()).toEqual({ ok: true })
+    diff = await getDiffResponse()
+    expect(diff.viewed).toEqual({})
+  })
+
   it('inserts and removes review comments in the working copy', async () => {
     const before = await readFile(join(dir, 'g.txt'), 'utf-8')
 
@@ -152,6 +180,27 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     expect(await readFile(join(dir, 'g.txt'), 'utf-8')).toBe(before)
   })
 
+  it("wraps review comments in the file's comment syntax", async () => {
+    const diff = await getDiffResponse()
+    expect(diff.commentSyntaxes['c.ts']).toEqual({ prefix: '//' })
+
+    let res = await api('POST', '/api/comment', {
+      file: 'c.ts',
+      afterLine: 1,
+      text: 'why one?',
+    })
+    expect(await res.json()).toEqual({ ok: true })
+    expect(await readFile(join(dir, 'c.ts'), 'utf-8')).toBe(
+      'const one = 1\n// <review>\n// why one?\n// </review>\nconst two = 2\n',
+    )
+
+    res = await api('DELETE', '/api/comment', { file: 'c.ts', line: 2 })
+    expect(await res.json()).toEqual({ ok: true })
+    expect(await readFile(join(dir, 'c.ts'), 'utf-8')).toBe(
+      'const one = 1\nconst two = 2\n',
+    )
+  })
+
   it('serves full file contents at both diff endpoints', async () => {
     const res = await fetch(`${url}/api/file-contents?path=f.txt`)
     expect(res.status).toBe(200)
@@ -173,8 +222,34 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     })
   })
 
+  it('serves old contents via oldPath for renamed files', async () => {
+    const res = await fetch(`${url}/api/file-contents?path=r2.txt&oldPath=r.txt`)
+    expect(res.status).toBe(200)
+    expect((await res.json()) as FileContentsResponse).toEqual({
+      oldContents: 'rename me\n',
+      newContents: 'rename me\nplus\n',
+    })
+  })
+
   it('rejects malformed requests', async () => {
     const res = await api('POST', '/api/viewed', { file: 'f.txt' }) // missing hash
     expect(res.status).toBe(400)
+  })
+
+  // Bad diff args should fail startServer itself, before the first /api/diff.
+  it('startServer rejects when the diff command fails', async () => {
+    const badSource: DiffArgs =
+      vcs === 'git'
+        ? { vcs, args: ['not-a-ref'], commentsEnabled: true, files: [], endpoints: null }
+        : {
+            vcs,
+            args: ['-r', 'no_such_rev'],
+            commentsEnabled: true,
+            files: [],
+            endpoints: null,
+          }
+    await expect(startServer({ diffSource: badSource, cwd: dir })).rejects.toThrow(
+      /diff failed/,
+    )
   })
 })

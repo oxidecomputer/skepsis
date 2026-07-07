@@ -17,6 +17,15 @@ export const exec = promisify(execFile)
 /** Run a command in a repo dir, rejecting on nonzero exit. */
 export const run = (cmd: string, args: string[], cwd: string) => exec(cmd, args, { cwd })
 
+/** Throw a useful error when jj isn't installed, instead of the bare
+ *  `spawn jj ENOENT` a jj command would produce. Call in beforeAll so only
+ *  the jj suite fails. */
+export async function requireJj(): Promise<void> {
+  await exec('jj', ['--version']).catch(() => {
+    throw new Error('these tests require jj on the PATH')
+  })
+}
+
 /**
  * Point git and jj at test-controlled config (in a temp HOME) so the user's
  * real config can't leak into test repos. Mutates process.env rather than
