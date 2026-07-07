@@ -7,20 +7,15 @@
  */
 
 /*
- * Color tokens. Neutrals share a fixed hue (256) and low chroma and vary only
- * in OKLCH lightness, so surfaces form one perceptually-even elevation ramp.
- * Each token that differs by scheme is a light-dark(light, dark) pair; which
- * side applies is driven by color-scheme (see :root below), so 'system'
- * follows the OS and --theme light/dark forces it by setting an inline
- * color-scheme on the root — the same property the diff library resolves its
- * own light-dark() theme CSS from inside its shadow roots.
- *
- * Elevation runs opposite ways per scheme: dark = raised chrome steps LIGHTER
- * (dark base, lifted bars); light = raised chrome steps DARKER (white page,
- * gray bars, GitHub-style). Controls (--bg-control) sit one step past the
- * header bar (--bg-header) so a button reads as resting on the bar rather
- * than punched into it. Borders are a separate low→high contrast ramp;
- * accents are four fixed hues with bright/text variants.
+ * Color tokens, a light-dark(light, dark) pair per token, resolved by
+ * color-scheme on :root: 'light dark' follows the OS, and --theme pins it
+ * with an inline style (see App) — the diff library's shadow roots resolve
+ * their theme CSS from the same property. Neutrals share one hue and vary
+ * only in OKLCH lightness, so surfaces form an elevation ramp: raised chrome
+ * steps away from the page background, with controls (--bg-control) one step
+ * past the header bar (--bg-header) so a button reads as resting on the bar.
+ * Borders are a separate low→high contrast ramp; accents are four fixed hues
+ * with bright/text variants.
  */
 :root {
   /* Drives light-dark() resolution here and native widget rendering, and is
