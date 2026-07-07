@@ -57,6 +57,9 @@ jobs:
       - name: Install
         if: steps.check.outputs.published == 'false'
         run: npm ci
+      - name: Install jj # the tests need it
+        if: steps.check.outputs.published == 'false'
+        uses: ./.github/actions/install-jj
       - name: Check and build
         if: steps.check.outputs.published == 'false'
         run: npm run ci
@@ -100,6 +103,8 @@ jobs:
           package-manager-cache: false
       - name: Install
         run: npm ci
+      - name: Install jj # the tests need it
+        uses: ./.github/actions/install-jj
       - name: Check and build
         run: npm run ci
       - name: Set canary version
