@@ -1,8 +1,0 @@
-This file has an extension linguist doesn't recognize, so review comments
-inserted into it get the bare fallback: <review> tags with no comment marker.
-Modify it and run `node cli.ts --dev` to see the comment-form note and bare
-tag detection in a real diff.
-
-line one
-line two
-line three

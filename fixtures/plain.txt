@@ -1,7 +1,0 @@
-Plain text has no comment syntax at all, so review comments inserted here get
-bare tags, and the comment form says the marker is "none" (as opposed to the
-unrecognized-file-type fallback wording that fixtures/unknown.zzz gets).
-
-alpha
-beta
-gamma
