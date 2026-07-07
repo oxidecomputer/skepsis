@@ -223,7 +223,7 @@ process.on('SIGINT', () => cleanup())
 process.on('SIGTERM', () => cleanup())
 
 const checkoutRoot = opts.dev ? requireCheckoutRoot() : undefined
-const apiPort = await startServer({ diffSource, cwd, hostname })
+const { port: apiPort } = await startServer({ diffSource, cwd, hostname })
 
 function urlOpenCommand(url: string): { cmd: string; args: string[] } {
   switch (process.platform) {

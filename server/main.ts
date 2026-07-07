@@ -39,7 +39,7 @@ export async function startServer(opts: {
   port?: number
   hostname?: string
   cwd: string
-}): Promise<number> {
+}): Promise<{ port: number; close: () => void }> {
   const { diffSource, port = 0, hostname = 'localhost', cwd } = opts
   // Fail fast on bad args by running the exact diff command we'll serve.
   // Result is discarded: /api/diff re-runs it per request to stay fresh.
@@ -120,12 +120,12 @@ export async function startServer(opts: {
   })
 
   return new Promise((resolve) => {
-    serve({ fetch: app.fetch, port, hostname }, (info) => {
+    const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
       const assignedPort = typeof info === 'string' ? port : info.port
       console.info(
         `skepsis on http://${hostname}:${assignedPort} (${displayCommand(diffSource)})`,
       )
-      resolve(assignedPort)
+      resolve({ port: assignedPort, close: () => server.close() })
     })
   })
 }
