@@ -83,10 +83,10 @@
   --blue-bright: light-dark(oklch(52% 0.2 258), oklch(65% 0.19 257));
   --blue-text: light-dark(oklch(47% 0.18 258), oklch(72% 0.15 253));
   --green: oklch(55% 0.15 146);
-  --green-bright: oklch(62% 0.17 146);
+  --green-bright: light-dark(oklch(50% 0.15 146), oklch(62% 0.17 146));
   --green-text: light-dark(oklch(44% 0.14 146), oklch(69% 0.18 146));
   --red: light-dark(oklch(53% 0.19 27), oklch(66% 0.2 27));
-  --amber: light-dark(oklch(58% 0.12 80), oklch(72% 0.14 80));
+  --amber: light-dark(oklch(50% 0.12 80), oklch(72% 0.14 80));
   --amber-deep: light-dark(oklch(52% 0.11 78), oklch(56% 0.12 78));
 
   /* Monospace stack. Berkeley Mono first for those who have it, then each OS's
