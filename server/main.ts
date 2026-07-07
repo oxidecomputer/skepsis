@@ -13,7 +13,7 @@ import { zValidator } from '@hono/zod-validator'
 import { join, relative } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
-import { getDiff, validateDiffArgs } from './diff.ts'
+import { getDiff } from './diff.ts'
 import { displayCommand } from './displayCommand.ts'
 import { getFileContents } from './fileContents.ts'
 import { loadViewed, markViewed, unmarkViewed, unmarkViewedAll } from './viewed.ts'
@@ -41,7 +41,9 @@ export async function startServer(opts: {
   cwd: string
 }): Promise<number> {
   const { diffSource, port = 0, hostname = 'localhost', cwd } = opts
-  await validateDiffArgs(diffSource)
+  // Fail fast on bad args by running the exact diff command we'll serve.
+  // Result is discarded: /api/diff re-runs it per request to stay fresh.
+  await getDiff(diffSource)
 
   const app = new Hono()
 

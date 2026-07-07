@@ -77,20 +77,6 @@ export async function getDiff(
   return { patch: stdout, fileHashes: extractFileHashes(stdout) }
 }
 
-/** Validate diff args at startup. */
-export async function validateDiffArgs(src: DiffArgs): Promise<void> {
-  const { cmd } = diffCommand(src)
-  const fileArgs = src.files.length > 0 ? ['--', ...src.files] : []
-  const statArgs =
-    src.vcs === 'jj'
-      ? [...JJ_PREFIX_OVERRIDE, 'diff', ...src.args, '--stat', ...fileArgs]
-      : [...GIT_PREFIX_OVERRIDE, 'diff', '--stat', ...src.args, ...fileArgs]
-  const { stderr, code } = await run(cmd, statArgs)
-  if (code !== 0) {
-    throw new Error(`${cmd} diff failed: ${stderr}`)
-  }
-}
-
 /**
  * Extract newObjectId per file from the git diff's index lines.
  * Format: "diff --git a/<path> b/<path>" followed by "index <old>..<new> <mode>".
