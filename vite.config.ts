@@ -6,7 +6,7 @@
  * Copyright Oxide Computer Company
  */
 
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 const rawApiHost = process.env['API_HOST'] || 'localhost'
@@ -17,6 +17,12 @@ const apiPort = process.env['API_PORT'] || 3742
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    // Hide console output from passing tests — the server integration tests
+    // log the server URL and a serveStatic warning about the missing dist/web.
+    // Output is still shown for failing tests.
+    silent: 'passed-only',
+  },
   build: {
     outDir: 'dist/web',
   },
