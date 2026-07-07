@@ -44,7 +44,12 @@ import type {
   ViewedMap,
   FileHashes,
 } from '../shared/types.ts'
-import { REVIEW_CLOSE_PATTERN, REVIEW_OPEN_PATTERN } from '../shared/reviewComments.ts'
+import {
+  BARE_REVIEW_CLOSE_PATTERN,
+  BARE_REVIEW_OPEN_PATTERN,
+  REVIEW_CLOSE_PATTERN,
+  REVIEW_OPEN_PATTERN,
+} from '../shared/reviewComments.ts'
 
 const queryClient = new QueryClient()
 
@@ -101,11 +106,17 @@ type AnnotationMeta =
   | { type: 'review'; startLine: number; endLine: number; file: string }
   | { type: 'composing'; file: string }
 
-/** Walk the addition side of a diff and find <review>...</review> blocks. */
+/** Walk the addition side of a diff and find <review>...</review> blocks.
+ *  Bare-fallback files get bare tags on insert, so detection matches bare tag
+ *  lines only in those files — in a normal file a bare tag line is real
+ *  content, not a review comment. */
 function detectReviewComments(
   fileDiff: FileDiffMetadata,
   fileName: string,
+  bare: boolean,
 ): DiffLineAnnotation<AnnotationMeta>[] {
+  const openPattern = bare ? BARE_REVIEW_OPEN_PATTERN : REVIEW_OPEN_PATTERN
+  const closePattern = bare ? BARE_REVIEW_CLOSE_PATTERN : REVIEW_CLOSE_PATTERN
   const annotations: DiffLineAnnotation<AnnotationMeta>[] = []
   for (const hunk of fileDiff.hunks) {
     let openLine: number | null = null
@@ -113,9 +124,9 @@ function detectReviewComments(
       const lineText = fileDiff.additionLines[hunk.additionLineIndex + i]
       if (!lineText) continue
       const absLine = hunk.additionStart + i
-      if (REVIEW_OPEN_PATTERN.test(lineText)) {
+      if (openPattern.test(lineText)) {
         openLine = absLine
-      } else if (REVIEW_CLOSE_PATTERN.test(lineText) && openLine !== null) {
+      } else if (closePattern.test(lineText) && openLine !== null) {
         annotations.push({
           side: 'additions',
           lineNumber: absLine,
@@ -291,11 +302,14 @@ function CommentForm({
   onCancel,
   submitting,
   error,
+  bare,
 }: {
   onSubmit: (text: string) => void
   onCancel: () => void
   submitting: boolean
   error: string | null
+  /** File has no recognized comment syntax; tags get inserted uncommented. */
+  bare: boolean
 }) {
   const [text, setText] = useState('')
   // useEffect instead of a function ref because the function ref didn't
@@ -328,6 +342,11 @@ function CommentForm({
         rows={3}
         disabled={submitting}
       />
+      {bare && (
+        <div className="comment-form-note">
+          Unknown file type &mdash; comment will be inserted without comment markers
+        </div>
+      )}
       <div className="comment-form-actions">
         {error && <div className="comment-form-error">{error}</div>}
         <Button onClick={onCancel} disabled={submitting}>
@@ -1002,7 +1021,9 @@ function DiffView() {
     const { fileHashes } = data
     return files.map((fileDiff) => {
       const name = fileDiff.name
-      const annotations = commentsEnabled ? detectReviewComments(fileDiff, name) : []
+      const annotations = commentsEnabled
+        ? detectReviewComments(fileDiff, name, data.bareCommentFiles[name] === true)
+        : []
       if (composing?.file === name) {
         annotations.push({
           side: 'additions',
@@ -1184,12 +1205,13 @@ function DiffView() {
                 ? commentMutation.error.message
                 : null
             }
+            bare={data?.bareCommentFiles[file] === true}
           />
         )
       }
       return null
     },
-    [resolveMutation, commentMutation],
+    [resolveMutation, commentMutation, data],
   )
 
   // Gutter-utility click (start a comment). Routed through a ref so the

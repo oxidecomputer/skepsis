@@ -86,6 +86,10 @@ export interface DiffResponse {
   expandable: boolean
   fileHashes: FileHashes
   viewed: ViewedMap
+  /** Files with no recognized comment syntax: review comments are inserted as
+   *  bare tags with no comment marker, and the UI says so in the comment form.
+   *  Always empty when comments are disabled. */
+  bareCommentFiles: Record<string, true>
   error?: string
 }
 

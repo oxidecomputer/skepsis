@@ -578,6 +578,16 @@ body,
   border-color: var(--blue);
 }
 
+.comment-form-note {
+  color: var(--fg-muted);
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
 .comment-form-actions {
   display: flex;
   justify-content: flex-end;

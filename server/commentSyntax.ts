@@ -6,7 +6,8 @@
  * Copyright Oxide Computer Company
  */
 
-import { basename, extname } from 'node:path'
+import { open } from 'node:fs/promises'
+import { basename, extname, join } from 'node:path'
 import type { Language, LanguageName } from 'linguist-languages'
 import * as languages from 'linguist-languages'
 import {
@@ -183,4 +184,41 @@ export function getCommentSyntax(file: string, firstLine: string): CommentSyntax
   const lang = detectLanguage(file, firstLine)
   if (!lang) return BARE_COMMENT
   return COMMENT_SYNTAX.get(lang) ?? BARE_COMMENT
+}
+
+// A shebang line is well under this, and the first line is only used for
+// shebang detection.
+const FIRST_LINE_BYTES = 256
+
+async function readFirstLine(path: string): Promise<string> {
+  const fh = await open(path)
+  try {
+    const buf = Buffer.alloc(FIRST_LINE_BYTES)
+    const { bytesRead } = await fh.read(buf, 0, FIRST_LINE_BYTES, 0)
+    const text = buf.subarray(0, bytesRead).toString('utf-8')
+    const newline = text.indexOf('\n')
+    return newline === -1 ? text : text.slice(0, newline)
+  } finally {
+    await fh.close()
+  }
+}
+
+/** Which of `files` would get the bare (uncommented) review-tag fallback. */
+export async function findBareCommentFiles(
+  cwd: string,
+  files: string[],
+): Promise<Record<string, true>> {
+  const result: Record<string, true> = {}
+  // Filename and extension detection don't need the first line; only read
+  // files (for shebang detection) when those come up empty.
+  const candidates = files.filter((file) => getCommentSyntax(file, '') === BARE_COMMENT)
+  await Promise.all(
+    candidates.map(async (file) => {
+      // Unreadable (e.g. deleted) files stay flagged; they have no addition
+      // lines to comment on, so the flag is inert.
+      const firstLine = await readFirstLine(join(cwd, file)).catch(() => '')
+      if (getCommentSyntax(file, firstLine) === BARE_COMMENT) result[file] = true
+    }),
+  )
+  return result
 }

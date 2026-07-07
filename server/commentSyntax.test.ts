@@ -6,8 +6,11 @@
  * Copyright Oxide Computer Company
  */
 
-import { describe, expect, it } from 'vitest'
-import { detectLanguage, getCommentSyntax } from './commentSyntax.ts'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { detectLanguage, findBareCommentFiles, getCommentSyntax } from './commentSyntax.ts'
 
 describe('detectLanguage', () => {
   it.each([
@@ -111,5 +114,27 @@ describe('getCommentSyntax', () => {
 
   it('falls back to bare tags when a detected language has no comment-syntax entry', () => {
     expect(getCommentSyntax('foo.wl', '')).toEqual({ prefix: '' })
+  })
+})
+
+describe('findBareCommentFiles', () => {
+  let dir: string
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'skepsis-test-'))
+    await writeFile(join(dir, 'script'), '#!/bin/bash\necho hi\n')
+    await writeFile(join(dir, 'data.zzz'), 'stuff\n')
+  })
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('flags files with no recognized comment syntax', async () => {
+    const files = ['foo.ts', 'script', 'data.zzz', 'deleted.zzz']
+    expect(await findBareCommentFiles(dir, files)).toEqual({
+      // 'script' is rescued from bareness by its shebang; 'deleted.zzz'
+      // (not on disk) stays flagged
+      'data.zzz': true,
+      'deleted.zzz': true,
+    })
   })
 })
