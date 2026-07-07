@@ -48,6 +48,12 @@ export type ViewedRequest = z.infer<typeof viewedRequestSchema>
 export type CommentRequest = z.infer<typeof commentRequestSchema>
 export type CommentDeleteRequest = z.infer<typeof commentDeleteSchema>
 
+// --- UI types ---
+
+/** Color scheme from --theme. 'system' follows the OS preference; 'light' and
+ *  'dark' force it (e.g. light diffs on a dark desktop). */
+export type ThemeMode = 'light' | 'dark' | 'system'
+
 // --- VCS types ---
 
 /**
@@ -92,6 +98,7 @@ export interface DiffResponse {
    *  file type wasn't recognized. Both get bare review tags on insert. Always
    *  empty when comments are disabled. */
   commentSyntaxes: Record<string, CommentSyntax | null>
+  theme: ThemeMode
   error?: string
 }
 

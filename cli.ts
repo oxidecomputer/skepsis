@@ -10,7 +10,7 @@
 import { spawn, execFileSync } from 'child_process'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { Command } from '@commander-js/extra-typings'
+import { Command, Option } from '@commander-js/extra-typings'
 import { startServer } from './server/main.ts'
 import type { DiffArgs, DiffEndpoints } from './shared/types.ts'
 
@@ -23,6 +23,11 @@ const program = new Command()
   .option('--git', 'force git mode (skip jj detection)')
   .option('--dev', 'run with Vite dev server for development')
   .option('--host <address>', 'address to bind the HTTP server to', 'localhost')
+  .addOption(
+    new Option('--theme <mode>', 'color scheme (e.g. light diffs on a dark desktop)')
+      .choices(['light', 'dark', 'system'] as const)
+      .default('system' as const),
+  )
   .argument('[files...]', 'Limit diff to these paths (passed through to jj/git)')
   .parse()
 
@@ -223,7 +228,7 @@ process.on('SIGINT', () => cleanup())
 process.on('SIGTERM', () => cleanup())
 
 const checkoutRoot = opts.dev ? requireCheckoutRoot() : undefined
-const apiPort = await startServer({ diffSource, cwd, hostname })
+const apiPort = await startServer({ diffSource, cwd, hostname, theme: opts.theme })
 
 function urlOpenCommand(url: string): { cmd: string; args: string[] } {
   switch (process.platform) {

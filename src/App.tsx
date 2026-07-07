@@ -759,6 +759,16 @@ function DiffView() {
     if (data?.revset) document.title = `skepsis | ${data.revset}`
   }, [data?.revset])
 
+  // --theme light/dark: pin color-scheme on the root, overriding the
+  // OS-following `light dark` from styles.css so our light-dark() tokens
+  // resolve to the forced side. The diff shadow roots are pinned separately
+  // via the CodeView themeType option.
+  useEffect(() => {
+    if (data?.theme && data.theme !== 'system') {
+      document.documentElement.style.colorScheme = data.theme
+    }
+  }, [data?.theme])
+
   // Seed collapse state from the first successful fetch: viewed files start collapsed
   useEffect(() => {
     if (seededFromInitialLoad.current || !data?.fileHashes) return
@@ -965,6 +975,7 @@ function DiffView() {
   ])
 
   const commentsEnabled = data?.commentsEnabled ?? false
+  const theme = data?.theme ?? 'system'
 
   const [showHelp, setShowHelp] = useState(false)
   const [showCommentsInfo, setShowCommentsInfo] = useState(false)
@@ -1247,9 +1258,12 @@ function DiffView() {
 
   const options = useMemo<CodeViewOptions<AnnotationMeta>>(
     () => ({
-      // Dual theme: the library emits light-dark() CSS and resolves it from the
-      // page's color-scheme (see body in styles.css), so this follows the OS.
+      // Dual theme: the library emits light-dark() CSS. themeType pins the
+      // shadow roots' color-scheme for forced themes — their :host base style
+      // is `color-scheme: light dark`, which re-resolves from the OS
+      // preference rather than inheriting the page's forced value.
       theme: { light: 'github-light-default', dark: 'github-dark-default' },
+      themeType: theme,
       diffStyle,
       // The library lays out collapsed files (and unmeasured estimates) from
       // these metrics rather than the DOM. Its diffHeaderHeight default (44)
@@ -1299,7 +1313,7 @@ function DiffView() {
         }
       },
     }),
-    [diffStyle, commentsEnabled, markSeen],
+    [diffStyle, commentsEnabled, markSeen, theme],
   )
 
   // Keyboard shortcuts. File navigation (n/p) and the focused-file actions

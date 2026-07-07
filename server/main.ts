@@ -32,6 +32,7 @@ import type {
   FileContentsResponse,
   OkResponse,
   ErrorResponse,
+  ThemeMode,
 } from '../shared/types.ts'
 
 export async function startServer(opts: {
@@ -39,8 +40,9 @@ export async function startServer(opts: {
   port?: number
   hostname?: string
   cwd: string
+  theme?: ThemeMode
 }): Promise<number> {
-  const { diffSource, port = 0, hostname = 'localhost', cwd } = opts
+  const { diffSource, port = 0, hostname = 'localhost', cwd, theme = 'system' } = opts
   await validateDiffArgs(diffSource)
 
   const app = new Hono()
@@ -60,6 +62,7 @@ export async function startServer(opts: {
       fileHashes,
       viewed,
       commentSyntaxes,
+      theme,
     } satisfies DiffResponse)
   })
 
