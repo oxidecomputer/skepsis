@@ -6,10 +6,11 @@
  * Copyright Oxide Computer Company
  */
 
-import { spawn } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { DiffArgs } from '../shared/types.ts'
 import { diffCommand } from './diff.ts'
@@ -17,25 +18,6 @@ import { diffCommand } from './diff.ts'
 const base = { commentsEnabled: true, files: [], endpoints: null }
 
 describe('diffCommand', () => {
-  it('forces canonical a//b/ prefixes on git so mnemonicPrefix/noPrefix cannot leak through', () => {
-    const src: DiffArgs = { vcs: 'git', args: ['HEAD'], ...base }
-    const { cmd, args } = diffCommand(src)
-    expect(cmd).toBe('git')
-    // -c overrides must precede the `diff` subcommand to take effect.
-    expect(args).toEqual([
-      '-c',
-      'diff.mnemonicPrefix=false',
-      '-c',
-      'diff.noprefix=false',
-      '-c',
-      'diff.srcPrefix=a/',
-      '-c',
-      'diff.dstPrefix=b/',
-      'diff',
-      'HEAD',
-    ])
-  })
-
   it('forces path prefixes on jj so a user show-path-prefix=false cannot blank names', () => {
     const src: DiffArgs = { vcs: 'jj', args: ['-r', '@'], ...base }
     const { cmd, args } = diffCommand(src)
@@ -57,26 +39,13 @@ describe('diffCommand', () => {
   })
 })
 
-function run(
-  cmd: string,
-  args: string[],
-  cwd: string,
-): Promise<{ stdout: string; code: number }> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, {
-      cwd,
-      env: {
-        ...process.env,
-        GIT_CONFIG_GLOBAL: '/dev/null',
-        GIT_CONFIG_SYSTEM: '/dev/null',
-      },
-    })
-    const out: Buffer[] = []
-    proc.stdout.on('data', (d) => out.push(d))
-    proc.on('error', reject)
-    proc.on('close', (code) =>
-      resolve({ stdout: Buffer.concat(out).toString(), code: code ?? 1 }),
-    )
+const exec = promisify(execFile)
+
+// Isolate from the user's real git config so only the temp repo's config applies.
+function run(cmd: string, args: string[], cwd: string) {
+  return exec(cmd, args, {
+    cwd,
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
   })
 }
 
@@ -107,8 +76,8 @@ describe('git mnemonicPrefix override (integration)', () => {
 
   it('produces a//b/ headers despite diff.mnemonicPrefix=true', async () => {
     const { args } = diffCommand({ vcs: 'git', args: ['HEAD'], ...base })
-    const { stdout, code } = await run('git', args, dir)
-    expect(code).toBe(0)
+    // exec rejects on nonzero exit, so no explicit exit-code assertion needed
+    const { stdout } = await run('git', args, dir)
     expect(stdout).toContain('diff --git a/f.txt b/f.txt')
     expect(stdout).toContain('--- a/f.txt')
     expect(stdout).toContain('+++ b/f.txt')
