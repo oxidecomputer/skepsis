@@ -13,7 +13,7 @@ import { zValidator } from '@hono/zod-validator'
 import { join, relative } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
-import { getDiff, validateDiffArgs } from './diff.ts'
+import { getDiff } from './diff.ts'
 import { displayCommand } from './displayCommand.ts'
 import { getFileContents } from './fileContents.ts'
 import { loadViewed, markViewed, unmarkViewed, unmarkViewedAll } from './viewed.ts'
@@ -39,9 +39,11 @@ export async function startServer(opts: {
   port?: number
   hostname?: string
   cwd: string
-}): Promise<number> {
+}): Promise<{ port: number; close: () => void }> {
   const { diffSource, port = 0, hostname = 'localhost', cwd } = opts
-  await validateDiffArgs(diffSource)
+  // Fail fast on bad args by running the exact diff command we'll serve.
+  // Result is discarded: /api/diff re-runs it per request to stay fresh.
+  await getDiff(diffSource)
 
   const app = new Hono()
 
@@ -118,12 +120,12 @@ export async function startServer(opts: {
   })
 
   return new Promise((resolve) => {
-    serve({ fetch: app.fetch, port, hostname }, (info) => {
+    const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
       const assignedPort = typeof info === 'string' ? port : info.port
       console.info(
         `skepsis on http://${hostname}:${assignedPort} (${displayCommand(diffSource)})`,
       )
-      resolve(assignedPort)
+      resolve({ port: assignedPort, close: () => server.close() })
     })
   })
 }
