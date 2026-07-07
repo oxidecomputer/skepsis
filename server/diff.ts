@@ -30,12 +30,39 @@ function run(
   })
 }
 
-function diffCommand(src: DiffArgs): { cmd: string; args: string[] } {
+/*
+ * Force canonical `a/`…`b/` path prefixes in the git-format diff, overriding
+ * any user config. Both parsers downstream (@pierre/diffs on the client and
+ * extractFileHashes below) only understand `a/`/`b/` headers; git's
+ * diff.mnemonicPrefix (c/ i/ w/ o/) or diff.srcPrefix/dstPrefix/noPrefix would
+ * otherwise yield unparseable headers, blank file names, and a duplicate-id
+ * crash in CodeView. These are passed as one-shot -c/--config flags so the
+ * user's own config is untouched.
+ */
+const GIT_PREFIX_OVERRIDE = [
+  '-c',
+  'diff.mnemonicPrefix=false',
+  '-c',
+  'diff.noprefix=false',
+  '-c',
+  'diff.srcPrefix=a/',
+  '-c',
+  'diff.dstPrefix=b/',
+]
+const JJ_PREFIX_OVERRIDE = ['--config', 'diff.git.show-path-prefix=true']
+
+export function diffCommand(src: DiffArgs): { cmd: string; args: string[] } {
   const fileArgs = src.files.length > 0 ? ['--', ...src.files] : []
   if (src.vcs === 'jj') {
-    return { cmd: 'jj', args: ['diff', ...src.args, '--git', ...fileArgs] }
+    return {
+      cmd: 'jj',
+      args: [...JJ_PREFIX_OVERRIDE, 'diff', ...src.args, '--git', ...fileArgs],
+    }
   } else {
-    return { cmd: 'git', args: ['diff', ...src.args, ...fileArgs] }
+    return {
+      cmd: 'git',
+      args: [...GIT_PREFIX_OVERRIDE, 'diff', ...src.args, ...fileArgs],
+    }
   }
 }
 
@@ -56,8 +83,8 @@ export async function validateDiffArgs(src: DiffArgs): Promise<void> {
   const fileArgs = src.files.length > 0 ? ['--', ...src.files] : []
   const statArgs =
     src.vcs === 'jj'
-      ? ['diff', ...src.args, '--stat', ...fileArgs]
-      : ['diff', '--stat', ...src.args, ...fileArgs]
+      ? [...JJ_PREFIX_OVERRIDE, 'diff', ...src.args, '--stat', ...fileArgs]
+      : [...GIT_PREFIX_OVERRIDE, 'diff', '--stat', ...src.args, ...fileArgs]
   const { stderr, code } = await run(cmd, statArgs)
   if (code !== 0) {
     throw new Error(`${cmd} diff failed: ${stderr}`)
@@ -66,7 +93,10 @@ export async function validateDiffArgs(src: DiffArgs): Promise<void> {
 
 /**
  * Extract newObjectId per file from the git diff's index lines.
- * Format: "diff --git a/<path> b/<path>" followed by "index <old>..<new> <mode>"
+ * Format: "diff --git a/<path> b/<path>" followed by "index <old>..<new> <mode>".
+ * The a//b/ prefixes are guaranteed by GIT_PREFIX_OVERRIDE / JJ_PREFIX_OVERRIDE
+ * regardless of the user's diff config, and must match the names @pierre/diffs
+ * parses on the client so viewed-state keys line up.
  */
 function extractFileHashes(patch: string): FileHashes {
   const hashes: FileHashes = {}
