@@ -37,10 +37,12 @@ import type {
   LineAnnotation,
   SelectedLineRange,
 } from '@pierre/diffs'
+import { THEME_MODES } from '../shared/types.ts'
 import type {
   DiffResponse,
   ErrorResponse,
   FileContentsResponse,
+  ThemeMode,
   ViewedMap,
   FileHashes,
 } from '../shared/types.ts'
@@ -53,6 +55,18 @@ import {
 } from '../shared/reviewComments.ts'
 
 const queryClient = new QueryClient()
+
+// --theme rides on the URL the CLI opens (?theme=light|dark) so a forced
+// scheme applies at module load — before first paint, and independent of the
+// diff fetch (which is slow and can fail). Pinning color-scheme on the root
+// overrides the OS-following `light dark` from styles.css so our light-dark()
+// tokens resolve to the forced side; the diff shadow roots are pinned
+// separately via the CodeView theme/themeType options.
+const themeParam = new URLSearchParams(location.search).get('theme')
+const theme: ThemeMode = (THEME_MODES as readonly (string | null)[]).includes(themeParam)
+  ? (themeParam as ThemeMode)
+  : 'system'
+if (theme !== 'system') document.documentElement.style.colorScheme = theme
 
 async function apiFetch<T = unknown>(
   url: string,
@@ -759,16 +773,6 @@ function DiffView() {
     if (data?.revset) document.title = `skepsis | ${data.revset}`
   }, [data?.revset])
 
-  // --theme light/dark: pin color-scheme on the root, overriding the
-  // OS-following `light dark` from styles.css so our light-dark() tokens
-  // resolve to the forced side. The diff shadow roots are pinned separately
-  // via the CodeView themeType option.
-  useEffect(() => {
-    if (data?.theme && data.theme !== 'system') {
-      document.documentElement.style.colorScheme = data.theme
-    }
-  }, [data?.theme])
-
   // Seed collapse state from the first successful fetch: viewed files start collapsed
   useEffect(() => {
     if (seededFromInitialLoad.current || !data?.fileHashes) return
@@ -975,7 +979,6 @@ function DiffView() {
   ])
 
   const commentsEnabled = data?.commentsEnabled ?? false
-  const theme = data?.theme ?? 'system'
 
   const [showHelp, setShowHelp] = useState(false)
   const [showCommentsInfo, setShowCommentsInfo] = useState(false)
@@ -1258,11 +1261,18 @@ function DiffView() {
 
   const options = useMemo<CodeViewOptions<AnnotationMeta>>(
     () => ({
-      // Dual theme: the library emits light-dark() CSS. themeType pins the
-      // shadow roots' color-scheme for forced themes — their :host base style
-      // is `color-scheme: light dark`, which re-resolves from the OS
-      // preference rather than inheriting the page's forced value.
-      theme: { light: 'github-light-default', dark: 'github-dark-default' },
+      // In system mode the dual theme makes the library emit light-dark()
+      // CSS that follows the OS (the shadow roots' :host base style is
+      // `color-scheme: light dark`; they don't inherit the page's value). A
+      // forced theme passes a single theme instead: Shiki then tokenizes once
+      // rather than once per theme, and the theme's own type pins the shadow
+      // roots' color-scheme.
+      theme:
+        theme === 'system'
+          ? { light: 'github-light-default', dark: 'github-dark-default' }
+          : theme === 'light'
+            ? 'github-light-default'
+            : 'github-dark-default',
       themeType: theme,
       diffStyle,
       // The library lays out collapsed files (and unmeasured estimates) from
@@ -1313,7 +1323,7 @@ function DiffView() {
         }
       },
     }),
-    [diffStyle, commentsEnabled, markSeen, theme],
+    [diffStyle, commentsEnabled, markSeen],
   )
 
   // Keyboard shortcuts. File navigation (n/p) and the focused-file actions
@@ -1541,8 +1551,10 @@ function DiffView() {
     markProgrammaticScroll,
   ])
 
-  if (isLoading || !data) return <div className="empty-diff">Loading...</div>
+  // Error before loading: on a failed fetch react-query settles with `data`
+  // undefined, so a loading-first guard would show "Loading..." forever.
   if (error) return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
+  if (isLoading || !data) return <div className="empty-diff">Loading...</div>
   if (data.error) return <pre style={{ color: 'red', padding: 20 }}>{data.error}</pre>
   if (!patch)
     return (

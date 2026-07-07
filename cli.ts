@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Command, Option } from '@commander-js/extra-typings'
 import { startServer } from './server/main.ts'
+import { THEME_MODES } from './shared/types.ts'
 import type { DiffArgs, DiffEndpoints } from './shared/types.ts'
 
 const program = new Command()
@@ -25,7 +26,7 @@ const program = new Command()
   .option('--host <address>', 'address to bind the HTTP server to', 'localhost')
   .addOption(
     new Option('--theme <mode>', 'color scheme (e.g. light diffs on a dark desktop)')
-      .choices(['light', 'dark', 'system'] as const)
+      .choices(THEME_MODES)
       .default('system' as const),
   )
   .argument('[files...]', 'Limit diff to these paths (passed through to jj/git)')
@@ -228,7 +229,7 @@ process.on('SIGINT', () => cleanup())
 process.on('SIGTERM', () => cleanup())
 
 const checkoutRoot = opts.dev ? requireCheckoutRoot() : undefined
-const apiPort = await startServer({ diffSource, cwd, hostname, theme: opts.theme })
+const apiPort = await startServer({ diffSource, cwd, hostname })
 
 function urlOpenCommand(url: string): { cmd: string; args: string[] } {
   switch (process.platform) {
@@ -246,9 +247,14 @@ function urlOpenCommand(url: string): { cmd: string; args: string[] } {
 // — opening locally would just spawn an unwanted browser.
 const shouldAutoOpen = hostname === 'localhost'
 
+// A forced theme rides on the URL so the client can apply it before first
+// paint, with no dependency on the (slow, fallible) diff fetch. A hand-typed
+// bare URL falls back to the OS scheme.
+const themeQuery = opts.theme === 'system' ? '' : `/?theme=${opts.theme}`
+
 if (opts.dev) {
   const viteArgs = ['vite', '--host', hostname]
-  if (shouldAutoOpen) viteArgs.push('--open')
+  if (shouldAutoOpen) viteArgs.push('--open', themeQuery || '/')
   const vite = spawn('npx', viteArgs, {
     cwd: checkoutRoot,
     stdio: 'inherit',
@@ -256,7 +262,7 @@ if (opts.dev) {
   })
   children.push(vite)
 } else if (shouldAutoOpen) {
-  const url = `http://localhost:${apiPort}`
+  const url = `http://localhost:${apiPort}${themeQuery}`
   const { cmd, args } = urlOpenCommand(url)
   const opener = spawn(cmd, args, { detached: true, stdio: 'ignore' })
   opener.on('error', (err) => {

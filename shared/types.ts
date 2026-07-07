@@ -51,8 +51,10 @@ export type CommentDeleteRequest = z.infer<typeof commentDeleteSchema>
 // --- UI types ---
 
 /** Color scheme from --theme. 'system' follows the OS preference; 'light' and
- *  'dark' force it (e.g. light diffs on a dark desktop). */
-export type ThemeMode = 'light' | 'dark' | 'system'
+ *  'dark' force it (e.g. light diffs on a dark desktop). One list drives both
+ *  the CLI's --theme choices and the client's URL-param validation. */
+export const THEME_MODES = ['light', 'dark', 'system'] as const
+export type ThemeMode = (typeof THEME_MODES)[number]
 
 // --- VCS types ---
 
@@ -98,7 +100,6 @@ export interface DiffResponse {
    *  file type wasn't recognized. Both get bare review tags on insert. Always
    *  empty when comments are disabled. */
   commentSyntaxes: Record<string, CommentSyntax | null>
-  theme: ThemeMode
   error?: string
 }
 
