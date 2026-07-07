@@ -17,35 +17,19 @@ import { diffCommand } from './diff.ts'
 
 const base = { commentsEnabled: true, files: [], endpoints: null }
 
-describe('diffCommand', () => {
-  it('forces path prefixes on jj so a user show-path-prefix=false cannot blank names', () => {
-    const src: DiffArgs = { vcs: 'jj', args: ['-r', '@'], ...base }
-    const { cmd, args } = diffCommand(src)
-    expect(cmd).toBe('jj')
-    expect(args).toEqual([
-      '--config',
-      'diff.git.show-path-prefix=true',
-      'diff',
-      '-r',
-      '@',
-      '--git',
-    ])
-  })
-
-  it('keeps file args after -- for git', () => {
-    const src: DiffArgs = { vcs: 'git', args: ['HEAD'], ...base, files: ['a b.txt'] }
-    const { args } = diffCommand(src)
-    expect(args.slice(-3)).toEqual(['HEAD', '--', 'a b.txt'])
-  })
-})
-
 const exec = promisify(execFile)
 
-// Isolate from the user's real git config so only the temp repo's config applies.
-function run(cmd: string, args: string[], cwd: string) {
+// Isolate from the user's real git config so only the temp repo's config
+// applies. jj config is isolated per-suite by passing JJ_CONFIG in `env`.
+function run(cmd: string, args: string[], cwd: string, env: Record<string, string> = {}) {
   return exec(cmd, args, {
     cwd,
-    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_SYSTEM: '/dev/null',
+      ...env,
+    },
   })
 }
 
@@ -65,9 +49,11 @@ describe('git mnemonicPrefix override (integration)', () => {
     // The setting that breaks skepsis without the override.
     await run('git', ['config', 'diff.mnemonicPrefix', 'true'], dir)
     await writeFile(join(dir, 'f.txt'), 'hello\n')
-    await run('git', ['add', 'f.txt'], dir)
+    await writeFile(join(dir, 'g.txt'), 'other\n')
+    await run('git', ['add', '.'], dir)
     await run('git', ['commit', '-qm', 'init'], dir)
     await writeFile(join(dir, 'f.txt'), 'hello\nworld\n')
+    await writeFile(join(dir, 'g.txt'), 'other\nmore\n')
   })
 
   afterAll(async () => {
@@ -90,5 +76,68 @@ describe('git mnemonicPrefix override (integration)', () => {
   it('sanity: without the override, git emits the breaking c//w/ headers', async () => {
     const { stdout } = await run('git', ['diff', 'HEAD'], dir)
     expect(stdout).toContain('diff --git c/f.txt w/f.txt')
+  })
+
+  it('limits the diff to files passed after --', async () => {
+    const { args } = diffCommand({ vcs: 'git', args: ['HEAD'], ...base, files: ['f.txt'] })
+    const { stdout } = await run('git', args, dir)
+    expect(stdout).toContain('diff --git a/f.txt b/f.txt')
+    expect(stdout).not.toContain('g.txt')
+  })
+})
+
+// Same guard as above for jj: a user config of diff.git.show-path-prefix=false
+// blanks the a//b/ prefixes entirely, breaking the same parsers.
+describe('jj show-path-prefix override (integration)', () => {
+  let tmp: string
+  let repo: string
+  let jjEnv: Record<string, string>
+
+  beforeAll(async () => {
+    // Failing here fails only this suite; the git tests above still run.
+    await exec('jj', ['--version']).catch(() => {
+      throw new Error('these tests require jj on the PATH')
+    })
+    tmp = await mkdtemp(join(tmpdir(), 'skepsis-jj-test-'))
+    // Point jj at an empty config file so the user's real config can't leak in.
+    const config = join(tmp, 'jj-config.toml')
+    await writeFile(config, '')
+    jjEnv = { JJ_CONFIG: config }
+    await run('jj', ['git', 'init', 'repo'], tmp, jjEnv)
+    repo = join(tmp, 'repo')
+    // The setting that breaks skepsis without the override.
+    await run(
+      'jj',
+      ['config', 'set', '--repo', 'diff.git.show-path-prefix', 'false'],
+      repo,
+      jjEnv,
+    )
+    await writeFile(join(repo, 'f.txt'), 'hello\n')
+    await writeFile(join(repo, 'g.txt'), 'other\n')
+  })
+
+  afterAll(async () => {
+    // tmp is undefined if beforeAll bailed on the jj check
+    if (tmp) await rm(tmp, { recursive: true, force: true })
+  })
+
+  it('produces a//b/ headers despite show-path-prefix=false', async () => {
+    const { cmd, args } = diffCommand({ vcs: 'jj', args: ['-r', '@'], ...base })
+    const { stdout } = await run(cmd, args, repo, jjEnv)
+    expect(stdout).toContain('diff --git a/f.txt b/f.txt')
+    expect(stdout).toContain('+++ b/f.txt')
+  })
+
+  it('sanity: without the override, jj blanks the prefixes', async () => {
+    const { stdout } = await run('jj', ['diff', '-r', '@', '--git'], repo, jjEnv)
+    expect(stdout).toContain('diff --git f.txt f.txt')
+  })
+
+  it('limits the diff to files passed after --', async () => {
+    const src: DiffArgs = { vcs: 'jj', args: ['-r', '@'], ...base, files: ['f.txt'] }
+    const { cmd, args } = diffCommand(src)
+    const { stdout } = await run(cmd, args, repo, jjEnv)
+    expect(stdout).toContain('diff --git a/f.txt b/f.txt')
+    expect(stdout).not.toContain('g.txt')
   })
 })
