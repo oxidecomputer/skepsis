@@ -1247,7 +1247,9 @@ function DiffView() {
 
   const options = useMemo<CodeViewOptions<AnnotationMeta>>(
     () => ({
-      theme: 'github-dark-default',
+      // Dual theme: the library emits light-dark() CSS and resolves it from the
+      // page's color-scheme (see body in styles.css), so this follows the OS.
+      theme: { light: 'github-light-default', dark: 'github-dark-default' },
       diffStyle,
       // The library lays out collapsed files (and unmeasured estimates) from
       // these metrics rather than the DOM. Its diffHeaderHeight default (44)

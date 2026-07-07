@@ -59,6 +59,41 @@
     Consolas, 'Liberation Mono', monospace;
 }
 
+/* Light scheme, following the OS preference. Same token structure with the
+   elevation ramp inverted: on a light base, raised chrome steps DOWN in
+   lightness (white page, gray bars). --bg-code stays pure white to match the
+   github-light-default syntax theme background the diff bodies render with. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg-code: oklch(100% 0 0);
+    --bg-canvas: oklch(100% 0 0);
+    --bg-panel: oklch(97% 0.005 256);
+    --bg-muted: oklch(95.5% 0.006 256);
+    --bg-header: oklch(96% 0.006 256);
+    --bg-control: oklch(94% 0.007 256);
+    --bg-control-hover: oklch(90.5% 0.009 256);
+
+    --border: oklch(88% 0.01 256);
+    --border-soft: oklch(89.5% 0.009 256);
+    --border-strong: oklch(80% 0.013 256);
+    --border-muted: oklch(65% 0.016 256);
+
+    --fg: oklch(32% 0.02 250);
+    --fg-bright: oklch(21% 0.02 250);
+    --fg-dim: oklch(44% 0.02 250);
+    --fg-muted: oklch(52% 0.02 250);
+
+    /* Accent text/hover variants re-pinned darker for contrast on white;
+       base --blue/--green (used as fills under white text) work as-is. */
+    --blue-bright: oklch(52% 0.2 258);
+    --blue-text: oklch(47% 0.18 258);
+    --green-text: oklch(44% 0.14 146);
+    --red: oklch(53% 0.19 27);
+    --amber: oklch(58% 0.12 80);
+    --amber-deep: oklch(52% 0.11 78);
+  }
+}
+
 body {
   margin: 0;
   background: var(--bg-canvas);
@@ -67,7 +102,9 @@ body {
     -apple-system,
     sans-serif;
   color: var(--fg);
-  color-scheme: dark;
+  /* Drives both native widget rendering and the diff library's light-dark()
+     theme resolution inside its shadow roots. */
+  color-scheme: light dark;
 }
 
 /* Full-height layout so CodeView's single scroll container fills the viewport
