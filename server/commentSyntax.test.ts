@@ -6,8 +6,11 @@
  * Copyright Oxide Computer Company
  */
 
-import { describe, expect, it } from 'vitest'
-import { detectLanguage, getCommentSyntax } from './commentSyntax.ts'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { detectLanguage, getCommentSyntax, getCommentSyntaxes } from './commentSyntax.ts'
 
 describe('detectLanguage', () => {
   it.each([
@@ -97,19 +100,49 @@ describe('getCommentSyntax', () => {
     ['script.nu', '', { prefix: '#' }],
     ['Nukefile', '', { prefix: ';' }],
     ['somebin', '#!/bin/bash', { prefix: '#' }],
+    // known-markerless formats get the bare syntax, not null
+    ['notes.txt', '', { prefix: '' }],
+    ['data.csv', '', { prefix: '' }],
+    ['data.tsv', '', { prefix: '' }],
   ])('getCommentSyntax(%j, %j) → %j', (file, firstLine, expected) => {
     expect(getCommentSyntax(file, firstLine)).toEqual(expected)
   })
 
-  it('throws on unrecognized file', () => {
-    expect(() => getCommentSyntax('unknown.zzz', '')).toThrow(/unrecognized file type/)
+  it('returns null on unrecognized file', () => {
+    expect(getCommentSyntax('unknown.zzz', '')).toBeNull()
   })
 
-  it('throws on ambiguous file extensions without an override', () => {
-    expect(() => getCommentSyntax('foo.m', '')).toThrow(/ambiguous file type/)
+  it('returns null on ambiguous file extensions without an override', () => {
+    expect(getCommentSyntax('foo.m', '')).toBeNull()
   })
 
-  it('throws when a detected language has no comment-syntax entry', () => {
-    expect(() => getCommentSyntax('foo.wl', '')).toThrow(/no entry for language/)
+  it('returns null when a detected language has no comment-syntax entry', () => {
+    expect(getCommentSyntax('foo.wl', '')).toBeNull()
+  })
+})
+
+describe('getCommentSyntaxes', () => {
+  let dir: string
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'skepsis-test-'))
+    await writeFile(join(dir, 'script'), '#!/bin/bash\necho hi\n')
+    await writeFile(join(dir, 'data.zzz'), 'stuff\n')
+  })
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('resolves a syntax (or null) per file', async () => {
+    const files = ['foo.ts', 'script', 'notes.txt', 'data.zzz', 'deleted.zzz']
+    expect(await getCommentSyntaxes(dir, files)).toEqual({
+      'foo.ts': { prefix: '//' },
+      // rescued from unknown by its shebang
+      script: { prefix: '#' },
+      // known-markerless, not unknown
+      'notes.txt': { prefix: '' },
+      'data.zzz': null,
+      // not on disk: resolves to unknown, which is inert (no addition lines)
+      'deleted.zzz': null,
+    })
   })
 })

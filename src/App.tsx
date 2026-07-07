@@ -44,7 +44,13 @@ import type {
   ViewedMap,
   FileHashes,
 } from '../shared/types.ts'
-import { REVIEW_CLOSE_PATTERN, REVIEW_OPEN_PATTERN } from '../shared/reviewComments.ts'
+import {
+  BARE_REVIEW_CLOSE_PATTERN,
+  BARE_REVIEW_OPEN_PATTERN,
+  type CommentSyntax,
+  REVIEW_CLOSE_PATTERN,
+  REVIEW_OPEN_PATTERN,
+} from '../shared/reviewComments.ts'
 
 const queryClient = new QueryClient()
 
@@ -101,11 +107,17 @@ type AnnotationMeta =
   | { type: 'review'; startLine: number; endLine: number; file: string }
   | { type: 'composing'; file: string }
 
-/** Walk the addition side of a diff and find <review>...</review> blocks. */
+/** Walk the addition side of a diff and find <review>...</review> blocks.
+ *  Bare-fallback files get bare tags on insert, so detection matches bare tag
+ *  lines only in those files — in a normal file a bare tag line is real
+ *  content, not a review comment. */
 function detectReviewComments(
   fileDiff: FileDiffMetadata,
   fileName: string,
+  bare: boolean,
 ): DiffLineAnnotation<AnnotationMeta>[] {
+  const openPattern = bare ? BARE_REVIEW_OPEN_PATTERN : REVIEW_OPEN_PATTERN
+  const closePattern = bare ? BARE_REVIEW_CLOSE_PATTERN : REVIEW_CLOSE_PATTERN
   const annotations: DiffLineAnnotation<AnnotationMeta>[] = []
   for (const hunk of fileDiff.hunks) {
     let openLine: number | null = null
@@ -113,9 +125,9 @@ function detectReviewComments(
       const lineText = fileDiff.additionLines[hunk.additionLineIndex + i]
       if (!lineText) continue
       const absLine = hunk.additionStart + i
-      if (REVIEW_OPEN_PATTERN.test(lineText)) {
+      if (openPattern.test(lineText)) {
         openLine = absLine
-      } else if (REVIEW_CLOSE_PATTERN.test(lineText) && openLine !== null) {
+      } else if (closePattern.test(lineText) && openLine !== null) {
         annotations.push({
           side: 'additions',
           lineNumber: absLine,
@@ -291,11 +303,15 @@ function CommentForm({
   onCancel,
   submitting,
   error,
+  syntax,
 }: {
   onSubmit: (text: string) => void
   onCancel: () => void
   submitting: boolean
   error: string | null
+  /** Comment syntax the inserted tags will use. Empty prefix: the format has
+   *  no comment syntax; null: unrecognized file type. Both insert bare. */
+  syntax: CommentSyntax | null
 }) {
   const [text, setText] = useState('')
   // useEffect instead of a function ref because the function ref didn't
@@ -329,6 +345,20 @@ function CommentForm({
         disabled={submitting}
       />
       <div className="comment-form-actions">
+        <div className="comment-form-note">
+          {syntax === null ? (
+            <>Comment marker: none (file type not recognized)</>
+          ) : syntax.prefix === '' ? (
+            <>Comment marker: none (plain text)</>
+          ) : (
+            <>
+              Comment marker:{' '}
+              <code>
+                {syntax.suffix ? `${syntax.prefix} ${syntax.suffix}` : syntax.prefix}
+              </code>
+            </>
+          )}
+        </div>
         {error && <div className="comment-form-error">{error}</div>}
         <Button onClick={onCancel} disabled={submitting}>
           Cancel
@@ -1002,7 +1032,10 @@ function DiffView() {
     const { fileHashes } = data
     return files.map((fileDiff) => {
       const name = fileDiff.name
-      const annotations = commentsEnabled ? detectReviewComments(fileDiff, name) : []
+      const syntax = data.commentSyntaxes[name]
+      const annotations = commentsEnabled
+        ? detectReviewComments(fileDiff, name, !syntax || syntax.prefix === '')
+        : []
       if (composing?.file === name) {
         annotations.push({
           side: 'additions',
@@ -1184,12 +1217,13 @@ function DiffView() {
                 ? commentMutation.error.message
                 : null
             }
+            syntax={data?.commentSyntaxes[file] ?? null}
           />
         )
       }
       return null
     },
-    [resolveMutation, commentMutation],
+    [resolveMutation, commentMutation, data],
   )
 
   // Gutter-utility click (start a comment). Routed through a ref so the

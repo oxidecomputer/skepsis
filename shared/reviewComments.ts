@@ -19,6 +19,12 @@ export const DASH_COMMENT = { prefix: '--' } as const satisfies CommentSyntax
 export const PERCENT_COMMENT = { prefix: '%' } as const satisfies CommentSyntax
 export const SEMICOLON_COMMENT = { prefix: ';' } as const satisfies CommentSyntax
 export const QUOTE_COMMENT = { prefix: '"' } as const satisfies CommentSyntax
+// Fallback for files where we can't determine a comment syntax (unknown or
+// ambiguous file types, or formats with no comment support at all, like CSV).
+// Review comments are transient working-copy annotations, so a bare tag that
+// isn't a syntactically valid comment is still more useful than refusing to
+// insert one.
+export const BARE_COMMENT = { prefix: '' } as const satisfies CommentSyntax
 
 export const REVIEW_COMMENT_SYNTAXES = [
   HASH_COMMENT,
@@ -61,3 +67,10 @@ export const REVIEW_CLOSE_PATTERN = anyReviewTagRegex(
   REVIEW_COMMENT_SYNTAXES,
   REVIEW_CLOSE_TAG,
 )
+
+// Deliberately not part of the patterns above: a bare tag line could appear as
+// genuine content in a normal file (e.g. a literal <review> element in an XML
+// fixture), so the client applies these only to files the server has flagged
+// as getting the bare fallback.
+export const BARE_REVIEW_OPEN_PATTERN = reviewTagRegex(BARE_COMMENT, REVIEW_OPEN_TAG)
+export const BARE_REVIEW_CLOSE_PATTERN = reviewTagRegex(BARE_COMMENT, REVIEW_CLOSE_TAG)

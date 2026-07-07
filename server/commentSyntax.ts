@@ -6,10 +6,12 @@
  * Copyright Oxide Computer Company
  */
 
-import { basename, extname } from 'node:path'
+import { open } from 'node:fs/promises'
+import { basename, extname, join } from 'node:path'
 import type { Language, LanguageName } from 'linguist-languages'
 import * as languages from 'linguist-languages'
 import {
+  BARE_COMMENT,
   BLOCK_COMMENT,
   type CommentSyntax,
   DASH_COMMENT,
@@ -23,8 +25,8 @@ import {
 
 // Hand-maintained table of linguist language name → line-comment syntax,
 // grouped by syntax to make the source of truth compact. If a language
-// detected via linguist isn't listed here, we treat the file as unsupported
-// rather than guessing.
+// detected via linguist isn't listed here, we fall back to bare (uncommented)
+// review tags rather than guessing a syntax.
 const SYNTAX_GROUPS: Array<[CommentSyntax, LanguageName[]]> = [
   [
     HASH_COMMENT,
@@ -85,6 +87,11 @@ const SYNTAX_GROUPS: Array<[CommentSyntax, LanguageName[]]> = [
   // 'Nu' is the Lisp-like build system (`;` comments); 'Nushell' is the shell (`#` comments).
   [SEMICOLON_COMMENT, ['INI', 'Emacs Lisp', 'Common Lisp', 'Clojure', 'Scheme', 'Nu']],
   [QUOTE_COMMENT, ['Vim Script']],
+  // Formats with no comment syntax at all: insert review tags bare. Listed
+  // here (unlike unknown file types, which get the same bare tags as a
+  // fallback) so the UI can say "no marker" is the correct answer rather than
+  // a guess.
+  [BARE_COMMENT, ['Text', 'CSV', 'TSV']],
 ]
 
 const COMMENT_SYNTAX = new Map<LanguageName, CommentSyntax>(
@@ -108,6 +115,7 @@ const EXTENSION_OVERRIDES: Partial<Record<string, LanguageName>> = {
   '.cls': 'TeX',
   '.php': 'PHP',
   '.cs': 'C#',
+  '.txt': 'Text',
 }
 
 const EXTENSION_SYNTAX_OVERRIDES: Partial<Record<string, CommentSyntax>> = {
@@ -173,24 +181,57 @@ export function detectLanguage(file: string, firstLine: string): LanguageName | 
   return null
 }
 
-export function getCommentSyntax(file: string, firstLine: string): CommentSyntax {
+/** Null means the file type couldn't be determined (or has no table entry);
+ *  callers that insert comments fall back to bare tags, and the UI can
+ *  distinguish "unknown, so no marker" from a known-markerless format. */
+export function getCommentSyntax(file: string, firstLine: string): CommentSyntax | null {
   const base = basename(file).toLowerCase()
   const ext = extname(base)
   const syntaxOverride = EXTENSION_SYNTAX_OVERRIDES[ext]
   if (syntaxOverride) return syntaxOverride
 
   const lang = detectLanguage(file, firstLine)
-  if (!lang) {
-    const reason = ambiguousExtensions.has(ext)
-      ? 'ambiguous file type'
-      : 'unrecognized file type'
-    throw new Error(`Can't determine comment syntax for ${file}: ${reason}`)
+  if (!lang) return null
+  return COMMENT_SYNTAX.get(lang) ?? null
+}
+
+// A shebang line is well under this, and the first line is only used for
+// shebang detection.
+const FIRST_LINE_BYTES = 256
+
+async function readFirstLine(path: string): Promise<string> {
+  const fh = await open(path)
+  try {
+    const buf = Buffer.alloc(FIRST_LINE_BYTES)
+    const { bytesRead } = await fh.read(buf, 0, FIRST_LINE_BYTES, 0)
+    const text = buf.subarray(0, bytesRead).toString('utf-8')
+    const newline = text.indexOf('\n')
+    return newline === -1 ? text : text.slice(0, newline)
+  } finally {
+    await fh.close()
   }
-  const syntax = COMMENT_SYNTAX.get(lang)
-  if (!syntax) {
-    throw new Error(
-      `Can't determine comment syntax for ${file}: no entry for language "${lang}"`,
-    )
-  }
-  return syntax
+}
+
+/** Resolve the comment syntax for each of `files` (null = unknown file type,
+ *  which gets the bare fallback on insert). */
+export async function getCommentSyntaxes(
+  cwd: string,
+  files: string[],
+): Promise<Record<string, CommentSyntax | null>> {
+  const result: Record<string, CommentSyntax | null> = {}
+  await Promise.all(
+    files.map(async (file) => {
+      // Filename and extension detection don't need the first line; only read
+      // files (for shebang detection) when those come up empty. Unreadable
+      // (e.g. deleted) files resolve to unknown; they have no addition lines
+      // to comment on, so the value is inert.
+      let syntax = getCommentSyntax(file, '')
+      if (syntax === null) {
+        const firstLine = await readFirstLine(join(cwd, file)).catch(() => '')
+        syntax = getCommentSyntax(file, firstLine)
+      }
+      result[file] = syntax
+    }),
+  )
+  return result
 }
