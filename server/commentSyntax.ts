@@ -87,6 +87,11 @@ const SYNTAX_GROUPS: Array<[CommentSyntax, LanguageName[]]> = [
   // 'Nu' is the Lisp-like build system (`;` comments); 'Nushell' is the shell (`#` comments).
   [SEMICOLON_COMMENT, ['INI', 'Emacs Lisp', 'Common Lisp', 'Clojure', 'Scheme', 'Nu']],
   [QUOTE_COMMENT, ['Vim Script']],
+  // Formats with no comment syntax at all: insert review tags bare. Listed
+  // here (unlike unknown file types, which get the same bare tags as a
+  // fallback) so the UI can say "no marker" is the correct answer rather than
+  // a guess.
+  [BARE_COMMENT, ['Text', 'CSV', 'TSV']],
 ]
 
 const COMMENT_SYNTAX = new Map<LanguageName, CommentSyntax>(
@@ -110,6 +115,7 @@ const EXTENSION_OVERRIDES: Partial<Record<string, LanguageName>> = {
   '.cls': 'TeX',
   '.php': 'PHP',
   '.cs': 'C#',
+  '.txt': 'Text',
 }
 
 const EXTENSION_SYNTAX_OVERRIDES: Partial<Record<string, CommentSyntax>> = {
@@ -175,15 +181,18 @@ export function detectLanguage(file: string, firstLine: string): LanguageName | 
   return null
 }
 
-export function getCommentSyntax(file: string, firstLine: string): CommentSyntax {
+/** Null means the file type couldn't be determined (or has no table entry);
+ *  callers that insert comments fall back to bare tags, and the UI can
+ *  distinguish "unknown, so no marker" from a known-markerless format. */
+export function getCommentSyntax(file: string, firstLine: string): CommentSyntax | null {
   const base = basename(file).toLowerCase()
   const ext = extname(base)
   const syntaxOverride = EXTENSION_SYNTAX_OVERRIDES[ext]
   if (syntaxOverride) return syntaxOverride
 
   const lang = detectLanguage(file, firstLine)
-  if (!lang) return BARE_COMMENT
-  return COMMENT_SYNTAX.get(lang) ?? BARE_COMMENT
+  if (!lang) return null
+  return COMMENT_SYNTAX.get(lang) ?? null
 }
 
 // A shebang line is well under this, and the first line is only used for
@@ -203,21 +212,25 @@ async function readFirstLine(path: string): Promise<string> {
   }
 }
 
-/** Which of `files` would get the bare (uncommented) review-tag fallback. */
-export async function findBareCommentFiles(
+/** Resolve the comment syntax for each of `files` (null = unknown file type,
+ *  which gets the bare fallback on insert). */
+export async function getCommentSyntaxes(
   cwd: string,
   files: string[],
-): Promise<Record<string, true>> {
-  const result: Record<string, true> = {}
-  // Filename and extension detection don't need the first line; only read
-  // files (for shebang detection) when those come up empty.
-  const candidates = files.filter((file) => getCommentSyntax(file, '') === BARE_COMMENT)
+): Promise<Record<string, CommentSyntax | null>> {
+  const result: Record<string, CommentSyntax | null> = {}
   await Promise.all(
-    candidates.map(async (file) => {
-      // Unreadable (e.g. deleted) files stay flagged; they have no addition
-      // lines to comment on, so the flag is inert.
-      const firstLine = await readFirstLine(join(cwd, file)).catch(() => '')
-      if (getCommentSyntax(file, firstLine) === BARE_COMMENT) result[file] = true
+    files.map(async (file) => {
+      // Filename and extension detection don't need the first line; only read
+      // files (for shebang detection) when those come up empty. Unreadable
+      // (e.g. deleted) files resolve to unknown; they have no addition lines
+      // to comment on, so the value is inert.
+      let syntax = getCommentSyntax(file, '')
+      if (syntax === null) {
+        const firstLine = await readFirstLine(join(cwd, file)).catch(() => '')
+        syntax = getCommentSyntax(file, firstLine)
+      }
+      result[file] = syntax
     }),
   )
   return result

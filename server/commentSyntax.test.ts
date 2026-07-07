@@ -10,7 +10,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { detectLanguage, findBareCommentFiles, getCommentSyntax } from './commentSyntax.ts'
+import { detectLanguage, getCommentSyntax, getCommentSyntaxes } from './commentSyntax.ts'
 
 describe('detectLanguage', () => {
   it.each([
@@ -100,24 +100,28 @@ describe('getCommentSyntax', () => {
     ['script.nu', '', { prefix: '#' }],
     ['Nukefile', '', { prefix: ';' }],
     ['somebin', '#!/bin/bash', { prefix: '#' }],
+    // known-markerless formats get the bare syntax, not null
+    ['notes.txt', '', { prefix: '' }],
+    ['data.csv', '', { prefix: '' }],
+    ['data.tsv', '', { prefix: '' }],
   ])('getCommentSyntax(%j, %j) → %j', (file, firstLine, expected) => {
     expect(getCommentSyntax(file, firstLine)).toEqual(expected)
   })
 
-  it('falls back to bare tags on unrecognized file', () => {
-    expect(getCommentSyntax('unknown.zzz', '')).toEqual({ prefix: '' })
+  it('returns null on unrecognized file', () => {
+    expect(getCommentSyntax('unknown.zzz', '')).toBeNull()
   })
 
-  it('falls back to bare tags on ambiguous file extensions without an override', () => {
-    expect(getCommentSyntax('foo.m', '')).toEqual({ prefix: '' })
+  it('returns null on ambiguous file extensions without an override', () => {
+    expect(getCommentSyntax('foo.m', '')).toBeNull()
   })
 
-  it('falls back to bare tags when a detected language has no comment-syntax entry', () => {
-    expect(getCommentSyntax('foo.wl', '')).toEqual({ prefix: '' })
+  it('returns null when a detected language has no comment-syntax entry', () => {
+    expect(getCommentSyntax('foo.wl', '')).toBeNull()
   })
 })
 
-describe('findBareCommentFiles', () => {
+describe('getCommentSyntaxes', () => {
   let dir: string
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'skepsis-test-'))
@@ -128,13 +132,17 @@ describe('findBareCommentFiles', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  it('flags files with no recognized comment syntax', async () => {
-    const files = ['foo.ts', 'script', 'data.zzz', 'deleted.zzz']
-    expect(await findBareCommentFiles(dir, files)).toEqual({
-      // 'script' is rescued from bareness by its shebang; 'deleted.zzz'
-      // (not on disk) stays flagged
-      'data.zzz': true,
-      'deleted.zzz': true,
+  it('resolves a syntax (or null) per file', async () => {
+    const files = ['foo.ts', 'script', 'notes.txt', 'data.zzz', 'deleted.zzz']
+    expect(await getCommentSyntaxes(dir, files)).toEqual({
+      'foo.ts': { prefix: '//' },
+      // rescued from unknown by its shebang
+      script: { prefix: '#' },
+      // known-markerless, not unknown
+      'notes.txt': { prefix: '' },
+      'data.zzz': null,
+      // not on disk: resolves to unknown, which is inert (no addition lines)
+      'deleted.zzz': null,
     })
   })
 })

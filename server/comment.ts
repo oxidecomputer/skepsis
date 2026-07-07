@@ -10,6 +10,8 @@ import { join } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
 import { getCommentSyntax } from './commentSyntax.ts'
 import {
+  BARE_COMMENT,
+  type CommentSyntax,
   REVIEW_CLOSE_TAG,
   REVIEW_OPEN_TAG,
   reviewTagRegex,
@@ -32,7 +34,8 @@ export async function insertComment(
   // Match indentation of the target line
   const targetLine = lines[afterLine - 1]!
   const indent = targetLine.match(/^(\s*)/)?.[1] ?? ''
-  const { prefix, suffix } = getCommentSyntax(file, lines[0] ?? '')
+  const syntax: CommentSyntax = getCommentSyntax(file, lines[0] ?? '') ?? BARE_COMMENT
+  const { prefix, suffix } = syntax
   // prefix may be empty (bare fallback for unknown file types), so join only
   // the non-empty parts
   const wrap = (body: string) => indent + [prefix, body, suffix].filter(Boolean).join(' ')
@@ -60,7 +63,7 @@ export async function removeComment(
     throw new Error(`Line ${line} out of range`)
   }
 
-  const syntax = getCommentSyntax(file, lines[0] ?? '')
+  const syntax = getCommentSyntax(file, lines[0] ?? '') ?? BARE_COMMENT
   const openRe = reviewTagRegex(syntax, REVIEW_OPEN_TAG)
   const closeRe = reviewTagRegex(syntax, REVIEW_CLOSE_TAG)
 

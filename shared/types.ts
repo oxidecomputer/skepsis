@@ -7,6 +7,7 @@
  */
 
 import { z } from 'zod'
+import type { CommentSyntax } from './reviewComments.ts'
 
 // --- Request schemas (validated by server) ---
 
@@ -86,10 +87,11 @@ export interface DiffResponse {
   expandable: boolean
   fileHashes: FileHashes
   viewed: ViewedMap
-  /** Files with no recognized comment syntax: review comments are inserted as
-   *  bare tags with no comment marker, and the UI says so in the comment form.
-   *  Always empty when comments are disabled. */
-  bareCommentFiles: Record<string, true>
+  /** Per-file comment syntax, shown in the comment form. An empty prefix
+   *  means the format has no comment syntax (e.g. plain text); null means the
+   *  file type wasn't recognized. Both get bare review tags on insert. Always
+   *  empty when comments are disabled. */
+  commentSyntaxes: Record<string, CommentSyntax | null>
   error?: string
 }
 

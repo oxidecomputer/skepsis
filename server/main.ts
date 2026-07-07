@@ -18,7 +18,7 @@ import { displayCommand } from './displayCommand.ts'
 import { getFileContents } from './fileContents.ts'
 import { loadViewed, markViewed, unmarkViewed, unmarkViewedAll } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
-import { findBareCommentFiles } from './commentSyntax.ts'
+import { getCommentSyntaxes } from './commentSyntax.ts'
 import {
   viewedRequestSchema,
   viewedDeleteSchema,
@@ -48,8 +48,8 @@ export async function startServer(opts: {
   app.get('/api/diff', async (c) => {
     const { patch, fileHashes } = await getDiff(diffSource)
     const viewed = await loadViewed(cwd, fileHashes)
-    const bareCommentFiles = diffSource.commentsEnabled
-      ? await findBareCommentFiles(cwd, Object.keys(fileHashes))
+    const commentSyntaxes = diffSource.commentsEnabled
+      ? await getCommentSyntaxes(cwd, Object.keys(fileHashes))
       : {}
     return c.json({
       patch,
@@ -59,7 +59,7 @@ export async function startServer(opts: {
       expandable: diffSource.endpoints !== null,
       fileHashes,
       viewed,
-      bareCommentFiles,
+      commentSyntaxes,
     } satisfies DiffResponse)
   })
 

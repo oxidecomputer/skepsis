@@ -47,6 +47,7 @@ import type {
 import {
   BARE_REVIEW_CLOSE_PATTERN,
   BARE_REVIEW_OPEN_PATTERN,
+  type CommentSyntax,
   REVIEW_CLOSE_PATTERN,
   REVIEW_OPEN_PATTERN,
 } from '../shared/reviewComments.ts'
@@ -302,14 +303,15 @@ function CommentForm({
   onCancel,
   submitting,
   error,
-  bare,
+  syntax,
 }: {
   onSubmit: (text: string) => void
   onCancel: () => void
   submitting: boolean
   error: string | null
-  /** File has no recognized comment syntax; tags get inserted uncommented. */
-  bare: boolean
+  /** Comment syntax the inserted tags will use. Empty prefix: the format has
+   *  no comment syntax; null: unrecognized file type. Both insert bare. */
+  syntax: CommentSyntax | null
 }) {
   const [text, setText] = useState('')
   // useEffect instead of a function ref because the function ref didn't
@@ -342,12 +344,21 @@ function CommentForm({
         rows={3}
         disabled={submitting}
       />
-      {bare && (
-        <div className="comment-form-note">
-          Unknown file type &mdash; comment will be inserted without comment markers
-        </div>
-      )}
       <div className="comment-form-actions">
+        <div className="comment-form-note">
+          {syntax === null ? (
+            <>Comment marker: none (file type not recognized)</>
+          ) : syntax.prefix === '' ? (
+            <>Comment marker: none (plain text)</>
+          ) : (
+            <>
+              Comment marker:{' '}
+              <code>
+                {syntax.suffix ? `${syntax.prefix} ${syntax.suffix}` : syntax.prefix}
+              </code>
+            </>
+          )}
+        </div>
         {error && <div className="comment-form-error">{error}</div>}
         <Button onClick={onCancel} disabled={submitting}>
           Cancel
@@ -1021,8 +1032,9 @@ function DiffView() {
     const { fileHashes } = data
     return files.map((fileDiff) => {
       const name = fileDiff.name
+      const syntax = data.commentSyntaxes[name]
       const annotations = commentsEnabled
-        ? detectReviewComments(fileDiff, name, data.bareCommentFiles[name] === true)
+        ? detectReviewComments(fileDiff, name, !syntax || syntax.prefix === '')
         : []
       if (composing?.file === name) {
         annotations.push({
@@ -1205,7 +1217,7 @@ function DiffView() {
                 ? commentMutation.error.message
                 : null
             }
-            bare={data?.bareCommentFiles[file] === true}
+            syntax={data?.commentSyntaxes[file] ?? null}
           />
         )
       }

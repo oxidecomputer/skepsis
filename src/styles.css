@@ -585,7 +585,10 @@ body,
     -apple-system,
     sans-serif;
   font-size: 12px;
-  margin-top: 4px;
+  /* nudge right: text flush with the textarea's outer edge reads as
+     overhanging it, since the textarea's own text sits inside its border */
+  padding-left: 2px;
+  margin-right: auto;
 }
 
 .comment-form-actions {
@@ -603,7 +606,6 @@ body,
     -apple-system,
     sans-serif;
   font-size: 13px;
-  margin-right: auto;
 }
 
 .btn {
@@ -616,6 +618,7 @@ body,
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .btn:disabled {
