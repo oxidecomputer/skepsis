@@ -37,10 +37,13 @@ import type {
   LineAnnotation,
   SelectedLineRange,
 } from '@pierre/diffs'
+import { THEME_MODES } from '../shared/types.ts'
 import type {
   DiffResponse,
   ErrorResponse,
   FileContentsResponse,
+  ThemeMode,
+  ThemeResponse,
   ViewedMap,
   FileHashes,
 } from '../shared/types.ts'
@@ -53,6 +56,27 @@ import {
 } from '../shared/reviewComments.ts'
 
 const queryClient = new QueryClient()
+
+// The /api/theme.js boot script in index.html stamps the stored theme
+// preference onto <html> as data-theme before this bundle loads, so CSS pins
+// color-scheme (and our light-dark() tokens resolve to the forced side)
+// before first paint. Read it back as the initial client state; /api/theme
+// is the source of truth from then on. The diff shadow roots don't inherit
+// the page's color-scheme and are pinned separately via the CodeView
+// themeType option.
+const themeAttr = document.documentElement.dataset['theme']
+const initialTheme: ThemeMode = (THEME_MODES as readonly (string | undefined)[]).includes(
+  themeAttr,
+)
+  ? (themeAttr as ThemeMode)
+  : 'system'
+
+function applyTheme(theme: ThemeMode) {
+  if (theme === 'system') delete document.documentElement.dataset['theme']
+  else document.documentElement.dataset['theme'] = theme
+}
+
+const THEME_CYCLE = { system: 'light', light: 'dark', dark: 'system' } as const
 
 async function apiFetch<T = unknown>(
   url: string,
@@ -381,7 +405,7 @@ function Tip({
   closeOnClick,
   children,
 }: {
-  text: string
+  text: React.ReactNode
   closeOnClick?: boolean
   children: ReactElement
 }) {
@@ -434,6 +458,40 @@ function ExpandAllIcon() {
       <path
         fill="currentColor"
         d="M11.47 9.47a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 1 1 1.06-1.06L8 12.94zM7.526 1.418a.75.75 0 0 1 1.004.052l4 4a.75.75 0 1 1-1.06 1.06L8 3.06 4.53 6.53a.75.75 0 1 1-1.06-1.06l4-4z"
+      />
+    </svg>
+  )
+}
+
+// Sun/moon/device-desktop octicons for the theme toggle, one per mode.
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M8 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-1.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Zm5.657-8.157a.75.75 0 0 1 0 1.061l-1.061 1.06a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l1.06-1.06a.75.75 0 0 1 1.06 0Zm-9.193 9.193a.75.75 0 0 1 0 1.06l-1.06 1.061a.75.75 0 1 1-1.061-1.06l1.06-1.061a.75.75 0 0 1 1.061 0ZM8 0a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V.75A.75.75 0 0 1 8 0ZM3 8a.75.75 0 0 1-.75.75H.75a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 3 8Zm13 0a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 16 8Zm-8 5a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 8 13Zm3.536-1.464a.75.75 0 0 1 1.06 0l1.061 1.06a.75.75 0 0 1-1.06 1.061l-1.061-1.06a.75.75 0 0 1 0-1.061ZM2.343 2.343a.75.75 0 0 1 1.061 0l1.06 1.061a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-1.06-1.06a.75.75 0 0 1 0-1.06Z"
+      />
+    </svg>
+  )
+}
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M9.598 1.591a.749.749 0 0 1 .785-.175 7.001 7.001 0 1 1-8.967 8.967.75.75 0 0 1 .961-.96 5.5 5.5 0 0 0 7.046-7.046.75.75 0 0 1 .175-.786Zm1.616 1.945a7 7 0 0 1-7.678 7.678 5.499 5.499 0 1 0 7.678-7.678Z"
+      />
+    </svg>
+  )
+}
+
+function SystemThemeIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M14.25 1c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 14.25 12h-3.727c.099 1.041.52 1.872 1.292 2.757A.752.752 0 0 1 11.25 16h-6.5a.75.75 0 0 1-.565-1.243c.772-.885 1.192-1.716 1.292-2.757H1.75A1.75 1.75 0 0 1 0 10.25v-7.5C0 1.784.784 1 1.75 1ZM1.75 2.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25ZM9.018 12H6.982a5.72 5.72 0 0 1-.765 2.5h3.566a5.72 5.72 0 0 1-.765-2.5Z"
       />
     </svg>
   )
@@ -555,11 +613,15 @@ function ProgressBar({
   fileHashes,
   viewed,
   onUnviewAll,
+  theme,
+  onCycleTheme,
 }: {
   command: string
   fileHashes: FileHashes
   viewed: ViewedMap
   onUnviewAll: () => void
+  theme: ThemeMode
+  onCycleTheme: () => void
 }) {
   const total = Object.keys(fileHashes).length
   const viewedCount = Object.entries(fileHashes).filter(
@@ -595,6 +657,31 @@ function ProgressBar({
           Clear
         </button>
       </Tip>
+      {/* The icon and tooltip show the current mode including "system": a
+          toggle that hides the system state leaves a user who forced a theme
+          long ago unable to see why the app ignores their OS setting. */}
+      <Tip
+        text={
+          <>
+            Theme: {theme} <kbd>t</kbd>
+          </>
+        }
+      >
+        <button
+          type="button"
+          className="theme-toggle-button"
+          aria-label={`Theme: ${theme}`}
+          onClick={onCycleTheme}
+        >
+          {theme === 'system' ? (
+            <SystemThemeIcon />
+          ) : theme === 'light' ? (
+            <SunIcon />
+          ) : (
+            <MoonIcon />
+          )}
+        </button>
+      </Tip>
     </div>
   )
 }
@@ -623,6 +710,7 @@ const SHORTCUTS: [string, string][] = [
   ['v', 'Toggle viewed'],
   ['e / E', 'Toggle collapse file / all files'],
   ['s', 'Toggle split mode (responsive / unified)'],
+  ['t', 'Cycle theme (system / light / dark)'],
   ['c', 'Comment on line'],
   ['Esc', 'Close / cancel'],
   ['?', 'Toggle this help'],
@@ -773,6 +861,41 @@ function DiffView() {
   }, [data])
 
   const qc = useQueryClient()
+
+  // Server-persisted so the preference survives the per-run ephemeral port (a
+  // fresh browser origin every run, which defeats web storage) and reaches
+  // other running instances. initialData comes from the data-theme attribute
+  // the server stamped into the HTML; the default refetchOnWindowFocus
+  // re-applies the stored value when a stale tab regains focus — the only
+  // moment cross-instance staleness is observable.
+  const { data: themeData } = useQuery({
+    queryKey: ['theme'],
+    queryFn: () => apiFetch<ThemeResponse>('/api/theme'),
+    initialData: { theme: initialTheme },
+  })
+  const theme = themeData.theme
+
+  const themeMutation = useMutation({
+    mutationFn: (next: ThemeMode) =>
+      apiFetch('/api/theme', { method: 'POST', body: { theme: next } }),
+    // Write the cache up front so the toggle doesn't fight a stale entry.
+    onMutate: (next) => qc.setQueryData(['theme'], { theme: next } satisfies ThemeResponse),
+  })
+  const mutateTheme = themeMutation.mutate
+
+  // Shared by the header button and the t shortcut. Returns the new mode so
+  // the shortcut can toast it. Reads the current mode from the query cache
+  // rather than closing over `theme`: the theme switch re-renders every
+  // CodeView item, so a second press during that render would otherwise see
+  // a stale mode and cycle to the same place.
+  const cycleTheme = useCallback(() => {
+    const cur = qc.getQueryData<ThemeResponse>(['theme'])?.theme ?? 'system'
+    const next = THEME_CYCLE[cur]
+    mutateTheme(next)
+    return next
+  }, [qc, mutateTheme])
+
+  useEffect(() => applyTheme(theme), [theme])
 
   const markMutation = useMutation({
     mutationFn: ({ file, hash, mark }: { file: string; hash: string; mark: boolean }) =>
@@ -1247,7 +1370,13 @@ function DiffView() {
 
   const options = useMemo<CodeViewOptions<AnnotationMeta>>(
     () => ({
-      theme: 'github-dark-default',
+      // Always the dual theme: Shiki tokenizes both up front and switching
+      // themes is purely a CSS flip (a single theme would retokenize on every
+      // toggle). themeType pins the shadow roots' color-scheme — they don't
+      // inherit the page's value ('system' leaves their :host default of
+      // `light dark`, following the OS).
+      theme: { light: 'github-light-default', dark: 'github-dark-default' },
+      themeType: theme,
       diffStyle,
       // The library lays out collapsed files (and unmeasured estimates) from
       // these metrics rather than the DOM. Its diffHeaderHeight default (44)
@@ -1297,7 +1426,7 @@ function DiffView() {
         }
       },
     }),
-    [diffStyle, commentsEnabled, markSeen],
+    [theme, diffStyle, commentsEnabled, markSeen],
   )
 
   // Keyboard shortcuts. File navigation (n/p) and the focused-file actions
@@ -1502,6 +1631,17 @@ function DiffView() {
           setCollapsed(Object.fromEntries(files.map((f) => [f.name, anyExpanded])))
           break
         }
+        case 't': {
+          if (showHelp || composing) break
+          e.preventDefault()
+          const next = cycleTheme()
+          showToast(
+            <>
+              Theme: <code>{next}</code>
+            </>,
+          )
+          break
+        }
       }
     }
 
@@ -1523,10 +1663,13 @@ function DiffView() {
     commentMutation,
     setFocused,
     markProgrammaticScroll,
+    cycleTheme,
   ])
 
-  if (isLoading || !data) return <div className="empty-diff">Loading...</div>
+  // Error before loading: on a failed fetch react-query settles with `data`
+  // undefined, so a loading-first guard would show "Loading..." forever.
   if (error) return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
+  if (isLoading || !data) return <div className="empty-diff">Loading...</div>
   if (data.error) return <pre style={{ color: 'red', padding: 20 }}>{data.error}</pre>
   if (!patch)
     return (
@@ -1550,6 +1693,8 @@ function DiffView() {
           command={data.revset}
           fileHashes={fileHashes}
           viewed={viewed}
+          theme={theme}
+          onCycleTheme={cycleTheme}
           onUnviewAll={() => {
             const entries = Object.entries(viewed).map(([file, hash]) => ({ file, hash }))
             if (entries.length === 0) return
