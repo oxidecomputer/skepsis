@@ -12,10 +12,13 @@
  * it via the data-theme attribute (rules below) — the diff library's shadow
  * roots resolve their theme CSS from the same property. Neutrals share one
  * hue and vary only in OKLCH lightness, so surfaces form an elevation ramp:
- * raised chrome steps away from the page background, with controls
- * (--bg-control) one step past the header bar (--bg-header) so a button reads
- * as resting on the bar. Borders are a separate low→high contrast ramp;
- * accents are four fixed hues with bright/text variants.
+ * raised chrome steps away from the page background. The two schemes express
+ * elevation differently (matching GitHub's grammar): in dark, a control
+ * (--bg-control) sits a wide step ABOVE the header bar (--bg-header) so it
+ * reads as raised; in light, fills that dark against white read as pressed-in,
+ * so controls share the bar's lightness and the border carries the affordance.
+ * Borders are a separate low→high contrast ramp; accents are four fixed hues
+ * with bright/text variants.
  */
 :root {
   /* Drives light-dark() resolution here and native widget rendering, and is
@@ -39,43 +42,43 @@
     oklch(17.5% 0.015 256)
   ); /* page — same as the code base */
   --bg-panel: light-dark(
-    oklch(97% 0.005 256),
+    oklch(97.5% 0.004 256),
     oklch(22% 0.015 256)
   ); /* modal, comment form, separator band */
   --bg-muted: light-dark(
-    oklch(95.5% 0.006 256),
+    oklch(94.5% 0.007 256),
     oklch(24% 0.015 256)
   ); /* progress track, kbd, inline code chip */
-  --bg-header: light-dark(oklch(96% 0.006 256), oklch(26% 0.015 256)); /* file header bar */
+  --bg-header: light-dark(oklch(97% 0.005 256), oklch(26% 0.015 256)); /* file header bar */
   --bg-control: light-dark(
-    oklch(94% 0.007 256),
-    oklch(28.5% 0.015 256)
-  ); /* buttons — one step past the header */
-  --bg-control-hover: light-dark(oklch(90.5% 0.009 256), oklch(33% 0.015 256));
+    oklch(97% 0.005 256),
+    oklch(31% 0.016 256)
+  ); /* buttons — dark: a wide step above the header; light: level with it */
+  --bg-control-hover: light-dark(oklch(94% 0.008 256), oklch(35.5% 0.016 256));
 
   /* Borders, low→high contrast against the surface they sit on. */
-  --border: light-dark(oklch(88% 0.01 256), oklch(33% 0.013 256)); /* default */
+  --border: light-dark(oklch(88% 0.012 256), oklch(36% 0.015 256)); /* default */
   --border-soft: light-dark(
-    oklch(89.5% 0.009 256),
+    oklch(90.5% 0.01 256),
     oklch(32% 0.015 256)
   ); /* header strip — low contrast on the bar */
   --border-strong: light-dark(
-    oklch(80% 0.013 256),
-    oklch(42% 0.016 256)
+    oklch(84% 0.013 256),
+    oklch(45% 0.016 256)
   ); /* control outlines */
   --border-muted: light-dark(
     oklch(65% 0.016 256),
-    oklch(56% 0.018 256)
+    oklch(58% 0.018 256)
   ); /* hover / emphasis */
 
   /* Text, hue 250. */
-  --fg: light-dark(oklch(32% 0.02 250), oklch(86% 0.014 250));
-  --fg-bright: light-dark(oklch(21% 0.02 250), oklch(94% 0.012 250));
+  --fg: light-dark(oklch(27% 0.018 250), oklch(88% 0.013 250));
+  --fg-bright: light-dark(oklch(18% 0.018 250), oklch(96% 0.01 250));
   --fg-dim: light-dark(
-    oklch(44% 0.02 250),
-    oklch(77% 0.016 250)
+    oklch(42% 0.02 250),
+    oklch(78% 0.016 250)
   ); /* between muted and fg: de-emphasized but interactive */
-  --fg-muted: light-dark(oklch(52% 0.02 250), oklch(66% 0.018 250));
+  --fg-muted: light-dark(oklch(49% 0.021 250), oklch(68% 0.017 250));
 
   /* Accents: base / bright (hover) / text (on the scheme's surfaces). Bases
      used as fills under white text (--blue, --green) hold in both schemes;
@@ -164,6 +167,17 @@ body,
   --diffs-font-family: var(--font-mono);
   --diffs-bg-separator-override: var(--bg-panel);
   --diffs-modified-color-override: var(--blue);
+  /* Selected-line highlight. The library builds it by color-mix()ing this
+     into the line background in CIELAB, whose blue region drifts purple as it
+     lightens — feeding --blue (hue 260) directly yields a periwinkle wash
+     (hue ~282 in light mode) clashing with the solid-blue comment button
+     sitting on it. These hues are rotated so the post-mix tint lands back at
+     --blue's hue 260 in each scheme (the two mixes drift by different
+     amounts). Chroma is up a notch to keep the tint from washing out at the
+     rotated hue. */
+  --diffs-bg-selection-override: light-dark(oklch(57% 0.22 227), oklch(57% 0.22 238));
+  /* The gutter-number cells mix from this separate slot; same target. */
+  --diffs-bg-selection-number-override: var(--diffs-bg-selection-override);
 }
 
 /* The library focuses the scroll container (tabindex="-1") after programmatic
@@ -177,9 +191,30 @@ body,
    scrolls, so any top chrome would scroll off and leave the pinned sticky header
    flush and square against the scroll edge ("cut off") — fighting the library,
    whose native model has no card. Files are delineated by the header strip
-   (.file-header background + border) and inter-file spacing instead. */
+   (.file-header background + border) and inter-file spacing instead. Side
+   borders (matching the header's top border) close off the file's edges —
+   without them the header/body strips just stop mid-air. No border-radius:
+   rounding fights the sticky header. */
 .codeview-root diffs-container {
   display: block;
+  border-left: 1px solid var(--border-soft);
+  border-right: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* Track the focused header (which swaps to --border-strong): otherwise its
+   darkened top border visibly mismatches the file's soft side borders where
+   they meet at the corners. This also outlines the focused file's full
+   extent. */
+.codeview-root diffs-container:has(.file-header.focused) {
+  border-color: var(--border-strong);
+}
+
+/* Collapsed file: the header is the only content, so its border-bottom would
+   sit directly on the container's and read as a double line. Let the header's
+   (which tracks focus) be the file's bottom edge. */
+.codeview-root diffs-container:has(.collapse-chevron.collapsed) {
+  border-bottom: none;
 }
 
 /* Custom file header. Sticky positioning is handled by CodeView (stickyHeaders),
@@ -391,10 +426,12 @@ body,
   transform: scale(0.85);
 }
 
-/* Keep the control lit while the file is expanded so it reads as active. */
+/* Keep the control lit while the file is expanded so it reads as active.
+   The hover step, not --bg-control: in light mode the control fill is level
+   with the header bar, so it would vanish here. */
 .expand-all-button.expanded {
   color: var(--fg-bright);
-  background: var(--bg-control);
+  background: var(--bg-control-hover);
 }
 
 /* Disabled: dimmed and inert, but still hoverable so its tooltip (the reason it
@@ -592,8 +629,10 @@ body,
   flex-shrink: 0;
 }
 
+/* The hover step, not --bg-control: in light mode the control fill is level
+   with the white canvas this button sits on, so it wouldn't show. */
 .theme-toggle-button:hover {
-  background: var(--bg-control);
+  background: var(--bg-control-hover);
   color: var(--fg);
 }
 
