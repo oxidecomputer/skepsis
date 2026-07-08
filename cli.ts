@@ -254,9 +254,8 @@ if (opts.dev) {
   const url = `http://localhost:${apiPort}`
   const { cmd, args } = urlOpenCommand(url)
   const opener = spawn(cmd, args, { detached: true, stdio: 'ignore' })
-  opener.on('error', (err) => {
-    console.error(`Could not open URL with ${cmd}: ${err.message}`)
-    console.error(`Open ${url} to see the diff`)
-  })
+  // The URL is already printed on server startup, so a failed opener (e.g. no
+  // xdg-open on illumos) needs no message — swallow the error and carry on.
+  opener.on('error', () => {})
   opener.unref()
 }
