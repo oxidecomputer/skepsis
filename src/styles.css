@@ -843,17 +843,26 @@ body,
   color: var(--fg-muted);
 }
 
-/* Ephemeral toast */
+/* Positioning context for the toast: the toast floats centered over the
+   header bar instead of joining its flex row, so it never pushes the bar's
+   two sides apart on narrow viewports. */
+.header-row {
+  position: relative;
+}
+
+/* Ephemeral toast. Taller than the header bar; the overflow bleeds evenly
+   above and below so it still reads as centered on the bar. */
 .toast {
-  position: fixed;
-  bottom: 24px;
-  left: 24px;
-  padding: 12px 20px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 8px 14px;
   background: var(--bg-control);
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--fg-bright);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 500;
   font-family:
     system-ui,
@@ -861,12 +870,12 @@ body,
     sans-serif;
   z-index: 200;
   pointer-events: none;
-  animation: toast-fade 1.5s ease forwards;
+  animation: toast-fade 1.4s ease-in forwards;
 }
 
 @keyframes toast-fade {
   0%,
-  60% {
+  86% {
     opacity: 1;
   }
   100% {

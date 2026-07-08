@@ -107,7 +107,7 @@ function useIsWide(): boolean {
   )
 }
 
-function useToast(duration = 1500) {
+function useToast(duration = 1400) {
   const [toast, setToast] = useState<{
     content: React.ReactNode
     key: number
@@ -1689,32 +1689,37 @@ function DiffView() {
         />
       )}
       <div className="diff-container">
-        <ProgressBar
-          command={data.revset}
-          fileHashes={fileHashes}
-          viewed={viewed}
-          theme={theme}
-          onCycleTheme={cycleTheme}
-          onUnviewAll={() => {
-            const entries = Object.entries(viewed).map(([file, hash]) => ({ file, hash }))
-            if (entries.length === 0) return
-            // Mirror single-file unview, which also opens the file.
-            setCollapsed((prev) => {
-              const next = { ...prev }
-              for (const { file } of entries) next[file] = false
-              return next
-            })
-            unviewAllMutation.mutate(entries)
-          }}
-        />
+        {/* Wrapper is the positioning context for the toast, which floats
+            centered over the header bar without participating in its flex row
+            (the bar's two sides can meet on narrow viewports). */}
+        <div className="header-row">
+          <ProgressBar
+            command={data.revset}
+            fileHashes={fileHashes}
+            viewed={viewed}
+            theme={theme}
+            onCycleTheme={cycleTheme}
+            onUnviewAll={() => {
+              const entries = Object.entries(viewed).map(([file, hash]) => ({ file, hash }))
+              if (entries.length === 0) return
+              // Mirror single-file unview, which also opens the file.
+              setCollapsed((prev) => {
+                const next = { ...prev }
+                for (const { file } of entries) next[file] = false
+                return next
+              })
+              unviewAllMutation.mutate(entries)
+            }}
+          />
+          {toast && (
+            <div className="toast" key={toast.key}>
+              {toast.content}
+            </div>
+          )}
+        </div>
         {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
         {showCommentsInfo && (
           <CommentsModal vcs={data.vcs} onClose={() => setShowCommentsInfo(false)} />
-        )}
-        {toast && (
-          <div className="toast" key={toast.key}>
-            {toast.content}
-          </div>
         )}
         <CodeView
           ref={codeViewRef}
