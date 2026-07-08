@@ -19,12 +19,6 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist/web',
-    // Vite's default cssTarget predates light-dark(), so esbuild lowers it
-    // to a prefers-color-scheme polyfill that follows the OS and ignores the
-    // forced color-scheme --theme sets. Target the first versions with
-    // light-dark() support so it ships untransformed. Not a new floor in
-    // practice: the diff library already emits light-dark() at runtime.
-    cssTarget: ['chrome123', 'firefox120', 'safari17.5'],
   },
   server: {
     proxy: {

@@ -30,7 +30,11 @@ cli.ts                CLI entry (commander). Detects jj/git, builds DiffArgs
                       starts the API server, spawns Vite in --dev mode.
 server/
   main.ts             Hono server. GET /api/diff; POST/DELETE /api/viewed;
-                      POST/DELETE /api/comment; serves dist/web statics.
+                      POST/DELETE /api/comment; GET/POST /api/theme;
+                      GET /api/theme.js (pre-first-paint theme boot script
+                      loaded by index.html); serves dist/web statics.
+  settings.ts         Global (not per-repo) UI settings — currently just the
+                      theme — in ~/.local/share/skepsis/settings.json.
   diff.ts             Runs `jj diff --git`/`git diff`, extracts per-file blob
                       hashes from index lines.
   viewed.ts           Viewed state, content-addressed by git blob ID — files

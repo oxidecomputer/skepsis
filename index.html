@@ -12,6 +12,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>skepsis</title>
+    <!-- Sets data-theme from the stored preference. Deliberately a classic
+         (render-blocking) script so a forced theme applies before first
+         paint. Served by the API server; reaches it via the Vite proxy in
+         dev. -->
+    <script src="/api/theme.js"></script>
   </head>
   <body>
     <div id="root"></div>

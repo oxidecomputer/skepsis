@@ -8,19 +8,20 @@
 
 /*
  * Color tokens, a light-dark(light, dark) pair per token, resolved by
- * color-scheme on :root: 'light dark' follows the OS, and --theme pins it
- * with an inline style (see App) — the diff library's shadow roots resolve
- * their theme CSS from the same property. Neutrals share one hue and vary
- * only in OKLCH lightness, so surfaces form an elevation ramp: raised chrome
- * steps away from the page background, with controls (--bg-control) one step
- * past the header bar (--bg-header) so a button reads as resting on the bar.
- * Borders are a separate low→high contrast ramp; accents are four fixed hues
- * with bright/text variants.
+ * color-scheme on :root: 'light dark' follows the OS, and a forced theme pins
+ * it via the data-theme attribute (rules below) — the diff library's shadow
+ * roots resolve their theme CSS from the same property. Neutrals share one
+ * hue and vary only in OKLCH lightness, so surfaces form an elevation ramp:
+ * raised chrome steps away from the page background, with controls
+ * (--bg-control) one step past the header bar (--bg-header) so a button reads
+ * as resting on the bar. Borders are a separate low→high contrast ramp;
+ * accents are four fixed hues with bright/text variants.
  */
 :root {
   /* Drives light-dark() resolution here and native widget rendering, and is
      inherited into the diff library's shadow roots. Forced themes override
-     this with an inline style (see App). */
+     this via data-theme, set pre-first-paint by the /api/theme.js boot
+     script in index.html and toggled at runtime by the theme button / t. */
   color-scheme: light dark;
 
   /* Surfaces, ascending elevation. The page (--bg-canvas) matches the diff/code
@@ -96,6 +97,17 @@
   --font-mono:
     'Berkeley Mono', ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo,
     Consolas, 'Liberation Mono', monospace;
+}
+
+/* Forced themes. The attribute arrives two ways: set by the /api/theme.js
+   boot script before first paint, and set/removed by the theme toggle at
+   runtime. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 body {
@@ -251,6 +263,25 @@ body,
   font-size: 12px;
   font-weight: 500;
   animation: tooltip-in 0.09s ease;
+}
+
+/* Key-cap chip inside a tooltip (e.g. the theme toggle's shortcut), like
+   .help-modal kbd but sized down to sit inline in tooltip text. Translucent
+   background rather than a ramp token: the tooltip surface is already near
+   the top of the elevation ramp, so a fixed token would sit below it in dark
+   mode and read as a hole instead of a key. */
+.tooltip-popup kbd {
+  display: inline-block;
+  padding: 1px 4px;
+  margin-left: 2px;
+  background: light-dark(rgb(0 0 0 / 5%), rgb(255 255 255 / 10%));
+  /* One ramp step stronger in dark: the translucent fill lightens the chip
+     interior to about --border-strong's level, swallowing that border. */
+  border: 1px solid light-dark(var(--border-strong), var(--border-muted));
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-bright);
 }
 
 @keyframes tooltip-in {
@@ -532,7 +563,7 @@ body,
 /* Clear-viewed-progress button next to the counter. Chrome matches
    .viewed-button so the two read as the same family of control. */
 .unview-all-button {
-  padding: 3px 6px;
+  padding: 4px 7px;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   background: var(--bg-control);
@@ -544,6 +575,30 @@ body,
   cursor: pointer;
   flex-shrink: 0;
   user-select: none;
+}
+
+/* Theme toggle: a plain icon rather than a bordered button — quieter than
+   the text controls, but with a hover background so it still reads as
+   clickable. */
+.theme-toggle-button {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.theme-toggle-button:hover {
+  background: var(--bg-control);
+  color: var(--fg);
+}
+
+.theme-toggle-button svg {
+  display: block;
 }
 
 .unview-all-button:hover {

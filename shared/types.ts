@@ -50,11 +50,17 @@ export type CommentDeleteRequest = z.infer<typeof commentDeleteSchema>
 
 // --- UI types ---
 
-/** Color scheme from --theme. 'system' follows the OS preference; 'light' and
- *  'dark' force it (e.g. light diffs on a dark desktop). One list drives both
- *  the CLI's --theme choices and the client's URL-param validation. */
+/** Color scheme. 'system' follows the OS preference; 'light' and 'dark' force
+ *  it (e.g. light diffs on a dark desktop). One list drives the API schema,
+ *  the toggle cycle, and the client's data-theme validation. */
 export const THEME_MODES = ['light', 'dark', 'system'] as const
 export type ThemeMode = (typeof THEME_MODES)[number]
+
+export const themeRequestSchema = z.object({ theme: z.enum(THEME_MODES) })
+
+export interface ThemeResponse {
+  theme: ThemeMode
+}
 
 // --- VCS types ---
 

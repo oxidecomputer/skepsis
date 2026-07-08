@@ -19,6 +19,7 @@ import { getFileContents } from './fileContents.ts'
 import { loadViewed, markViewed, unmarkViewed, unmarkViewedAll } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
 import { getCommentSyntaxes } from './commentSyntax.ts'
+import { loadTheme, saveTheme, themeBootScript } from './settings.ts'
 import {
   viewedRequestSchema,
   viewedDeleteSchema,
@@ -26,12 +27,14 @@ import {
   commentRequestSchema,
   commentDeleteSchema,
   fileContentsQuerySchema,
+  themeRequestSchema,
 } from '../shared/types.ts'
 import type {
   DiffResponse,
   FileContentsResponse,
   OkResponse,
   ErrorResponse,
+  ThemeResponse,
 } from '../shared/types.ts'
 
 export async function startServer(opts: {
@@ -96,6 +99,24 @@ export async function startServer(opts: {
   app.delete('/api/comment', zValidator('json', commentDeleteSchema), async (c) => {
     const { file, line } = c.req.valid('json')
     await removeComment(cwd, file, line)
+    return c.json({ ok: true } satisfies OkResponse)
+  })
+
+  app.get('/api/theme', async (c) => {
+    return c.json({ theme: await loadTheme() } satisfies ThemeResponse)
+  })
+
+  // Loaded by a render-blocking <script> in index.html (see themeBootScript).
+  // no-store: a cached copy would re-apply an old preference before React
+  // corrects it, flashing the wrong theme — the exact problem this solves.
+  app.get('/api/theme.js', async (c) => {
+    c.header('Cache-Control', 'no-store')
+    c.header('Content-Type', 'text/javascript')
+    return c.body(themeBootScript(await loadTheme()))
+  })
+
+  app.post('/api/theme', zValidator('json', themeRequestSchema), async (c) => {
+    await saveTheme(c.req.valid('json').theme)
     return c.json({ ok: true } satisfies OkResponse)
   })
 
