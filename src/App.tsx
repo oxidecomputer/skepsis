@@ -180,6 +180,17 @@ function normalizeFileType(f: FileDiffMetadata): FileDiffMetadata {
   return f
 }
 
+const STARLARK_EXTS = new Set(['bzl', 'bxl', 'sky', 'star', 'bazel'])
+const STARLARK_BASES = new Set(['BUCK', 'BUILD', 'PACKAGE', 'Tiltfile'])
+
+// Starlark has no dedicated shiki grammar; Python is close enough.
+function applyLangOverride(f: FileDiffMetadata): FileDiffMetadata {
+  const base = f.name.split('/').pop() ?? f.name
+  const ext = base.includes('.') ? base.split('.').pop() : undefined
+  if ((ext && STARLARK_EXTS.has(ext)) || STARLARK_BASES.has(base)) f.lang = 'python'
+  return f
+}
+
 function getFileStats(fileDiff: FileDiffMetadata) {
   let additions = 0
   let deletions = 0
@@ -949,6 +960,7 @@ function DiffView() {
         ? parsePatchFiles(patch)
             .flatMap((p) => p.files)
             .map(normalizeFileType)
+            .map(applyLangOverride)
         : [],
     [patch],
   )
@@ -1028,11 +1040,13 @@ function DiffView() {
       // context: 3 matches git's default so the visible context doesn't jump
       // when a file upgrades from its patch parse to the full-content diff.
       // Expand-all uses whole-file context so the entire file shows as one hunk.
-      const diff = normalizeFileType(
-        parseDiffFromFile(
-          { name: f.prevName ?? f.name, contents: c.oldContents ?? '' },
-          { name: f.name, contents: c.newContents ?? '' },
-          { context: isExpanded ? Number.MAX_SAFE_INTEGER : 3 },
+      const diff = applyLangOverride(
+        normalizeFileType(
+          parseDiffFromFile(
+            { name: f.prevName ?? f.name, contents: c.oldContents ?? '' },
+            { name: f.name, contents: c.newContents ?? '' },
+            { context: isExpanded ? Number.MAX_SAFE_INTEGER : 3 },
+          ),
         ),
       )
       parsedCacheRef.current.set(f.name, {
