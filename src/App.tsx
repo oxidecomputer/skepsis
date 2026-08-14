@@ -953,14 +953,15 @@ function DiffView() {
     [patch],
   )
 
-  // Hunk expansion needs "non-partial" diffs built from full file contents.
-  // The diffs library can't lazily fetch context on expand — it reads revealed
-  // lines straight out of the full content arrays and exposes no expansion hook
-  // (confirmed through 1.3.0-beta) — so the contents must be loaded before its
-  // expand controls can work. To avoid fetching files the user never looks at,
-  // a file is fetched only once it enters the virtualization window (viewport +
-  // buffer). onPostRender marks rendered items "seen"; seeing a new one bumps
-  // state so the queries below re-evaluate `enabled` and fire.
+  // Hunk expansion needs "non-partial" diffs built from full file contents:
+  // the library reads revealed lines straight out of the full content arrays,
+  // so the contents must be loaded before its expand controls can work. To
+  // avoid fetching files the user never looks at, a file is fetched only once
+  // it enters the virtualization window (viewport + buffer). onPostRender marks
+  // rendered items "seen"; seeing a new one bumps state so the queries below
+  // re-evaluate `enabled` and fire. (@pierre/diffs 1.3 added a `loadDiffFiles`
+  // option that hydrates a partial diff on demand and could replace this whole
+  // path, plus the expand-chevron placeholder CSS below.)
   const seenFilesRef = useRef(new Set<string>())
   const [, bumpSeen] = useState(0)
   const markSeen = useCallback((id: string) => {
