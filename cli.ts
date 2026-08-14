@@ -10,9 +10,17 @@
 import { spawn, execFileSync } from 'child_process'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { Command } from '@commander-js/extra-typings'
+import { Command, InvalidArgumentError } from '@commander-js/extra-typings'
 import { startServer } from './server/main.ts'
 import type { DiffArgs, DiffEndpoints } from './shared/types.ts'
+
+function parsePort(value: string): number {
+  const port = /^\d+$/.test(value) ? Number(value) : NaN
+  if (!(port >= 1 && port <= 65535)) {
+    throw new InvalidArgumentError('port must be an integer between 1 and 65535')
+  }
+  return port
+}
 
 const program = new Command()
   .name('skepsis')
@@ -23,6 +31,7 @@ const program = new Command()
   .option('--git', 'force git mode (skip jj detection)')
   .option('--dev', 'run with Vite dev server for development')
   .option('--host <address>', 'address to bind the HTTP server to', 'localhost')
+  .option('-p, --port <number>', 'port for the browser UI', parsePort)
   .argument('[files...]', 'Limit diff to these paths (passed through to jj/git)')
   .parse()
 
@@ -223,7 +232,18 @@ process.on('SIGINT', () => cleanup())
 process.on('SIGTERM', () => cleanup())
 
 const checkoutRoot = opts.dev ? requireCheckoutRoot() : undefined
-const { port: apiPort } = await startServer({ diffSource, cwd, hostname })
+// In development Vite owns the browser-facing port and proxies API requests
+// to this server, so leave the API on an ephemeral port. In the packaged app
+// the API server also serves the UI and can bind the requested port directly.
+const { port: apiPort } = await startServer({
+  diffSource,
+  cwd,
+  hostname,
+  port: opts.dev ? undefined : opts.port,
+}).catch((err: Error) => {
+  console.error(err.message)
+  return cleanup(1)
+})
 
 function urlOpenCommand(url: string): { cmd: string; args: string[] } {
   switch (process.platform) {
@@ -243,6 +263,7 @@ const shouldAutoOpen = hostname === 'localhost'
 
 if (opts.dev) {
   const viteArgs = ['vite', '--host', hostname]
+  if (opts.port !== undefined) viteArgs.push('--port', String(opts.port), '--strictPort')
   if (shouldAutoOpen) viteArgs.push('--open')
   const vite = spawn('npx', viteArgs, {
     cwd: checkoutRoot,

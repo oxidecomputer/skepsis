@@ -49,7 +49,21 @@ the commit range. The VCS is auto-detected. In jj mode, the flags are passed
 straight to `jj diff`. In git mode, they have to be translated slightly. See the
 examples below.
 
-Each invocation picks a free port, so you can run multiple instances simultaneously.
+Each invocation picks a free port by default, so you can run multiple instances
+simultaneously. To use a specific port, pass `--port`/`-p`:
+
+```
+skepsis --port 8080
+```
+
+Use `--host` as well if the server needs to be reachable from another machine:
+
+```
+skepsis --host 0.0.0.0 --port 8080
+```
+
+In `--dev` mode, `--port` sets the browser-facing Vite port; the proxied API
+server continues to use a free port.
 
 ### jj examples
 
