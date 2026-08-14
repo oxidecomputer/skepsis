@@ -140,7 +140,7 @@ export async function startServer(opts: {
     return c.json({ error: err.message } satisfies ErrorResponse, 500)
   })
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
       const assignedPort = typeof info === 'string' ? port : info.port
       console.info(
@@ -148,5 +148,6 @@ export async function startServer(opts: {
       )
       resolve({ port: assignedPort, close: () => server.close() })
     })
+    server.on('error', reject)
   })
 }

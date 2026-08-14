@@ -15,11 +15,8 @@ import { startServer } from './server/main.ts'
 import type { DiffArgs, DiffEndpoints } from './shared/types.ts'
 
 function parsePort(value: string): number {
-  if (!/^\d+$/.test(value)) {
-    throw new InvalidArgumentError('port must be an integer between 1 and 65535')
-  }
-  const port = Number(value)
-  if (port < 1 || port > 65535) {
+  const port = /^\d+$/.test(value) ? Number(value) : NaN
+  if (!(port >= 1 && port <= 65535)) {
     throw new InvalidArgumentError('port must be an integer between 1 and 65535')
   }
   return port
@@ -243,6 +240,9 @@ const { port: apiPort } = await startServer({
   cwd,
   hostname,
   port: opts.dev ? undefined : opts.port,
+}).catch((err: Error) => {
+  console.error(err.message)
+  return cleanup(1)
 })
 
 function urlOpenCommand(url: string): { cmd: string; args: string[] } {
