@@ -26,8 +26,9 @@ import {
 import type { ReactElement } from 'react'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { parsePatchFiles, parseDiffFromFile } from '@pierre/diffs'
-import { CodeView } from '@pierre/diffs/react'
+import { CodeView, WorkerPoolContextProvider } from '@pierre/diffs/react'
 import type { CodeViewHandle } from '@pierre/diffs/react'
+import DiffsHighlightWorker from '@pierre/diffs/worker/worker.js?worker'
 import type {
   CodeViewDiffItem,
   CodeViewItem,
@@ -56,6 +57,11 @@ import {
 } from '../shared/reviewComments.ts'
 
 const queryClient = new QueryClient()
+
+// Always the dual theme: Shiki tokenizes both up front and switching themes is
+// purely a CSS flip (a single theme would retokenize on every toggle). Shared
+// with the worker pool's highlighter, which is initialized separately.
+const DIFF_THEME = { light: 'github-light-default', dark: 'github-dark-default' } as const
 
 // The /api/theme.js boot script in index.html stamps the stored theme
 // preference onto <html> as data-theme before this bundle loads, so CSS pins
@@ -1371,12 +1377,10 @@ function DiffView() {
 
   const options = useMemo<CodeViewOptions<AnnotationMeta>>(
     () => ({
-      // Always the dual theme: Shiki tokenizes both up front and switching
-      // themes is purely a CSS flip (a single theme would retokenize on every
-      // toggle). themeType pins the shadow roots' color-scheme — they don't
-      // inherit the page's value ('system' leaves their :host default of
-      // `light dark`, following the OS).
-      theme: { light: 'github-light-default', dark: 'github-dark-default' },
+      // themeType pins the shadow roots' color-scheme — they don't inherit the
+      // page's value ('system' leaves their :host default of `light dark`,
+      // following the OS).
+      theme: DIFF_THEME,
       themeType: theme,
       diffStyle,
       // The library lays out collapsed files (and unmeasured estimates) from
@@ -1736,12 +1740,30 @@ function DiffView() {
   )
 }
 
+// Without this provider CodeView's worker pool is undefined and Shiki
+// tokenizes on the main thread, which stalls the UI for hundreds of ms every
+// time a big file's virtualization window moves (TextMate tokenization has to
+// walk the file from the top to reach the window). The pool's highlighter is
+// initialized separately from the CodeView options, so it needs the same theme
+// pair — miss it and the workers hand back tokens in the library's default
+// theme.
+const poolOptions = {
+  workerFactory: () => new DiffsHighlightWorker(),
+  poolSize: 2,
+}
+const highlighterOptions = { theme: DIFF_THEME }
+
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Tooltip.Provider>
-        <DiffView />
-      </Tooltip.Provider>
+      <WorkerPoolContextProvider
+        poolOptions={poolOptions}
+        highlighterOptions={highlighterOptions}
+      >
+        <Tooltip.Provider>
+          <DiffView />
+        </Tooltip.Provider>
+      </WorkerPoolContextProvider>
     </QueryClientProvider>
   )
 }
