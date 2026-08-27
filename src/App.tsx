@@ -502,7 +502,16 @@ function FileHeader({
   const { additions, deletions } = getFileStats(fileDiff)
   const [copied, setCopied] = useState(false)
   return (
-    <div className={'file-header' + (focused ? ' focused' : '')} onClick={onToggleCollapse}>
+    <div
+      className={'file-header' + (focused ? ' focused' : '')}
+      onClick={() => {
+        const selection = window.getSelection()
+        // Dragging across the filename also produces a click; keep the text
+        // selected instead of treating that click as a collapse toggle.
+        if (selection && !selection.isCollapsed) return
+        onToggleCollapse()
+      }}
+    >
       <span className={'collapse-chevron' + (collapsed ? ' collapsed' : '')}>
         {'\u25B6'}
       </span>

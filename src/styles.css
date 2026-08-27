@@ -269,6 +269,8 @@ body,
   font-family: var(--font-mono);
   font-weight: 400;
   color: var(--fg-bright);
+  cursor: text;
+  user-select: text;
   /* Shrink-to-ellipsis but don't grow, so the copy button stays hugged to the
      end of the name rather than being pushed to the right edge. */
   flex: 0 1 auto;
