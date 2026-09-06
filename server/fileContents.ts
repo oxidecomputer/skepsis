@@ -7,7 +7,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { lstat, readFile, readlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DiffArgs, FileContentsResponse } from '../shared/types.ts'
 
@@ -43,7 +43,12 @@ async function fetchNew(src: DiffArgs, path: string, cwd: string): Promise<strin
   if (!src.endpoints) return null
   const { right } = src.endpoints
   if (right === 'workingCopy') {
-    return readFile(join(cwd, path), 'utf-8').catch(() => null)
+    const abs = join(cwd, path)
+    const stat = await lstat(abs).catch(() => null)
+    if (stat?.isSymbolicLink()) {
+      return readlink(abs).catch(() => null)
+    }
+    return readFile(abs, 'utf-8').catch(() => null)
   }
   return src.vcs === 'jj'
     ? tryRun('jj', ['file', 'show', '-r', right.rev, path])
