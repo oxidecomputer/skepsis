@@ -39,6 +39,7 @@ import type {
   SelectedLineRange,
 } from '@pierre/diffs'
 import { THEME_MODES } from '../shared/types.ts'
+import { mergeDuplicateFiles } from './diffFiles.ts'
 import type {
   DiffResponse,
   ErrorResponse,
@@ -926,14 +927,19 @@ function DiffView() {
 
   // Memoize patch parsing so it doesn't re-run on viewed state changes. These
   // are "partial" diffs (no full-file context), used for initial paint and as
-  // the fallback when full contents aren't available.
+  // the fallback when full contents aren't available. A file swapped for
+  // a symlink, or the reverse, parses as two entries sharing one name.
+  // CodeView needs one item per id, so the merge helper folds them into
+  // a single entry first.
   const patch = data?.patch
   const patchFiles = useMemo(
     () =>
       patch
-        ? parsePatchFiles(patch)
-            .flatMap((p) => p.files)
-            .map(normalizeFileType)
+        ? mergeDuplicateFiles(
+            parsePatchFiles(patch)
+              .flatMap((p) => p.files)
+              .map(normalizeFileType),
+          )
         : [],
     [patch],
   )

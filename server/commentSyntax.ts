@@ -6,7 +6,7 @@
  * Copyright Oxide Computer Company
  */
 
-import { open } from 'node:fs/promises'
+import { lstat, open } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import type { Language, LanguageName } from 'linguist-languages'
 import * as languages from 'linguist-languages'
@@ -221,13 +221,16 @@ export async function getCommentSyntaxes(
   const result: Record<string, CommentSyntax | null> = {}
   await Promise.all(
     files.map(async (file) => {
-      // Filename and extension detection don't need the first line; only read
-      // files (for shebang detection) when those come up empty. Unreadable
-      // (e.g. deleted) files resolve to unknown; they have no addition lines
-      // to comment on, so the value is inert.
+      // Most files are decided by name alone. Read the first line only
+      // when the name gives no answer, to look for a shebang. Don't
+      // read missing files or symlinks. A missing file has no lines
+      // to comment on, and a symlink target says nothing about the link.
       let syntax = getCommentSyntax(file, '')
       if (syntax === null) {
-        const firstLine = await readFirstLine(join(cwd, file)).catch(() => '')
+        const isLink = await lstat(join(cwd, file))
+          .then((s) => s.isSymbolicLink())
+          .catch(() => false)
+        const firstLine = isLink ? '' : await readFirstLine(join(cwd, file)).catch(() => '')
         syntax = getCommentSyntax(file, firstLine)
       }
       result[file] = syntax
