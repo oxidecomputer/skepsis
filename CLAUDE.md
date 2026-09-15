@@ -20,6 +20,10 @@ server into `dist/cli.js` with tsdown. Runtime dependencies are bundled into
 the CLI output, so the published package has no production dependencies and
 `npx @oxide/skepsis` does not run a build step.
 
+Every package goes in `devDependencies`, never `dependencies` (use `npm install
+--save-dev`). tsdown bundles whatever the CLI imports, and vite bundles the
+frontend, so a `dependencies` entry would only add an install step to `npx`.
+
 `dist/` is ignored build output. Do not edit it by hand or include it in
 reviews; regenerate it with `npm run build` when checking package behavior.
 
@@ -48,6 +52,11 @@ live beside their subject as `*.test.ts`.
 - The diff renders through `@pierre/diffs` CodeView: virtualized, with each
   item in its own shadow root, so page CSS and the page's `color-scheme` don't
   reach the diff. Pass theming in through CodeView options instead.
+- The file tree sidebar is `@pierre/trees`, which also renders in a shadow
+  root. Colors reach it through its `--trees-*-override` custom properties
+  (set on `.file-tree` in `styles.css`) and anything else through the
+  `unsafeCSS` option in `App.tsx`. Its open/closed state is in
+  `localStorage`, not settings.json.
 - Hunk expansion needs both diff endpoints to resolve to concrete revisions;
   exotic revsets leave them null and expansion is disabled.
 - All styling is in `src/styles.css`: OKLCH tokens with a documented elevation

@@ -28,6 +28,9 @@ import { Tooltip } from '@base-ui/react/tooltip'
 import { parsePatchFiles, parseDiffFromFile } from '@pierre/diffs'
 import { CodeView, WorkerPoolContextProvider } from '@pierre/diffs/react'
 import type { CodeViewHandle } from '@pierre/diffs/react'
+import { FileTree, useFileTree } from '@pierre/trees/react'
+import { preparePresortedFileTreeInput } from '@pierre/trees'
+import type { GitStatus, GitStatusEntry } from '@pierre/trees'
 import DiffsHighlightWorker from '@pierre/diffs/worker/worker.js?worker'
 import type {
   CodeViewDiffItem,
@@ -197,6 +200,79 @@ function detectReviewComments(
 function normalizeFileType(f: FileDiffMetadata): FileDiffMetadata {
   if (f.type === 'new' || f.type === 'deleted') f.type = 'change'
   return f
+}
+
+// The file tree's per-row status marker, from the diff's change type. Read
+// before normalizeFileType erases new/deleted. Plain modifications get no
+// marker: in a diff nearly every file is modified, and the tree colors a
+// marked row's whole name in its status color, which would turn the tree
+// blue. Only the exceptions (added, deleted, renamed) stand out.
+const TREE_STATUS: Record<FileDiffMetadata['type'], GitStatus | null> = {
+  change: null,
+  new: 'added',
+  deleted: 'deleted',
+  'rename-pure': 'renamed',
+  'rename-changed': 'renamed',
+}
+
+// Diff files are shown in file-tree order (directories before files at each
+// level, then by name), so scrolling the diff walks the tree top to bottom.
+// The tree gets the same list as presorted prepared input, which keeps input
+// order and skips the library's own sort, so the two can't disagree.
+function compareTreeOrder(a: string, b: string): number {
+  const as = a.split('/')
+  const bs = b.split('/')
+  const n = Math.min(as.length, bs.length)
+  for (let i = 0; i < n; i++) {
+    const aDir = i < as.length - 1
+    const bDir = i < bs.length - 1
+    if (aDir !== bDir) return aDir ? -1 : 1
+    if (as[i] !== bs[i]) return as[i]!.localeCompare(bs[i]!)
+  }
+  return as.length - bs.length
+}
+
+// Tree icons: the built-in minimal set plus a check (octicon check-16) for the
+// viewed-file row decoration. The sprite is zero-sized because the library
+// inserts a custom sheet as a rendered element, not hidden like its own. Also the token setIcons() is called with to make
+// the tree re-render rows when viewed state changes — the decoration renderer
+// is fixed at construction and the library has no invalidate call, but
+// setIcons re-renders unconditionally.
+const TREE_ICONS = {
+  set: 'minimal',
+  spriteSheet:
+    '<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true"><symbol id="skepsis-check" viewBox="0 0 16 16"><path fill="currentColor" d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></symbol></svg>',
+} as const
+
+// Shadow-root CSS the --trees-* hooks can't express: the search box sits
+// flush against the top (the library only pads it horizontally, by
+// --trees-padding-inline = 16px, so 12px reads as even with the sides), and
+// the viewed check should read as done, not muted.
+const TREE_CSS = `
+  [data-file-tree-search-container] {
+    padding-top: 12px;
+  }
+  [data-item-section="decoration"] {
+    color: var(--trees-git-added-color);
+  }
+`
+
+// The sidebar open/closed preference. Per browser rather than in settings.json:
+// it's a layout choice like window size, not a preference worth syncing.
+const TREE_OPEN_KEY = 'skepsis.fileTreeOpen'
+function loadTreeOpen(): boolean {
+  try {
+    return localStorage.getItem(TREE_OPEN_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
+function saveTreeOpen(open: boolean) {
+  try {
+    localStorage.setItem(TREE_OPEN_KEY, String(open))
+  } catch {
+    // Private mode / blocked storage: the preference just doesn't persist.
+  }
 }
 
 function getFileStats(fileDiff: FileDiffMetadata) {
@@ -595,7 +671,117 @@ function FileHeader({
   )
 }
 
+// Sidebar octicons for the file tree toggle: a two-pane frame with a chevron
+// in the main pane pointing the way the sidebar will go.
+function SidebarIcon({ open }: { open: boolean }) {
+  const frame =
+    'M1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25V1.75C0 .784.784 0 1.75 0ZM1.5 1.75v12.5c0 .138.112.25.25.25H4.5v-13H1.75a.25.25 0 0 0-.25.25ZM6 14.5h8.25a.25.25 0 0 0 .25-.25V1.75a.25.25 0 0 0-.25-.25H6Z'
+  const chevron = open
+    ? 'M11.28 5.22a.75.75 0 0 1 0 1.06L9.56 8l1.72 1.72a.75.75 0 1 1-1.06 1.06l-2.25-2.25a.75.75 0 0 1 0-1.06l2.25-2.25a.75.75 0 0 1 1.06 0Z'
+    : 'M8.72 5.22a.75.75 0 0 1 1.06 0l2.25 2.25a.75.75 0 0 1 0 1.06l-2.25 2.25a.75.75 0 1 1-1.06-1.06L10.44 8 8.72 6.28a.75.75 0 0 1 0-1.06Z'
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <path fill="currentColor" d={frame} />
+      <path fill="currentColor" d={chevron} />
+    </svg>
+  )
+}
+
+// The file tree sidebar (@pierre/trees). Selection is two-way: clicking a row
+// scrolls the diff to that file, and the focused file (which tracks scroll)
+// is mirrored back as the selected row.
+function FileTreePanel({
+  paths,
+  gitStatus,
+  viewed,
+  focusedFile,
+  onSelectFile,
+}: {
+  paths: string[]
+  gitStatus: GitStatusEntry[]
+  // Files whose current content is marked viewed; shown with a check.
+  viewed: ReadonlySet<string>
+  focusedFile: string | null
+  onSelectFile: (path: string) => void
+}) {
+  // The listener fires synchronously for programmatic selection too; this
+  // marks those so mirroring the focused file into the tree doesn't scroll
+  // the diff back to it.
+  const syncingRef = useRef(false)
+  const onSelectFileRef = useRef(onSelectFile)
+  onSelectFileRef.current = onSelectFile
+  const viewedRef = useRef(viewed)
+  // Presorted prepared input keeps the caller's order; see compareTreeOrder.
+  const preparedInput = useMemo(() => preparePresortedFileTreeInput(paths), [paths])
+  const { model } = useFileTree({
+    preparedInput,
+    gitStatus,
+    initialExpansion: 'open',
+    flattenEmptyDirectories: true,
+    search: true,
+    density: 'compact',
+    icons: TREE_ICONS,
+    unsafeCSS: TREE_CSS,
+    renderRowDecoration: ({ item }) =>
+      item.kind === 'file' && viewedRef.current.has(item.path)
+        ? { icon: { name: 'skepsis-check', width: 14, height: 14 }, title: 'Viewed' }
+        : null,
+    onSelectionChange: (selected) => {
+      if (syncingRef.current || selected.length !== 1) return
+      const path = selected[0]!
+      // Directory rows select too; only files are diff items.
+      if (model.getItem(path)?.isDirectory()) return
+      onSelectFileRef.current(path)
+    },
+  })
+
+  // useFileTree consumes paths/gitStatus once; later diffs (a refetch after a
+  // comment lands) go through the model.
+  const first = useRef(true)
+  useEffect(() => {
+    if (first.current) {
+      first.current = false
+      return
+    }
+    model.resetPaths({ preparedInput })
+    model.setGitStatus(gitStatus)
+  }, [model, preparedInput, gitStatus])
+
+  useEffect(() => {
+    viewedRef.current = viewed
+    model.setIcons(TREE_ICONS) // re-render rows (see TREE_ICONS)
+  }, [model, viewed])
+
+  useEffect(() => {
+    if (!focusedFile || !model.getItem(focusedFile)) return
+    syncingRef.current = true
+    try {
+      for (const p of model.getSelectedPaths()) {
+        if (p !== focusedFile) model.getItem(p)?.deselect()
+      }
+      model.getItem(focusedFile)?.select()
+    } finally {
+      syncingRef.current = false
+    }
+    model.scrollToPath(focusedFile, { focus: false, offset: 'nearest' })
+  }, [model, focusedFile, paths])
+
+  return <FileTree className="file-tree" model={model} />
+}
+
+// Focus the file tree's search box. The box is always rendered, and the
+// library's own focus logic only fires on its closed→open transition, so
+// reach into the (open) shadow root. Returns false when the tree is hidden.
+function focusTreeSearch(): boolean {
+  const input = document.querySelector('.file-tree')?.shadowRoot?.querySelector('input')
+  if (!input) return false
+  input.focus()
+  return true
+}
+
 function ProgressBar({
+  treeOpen,
+  onToggleTree,
   command,
   fileHashes,
   viewed,
@@ -603,6 +789,8 @@ function ProgressBar({
   resolvedTheme,
   onToggleTheme,
 }: {
+  treeOpen: boolean
+  onToggleTree: () => void
   command: string
   fileHashes: FileHashes
   viewed: ViewedMap
@@ -621,6 +809,17 @@ function ProgressBar({
 
   return (
     <div className="progress-bar">
+      <Tip text={treeOpen ? 'Hide file tree' : 'Show file tree'}>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={treeOpen ? 'Hide file tree' : 'Show file tree'}
+          aria-expanded={treeOpen}
+          onClick={onToggleTree}
+        >
+          <SidebarIcon open={treeOpen} />
+        </button>
+      </Tip>
       {/* title gives a native tooltip when the command is ellipsized */}
       <code className="diff-command" title={command}>
         {command}
@@ -695,6 +894,7 @@ const SHORTCUTS: [string, string][] = [
   ['e / E', 'Toggle collapse file / all files'],
   ['s', 'Toggle split mode (responsive / unified)'],
   ['t', 'Toggle light / dark'],
+  ['⌘K / Ctrl+K', 'Search files'],
   ['c', 'Comment on line'],
   ['Esc', 'Close / cancel'],
   ['?', 'Toggle this help'],
@@ -814,6 +1014,21 @@ function DiffView() {
     splitMode === 'responsive' && isWide ? 'split' : 'unified'
   const { toast, showToast } = useToast()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [treeOpen, setTreeOpen] = useState(loadTreeOpen)
+  const toggleTree = useCallback(() => {
+    setTreeOpen((open) => {
+      saveTreeOpen(!open)
+      return !open
+    })
+  }, [])
+  // Set when Cmd/Ctrl+K had to open the sidebar first; the search box gets
+  // focus once the tree has rendered.
+  const focusSearchOnOpen = useRef(false)
+  useEffect(() => {
+    if (!treeOpen || !focusSearchOnOpen.current) return
+    focusSearchOnOpen.current = false
+    requestAnimationFrame(() => focusTreeSearch())
+  }, [treeOpen])
   // Files the user expanded via the header's expand-all-lines button: these are
   // re-parsed with whole-file context so every collapsed region is revealed.
   const [expandedFiles, setExpandedFiles] = useState<Record<string, boolean>>({})
@@ -944,15 +1159,21 @@ function DiffView() {
   // are "partial" diffs (no full-file context), used for initial paint and as
   // the fallback when full contents aren't available.
   const patch = data?.patch
-  const patchFiles = useMemo(
-    () =>
-      patch
-        ? parsePatchFiles(patch)
-            .flatMap((p) => p.files)
-            .map(normalizeFileType)
-        : [],
-    [patch],
-  )
+  const { patchFiles, treePaths, treeStatus } = useMemo(() => {
+    if (!patch) return { patchFiles: [], treePaths: [], treeStatus: [] }
+    const parsed = parsePatchFiles(patch)
+      .flatMap((p) => p.files)
+      .toSorted((a, b) => compareTreeOrder(a.name, b.name))
+    const status: GitStatusEntry[] = parsed.flatMap((f) => {
+      const s = TREE_STATUS[f.type]
+      return s ? [{ path: f.name, status: s }] : []
+    })
+    return {
+      patchFiles: parsed.map(normalizeFileType),
+      treePaths: parsed.map((f) => f.name),
+      treeStatus: status,
+    }
+  }, [patch])
 
   // Hunk expansion needs "non-partial" diffs built from full file contents: the
   // library reads revealed lines straight out of the full content arrays. It
@@ -1087,6 +1308,15 @@ function DiffView() {
     unviewAllMutation.isPending,
     unviewAllMutation.variables,
   ])
+  // Files whose viewed hash matches their current content, for the tree.
+  const viewedFiles = useMemo(() => {
+    const set = new Set<string>()
+    if (!data) return set
+    for (const [file, hash] of Object.entries(data.fileHashes)) {
+      if (viewed[file] === hash) set.add(file)
+    }
+    return set
+  }, [data, viewed])
 
   const commentsEnabled = data?.commentsEnabled ?? false
 
@@ -1219,6 +1449,47 @@ function DiffView() {
       pendingAnchorRef.current = name
     }
   }, [])
+
+  // Scroll a file's header to the top of the viewport. CodeView's scrollTo
+  // marks the target settled on the first frame, before the newly rendered
+  // target file has been measured; when the measurement changes the layout,
+  // its scroll anchoring keeps the *previous* top file in place and the jump
+  // is silently undone (a tree click or n/p that "does nothing"). Re-check
+  // for a few frames and re-issue while the header isn't where it should be.
+  // Bounded, so a clamped target (the last file can't reach the top) just
+  // gives up quietly.
+  const scrollItemToStart = useCallback(
+    (id: string) => {
+      const handle = codeViewRef.current
+      if (!handle) return
+      markProgrammaticScroll()
+      handle.scrollTo({ type: 'item', id, align: 'start' })
+      let frames = 0
+      const check = () => {
+        const inst = codeViewRef.current?.getInstance()
+        if (!inst || ++frames > 8) return
+        const top = inst.getTopForItem(id)
+        if (top == null) return
+        if (Math.abs(top - inst.getScrollTop()) > 1) {
+          markProgrammaticScroll()
+          codeViewRef.current?.scrollTo({ type: 'item', id, align: 'start' })
+        }
+        requestAnimationFrame(check)
+      }
+      requestAnimationFrame(check)
+    },
+    [markProgrammaticScroll],
+  )
+
+  // A click in the file tree: same move as n/p minus the line cursor.
+  const onTreeSelect = useCallback(
+    (path: string) => {
+      if (!itemsRef.current.some((it) => it.id === path)) return
+      setFocused(path)
+      scrollItemToStart(path)
+    },
+    [setFocused, scrollItemToStart],
+  )
 
   useLayoutEffect(() => {
     const name = pendingAnchorRef.current
@@ -1403,6 +1674,11 @@ function DiffView() {
       // emits inside its header region — and disableFileHeader removes that region
       // entirely, so the slot never exists and the portal has nowhere to land.
       stickyHeaders: true,
+      // paddingTop 0 (default 8): the first file header sits at the scroll
+      // edge, where the sticky header pins anyway, so the file tree sidebar's
+      // top border lines up with it whether or not the diff is scrolled.
+      // paddingBottom and gap are the library defaults.
+      layout: { paddingTop: 0, paddingBottom: 8, gap: 8 },
       enableGutterUtility: commentsEnabled,
       // Hydrates a partial diff with full file contents on the first expand
       // click, then re-renders the item itself. Setting it is also what makes
@@ -1506,6 +1782,17 @@ function DiffView() {
     }
 
     function handler(e: KeyboardEvent) {
+      // Cmd/Ctrl+K: focus the file search, opening the sidebar if it's
+      // hidden. Checked before the input guard so it works from a comment box.
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+        e.preventDefault()
+        if (!focusTreeSearch()) {
+          focusSearchOnOpen.current = true
+          saveTreeOpen(true)
+          setTreeOpen(true)
+        }
+        return
+      }
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement)
         return
       if (e.ctrlKey || e.metaKey || e.altKey) return
@@ -1532,8 +1819,7 @@ function DiffView() {
           // Move focus immediately rather than waiting for the scroll-driven
           // sync, which may never fire (all-collapsed diffs don't scroll).
           setFocused(targetId)
-          markProgrammaticScroll()
-          codeViewRef.current?.scrollTo({ type: 'item', id: targetId, align: 'start' })
+          scrollItemToStart(targetId)
           const lines = fileLines.get(targetId)
           setCursor(lines?.length ? { file: targetId, line: lines[0]! } : null)
           break
@@ -1680,6 +1966,7 @@ function DiffView() {
     commentMutation,
     setFocused,
     markProgrammaticScroll,
+    scrollItemToStart,
     toggleTheme,
   ])
 
@@ -1711,6 +1998,8 @@ function DiffView() {
             (the bar's two sides can meet on narrow viewports). */}
         <div className="header-row">
           <ProgressBar
+            treeOpen={treeOpen}
+            onToggleTree={toggleTree}
             command={data.revset}
             fileHashes={fileHashes}
             viewed={viewed}
@@ -1738,15 +2027,26 @@ function DiffView() {
         {showCommentsInfo && (
           <CommentsModal vcs={data.vcs} onClose={() => setShowCommentsInfo(false)} />
         )}
-        <CodeView
-          ref={codeViewRef}
-          className="codeview-root"
-          items={items}
-          options={options}
-          onScroll={onScroll}
-          renderCustomHeader={renderCustomHeader}
-          renderAnnotation={renderAnnotation}
-        />
+        <div className="diff-body">
+          {treeOpen && (
+            <FileTreePanel
+              paths={treePaths}
+              gitStatus={treeStatus}
+              viewed={viewedFiles}
+              focusedFile={effectiveFocused}
+              onSelectFile={onTreeSelect}
+            />
+          )}
+          <CodeView
+            ref={codeViewRef}
+            className="codeview-root"
+            items={items}
+            options={options}
+            onScroll={onScroll}
+            renderCustomHeader={renderCustomHeader}
+            renderAnnotation={renderAnnotation}
+          />
+        </div>
       </div>
     </>
   )
