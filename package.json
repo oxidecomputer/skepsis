@@ -39,7 +39,7 @@
     "commander": "^15.0.0",
     "hono": "^4.13.8",
     "linguist-languages": "^9.5.0",
-    "oxfmt": "^0.55.0",
+    "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
