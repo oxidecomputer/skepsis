@@ -86,7 +86,7 @@ const SYNTAX_GROUPS: Array<[CommentSyntax, LanguageName[]]> = [
   [PERCENT_COMMENT, ['TeX', 'Erlang']],
   // 'Nu' is the Lisp-like build system (`;` comments); 'Nushell' is the shell (`#` comments).
   [SEMICOLON_COMMENT, ['INI', 'Emacs Lisp', 'Common Lisp', 'Clojure', 'Scheme', 'Nu']],
-  [QUOTE_COMMENT, ['Vim Script']],
+  [QUOTE_COMMENT, ['Vim script']],
   // Formats with no comment syntax at all: insert review tags bare. Listed
   // here (unlike unknown file types, which get the same bare tags as a
   // fallback) so the UI can say "no marker" is the correct answer rather than

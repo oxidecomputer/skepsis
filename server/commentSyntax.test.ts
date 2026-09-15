@@ -22,7 +22,7 @@ describe('detectLanguage', () => {
     ['.tmux.conf', '', 'Shell'],
     ['.gitconfig', '', 'Git Config'],
     ['.gitignore', '', 'Ignore List'],
-    ['.vimrc', '', 'Vim Script'],
+    ['.vimrc', '', 'Vim script'],
     ['Makefile', '', 'Makefile'],
     ['Dockerfile', '', 'Dockerfile'],
     ['Nukefile', '', 'Nu'],

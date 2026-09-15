@@ -39,7 +39,17 @@
     "no-unneeded-ternary": "error",
     "no-useless-concat": "error",
     "no-useless-constructor": "error",
-    "unicorn/relative-url-style": "error"
+    "unicorn/relative-url-style": "error",
+    // Added to oxlint's `correctness` category in 1.83. All three disagree
+    // with deliberate patterns in App.tsx rather than finding real bugs:
+    // refs that hold the latest value so the CodeView `options` object can
+    // stay identity-stable, refs used as parse/version caches that are
+    // correctly kept out of dep arrays, and effects that list `items` as an
+    // intentional re-run trigger (a version bump re-renders the item element
+    // and drops its selection styling, so dropping the dep breaks the cursor).
+    "react/refs": "off",
+    "react/memo-dependencies": "off",
+    "react/exhaustive-effect-dependencies": "off"
   },
   "ignorePatterns": ["dist/", "node_modules/"]
 }
