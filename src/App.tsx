@@ -82,7 +82,20 @@ function applyTheme(theme: ThemeMode) {
   else document.documentElement.dataset['theme'] = theme
 }
 
-const THEME_CYCLE = { system: 'light', light: 'dark', dark: 'system' } as const
+// The OS preference, read in JS for the toggle's benefit. With no override
+// stored, CSS follows the OS on its own; the button still needs to know which
+// appearance is on screen to show the right icon and flip to the other one.
+const darkQuery = '(prefers-color-scheme: dark)'
+
+const systemDark = () => window.matchMedia(darkQuery).matches
+
+function useSystemDark(): boolean {
+  return useSyncExternalStore((cb) => {
+    const mql = window.matchMedia(darkQuery)
+    mql.addEventListener('change', cb)
+    return () => mql.removeEventListener('change', cb)
+  }, systemDark)
+}
 
 async function apiFetch<T = unknown>(
   url: string,
@@ -439,7 +452,7 @@ function ExpandAllIcon() {
   )
 }
 
-// Sun/moon/device-desktop octicons for the theme toggle, one per mode.
+// Sun/moon octicons for the theme toggle, one per resolved appearance.
 function SunIcon() {
   return (
     <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
@@ -457,17 +470,6 @@ function MoonIcon() {
       <path
         fill="currentColor"
         d="M9.598 1.591a.749.749 0 0 1 .785-.175 7.001 7.001 0 1 1-8.967 8.967.75.75 0 0 1 .961-.96 5.5 5.5 0 0 0 7.046-7.046.75.75 0 0 1 .175-.786Zm1.616 1.945a7 7 0 0 1-7.678 7.678 5.499 5.499 0 1 0 7.678-7.678Z"
-      />
-    </svg>
-  )
-}
-
-function SystemThemeIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M14.25 1c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 14.25 12h-3.727c.099 1.041.52 1.872 1.292 2.757A.752.752 0 0 1 11.25 16h-6.5a.75.75 0 0 1-.565-1.243c.772-.885 1.192-1.716 1.292-2.757H1.75A1.75 1.75 0 0 1 0 10.25v-7.5C0 1.784.784 1 1.75 1ZM1.75 2.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25ZM9.018 12H6.982a5.72 5.72 0 0 1-.765 2.5h3.566a5.72 5.72 0 0 1-.765-2.5Z"
       />
     </svg>
   )
@@ -598,15 +600,15 @@ function ProgressBar({
   fileHashes,
   viewed,
   onUnviewAll,
-  theme,
-  onCycleTheme,
+  resolvedTheme,
+  onToggleTheme,
 }: {
   command: string
   fileHashes: FileHashes
   viewed: ViewedMap
   onUnviewAll: () => void
-  theme: ThemeMode
-  onCycleTheme: () => void
+  resolvedTheme: 'light' | 'dark'
+  onToggleTheme: () => void
 }) {
   const total = Object.keys(fileHashes).length
   const viewedCount = Object.entries(fileHashes).filter(
@@ -614,6 +616,8 @@ function ProgressBar({
   ).length
 
   if (total === 0) return null
+
+  const otherTheme = resolvedTheme === 'dark' ? 'light' : 'dark'
 
   return (
     <div className="progress-bar">
@@ -642,29 +646,24 @@ function ProgressBar({
           Clear
         </button>
       </Tip>
-      {/* The icon and tooltip show the current mode including "system": a
-          toggle that hides the system state leaves a user who forced a theme
-          long ago unable to see why the app ignores their OS setting. */}
+      {/* Two states in the UI over three in the model: the icon is the
+          appearance currently on screen and pressing it flips to the other
+          one. See toggleTheme for how that gets back to following the OS
+          without an explicit third state. */}
       <Tip
         text={
           <>
-            Theme: {theme} <kbd>t</kbd>
+            Switch to {otherTheme} mode <kbd>t</kbd>
           </>
         }
       >
         <button
           type="button"
           className="theme-toggle-button"
-          aria-label={`Theme: ${theme}`}
-          onClick={onCycleTheme}
+          aria-label={`Switch to ${otherTheme} mode`}
+          onClick={onToggleTheme}
         >
-          {theme === 'system' ? (
-            <SystemThemeIcon />
-          ) : theme === 'light' ? (
-            <SunIcon />
-          ) : (
-            <MoonIcon />
-          )}
+          {resolvedTheme === 'light' ? <SunIcon /> : <MoonIcon />}
         </button>
       </Tip>
     </div>
@@ -695,7 +694,7 @@ const SHORTCUTS: [string, string][] = [
   ['v', 'Toggle viewed'],
   ['e / E', 'Toggle collapse file / all files'],
   ['s', 'Toggle split mode (responsive / unified)'],
-  ['t', 'Cycle theme (system / light / dark)'],
+  ['t', 'Toggle light / dark'],
   ['c', 'Comment on line'],
   ['Esc', 'Close / cancel'],
   ['?', 'Toggle this help'],
@@ -868,17 +867,34 @@ function DiffView() {
   })
   const mutateTheme = themeMutation.mutate
 
-  // Shared by the header button and the t shortcut. Returns the new mode so
-  // the shortcut can toast it. Reads the current mode from the query cache
-  // rather than closing over `theme`: the theme switch re-renders every
-  // CodeView item, so a second press during that render would otherwise see
-  // a stale mode and cycle to the same place.
-  const cycleTheme = useCallback(() => {
+  // Two-state toggle over the three-state model, per
+  // https://lea.verou.me/blog/2026/dark-mode-toggles/: flip to the opposite
+  // of what's on screen, and when that lands on what the OS already says,
+  // store 'system' rather than pinning the same value. So the press after an
+  // override returns to following the OS, with no third state in the UI.
+  //
+  // The OS preference is consulted here and only here — on user interaction.
+  // Reacting to an OS change by clearing a matching override would unpin the
+  // preference of anyone whose desktop switches on a schedule.
+  //
+  // Shared by the header button and the t shortcut, which toasts the return
+  // value. Reads the current mode from the query cache rather than closing
+  // over `theme`: the theme switch re-renders every CodeView item, so a
+  // second press during that render would otherwise see a stale mode.
+  const toggleTheme = useCallback(() => {
     const cur = qc.getQueryData<ThemeResponse>(['theme'])?.theme ?? 'system'
-    const next = THEME_CYCLE[cur]
-    mutateTheme(next)
-    return next
+    const curDark = cur === 'system' ? systemDark() : cur === 'dark'
+    const nextDark = !curDark
+    const resolved = nextDark ? 'dark' : 'light'
+    const stored: ThemeMode = nextDark === systemDark() ? 'system' : resolved
+    mutateTheme(stored)
+    return { stored, resolved }
   }, [qc, mutateTheme])
+
+  // What's actually on screen: the override if there is one, else the OS
+  // preference, which the hook keeps live so the icon tracks an OS change.
+  const systemIsDark = useSystemDark()
+  const resolvedTheme = theme === 'system' ? (systemIsDark ? 'dark' : 'light') : theme
 
   useEffect(() => applyTheme(theme), [theme])
 
@@ -1634,10 +1650,11 @@ function DiffView() {
         case 't': {
           if (showHelp || composing) break
           e.preventDefault()
-          const next = cycleTheme()
+          const { stored, resolved } = toggleTheme()
           showToast(
             <>
-              Theme: <code>{next}</code>
+              Theme: <code>{resolved}</code>
+              {stored === 'system' ? ' (following system)' : null}
             </>,
           )
           break
@@ -1663,7 +1680,7 @@ function DiffView() {
     commentMutation,
     setFocused,
     markProgrammaticScroll,
-    cycleTheme,
+    toggleTheme,
   ])
 
   // Error before loading: on a failed fetch react-query settles with `data`
@@ -1697,8 +1714,8 @@ function DiffView() {
             command={data.revset}
             fileHashes={fileHashes}
             viewed={viewed}
-            theme={theme}
-            onCycleTheme={cycleTheme}
+            resolvedTheme={resolvedTheme}
+            onToggleTheme={toggleTheme}
             onUnviewAll={() => {
               const entries = Object.entries(viewed).map(([file, hash]) => ({ file, hash }))
               if (entries.length === 0) return

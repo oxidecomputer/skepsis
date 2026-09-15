@@ -52,7 +52,7 @@ export type CommentDeleteRequest = z.infer<typeof commentDeleteSchema>
 
 /** Color scheme. 'system' follows the OS preference; 'light' and 'dark' force
  *  it (e.g. light diffs on a dark desktop). One list drives the API schema,
- *  the toggle cycle, and the client's data-theme validation. */
+ *  the toggle, and the client's data-theme validation. */
 export const THEME_MODES = ['light', 'dark', 'system'] as const
 export type ThemeMode = (typeof THEME_MODES)[number]
 
