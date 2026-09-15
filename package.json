@@ -25,31 +25,34 @@
     "ci": "npm run build && npm run tsc && npm run lint && npm run fmt:check && npm test && npm run e2e"
   },
   "devDependencies": {
-    "@base-ui/react": "^1.7.0",
+    "@base-ui/react": "^1.8.0",
     "@commander-js/extra-typings": "^15.0.0",
     "@hono/node-server": "^2.1.1",
-    "@hono/zod-validator": "^0.9.0",
-    "@pierre/diffs": "^1.3.5",
+    "@hono/zod-validator": "^0.9.1",
+    "@pierre/diffs": "^1.4.2",
     "@playwright/test": "^1.63.0",
-    "@tanstack/react-query": "^5.96.0",
-    "@types/node": "^22",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.2",
+    "@tanstack/react-query": "^5.102.8",
+    "@types/node": "^22.20.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "commander": "^15.0.0",
-    "hono": "^4.12.9",
-    "linguist-languages": "^9.3.2",
-    "oxfmt": "^0.55.0",
-    "oxlint": "^1.70.0",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "tsdown": "^0.22.14",
+    "hono": "^4.13.8",
+    "linguist-languages": "^9.5.0",
+    "oxfmt": "^0.68.0",
+    "oxlint": "^1.83.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tsdown": "^0.23.0",
     "typescript": "^7.0.2",
-    "vite": "^8.0.16",
-    "vitest": "^4.1.9",
-    "zod": "^4.3.6"
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1",
+    "zod": "^4.6.5"
   },
   "engines": {
     "node": ">=22"
+  },
+  "allowScripts": {
+    "fsevents": false
   }
 }
