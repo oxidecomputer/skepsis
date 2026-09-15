@@ -6,10 +6,11 @@ state, keyboard navigation, review comments written into the working copy as
 comment lines).
 
 After changes, run `npm run ci` unless narrowing is clearly justified. That
-runs the build, type-check, oxlint, oxfmt check, and tests. Use `npm run fmt`
-to apply formatting — not prettier/eslint. To try the app against a real repo,
-run `node cli.ts --dev` in that repo (`--host 127.0.0.1` suppresses
-auto-opening a browser).
+runs the build, type-check, oxlint, oxfmt check, unit tests, and the Playwright
+e2e tests (`npm run e2e`; needs a one-time `npx playwright install chromium`).
+Use `npm run fmt` to apply formatting — not prettier/eslint. To try the app
+against a real repo, run `node cli.ts --dev` in that repo (`--host 127.0.0.1`
+suppresses auto-opening a browser).
 
 ## npm package build
 
@@ -48,6 +49,11 @@ shared/
   types.ts            API request/response types + zod schemas.
   reviewComments.ts   <review> open/close tag constants and regexes shared by
                       server insertion and client detection.
+e2e/
+  fixtures.ts         Playwright fixture: per-test temp git repo + real CLI
+                      process with isolated HOME, serving the built dist/web.
+  review.e2e.ts       Basic flows: render, viewed persistence, comment
+                      add/resolve.
 src/
   App.tsx             Entire frontend (single file). Renders the diff with
                       @pierre/diffs CodeView (virtualized, shadow-DOM items);

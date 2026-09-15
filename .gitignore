@@ -37,3 +37,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # claude notes
 .claude/notes
+
+# playwright
+test-results/
+playwright-report/

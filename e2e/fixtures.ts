@@ -38,6 +38,11 @@ export const WORKING: Record<string, string> = {
 
 const CLI = join(import.meta.dirname, '..', 'cli.ts')
 
+const writeFiles = (dir: string, files: Record<string, string>) =>
+  Promise.all(
+    Object.entries(files).map(([name, contents]) => writeFile(join(dir, name), contents)),
+  )
+
 /** Spawn the CLI in `dir` and resolve with the URL it prints on startup. */
 function startCli(dir: string, home: string): Promise<{ proc: ChildProcess; url: string }> {
   return new Promise((resolve, reject) => {
@@ -91,14 +96,10 @@ export const test = base.extend<{ repo: Repo }>({
 
       // A `main` branch is what the CLI's default diff resolves as trunk.
       await git('init', '-q', '-b', 'main')
-      for (const [name, contents] of Object.entries(COMMITTED)) {
-        await writeFile(join(dir, name), contents)
-      }
+      await writeFiles(dir, COMMITTED)
       await git('add', '.')
       await git('commit', '-qm', 'init')
-      for (const [name, contents] of Object.entries(WORKING)) {
-        await writeFile(join(dir, name), contents)
-      }
+      await writeFiles(dir, WORKING)
 
       const { proc, url } = await startCli(dir, home)
       await page.goto(url)

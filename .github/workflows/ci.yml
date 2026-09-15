@@ -33,6 +33,11 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      # Runs against the built UI in dist/web, so this must follow Build
+      - name: E2E tests
+        run: npm run e2e
       # Nothing else executes the tsdown bundle, so catch broken output here
       - name: Smoke-test bundle
         run: node dist/cli.js --help
