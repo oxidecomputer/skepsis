@@ -1092,7 +1092,7 @@ function DiffView() {
 
   const [showHelp, setShowHelp] = useState(false)
   const [showCommentsInfo, setShowCommentsInfo] = useState(false)
-  const codeViewRef = useRef<CodeViewHandle<AnnotationMeta>>(null)
+  const codeViewRef = useRef<CodeViewHandle<AnnotationMeta, undefined>>(null)
   // Latest scroll offset, tracked for file navigation (n/p). Kept in a ref so
   // scrolling doesn't trigger re-renders; the key handler reads it on demand.
   const scrollTopRef = useRef(0)
@@ -1377,7 +1377,7 @@ function DiffView() {
     setComposing({ file: item.id, line: range.start })
   }
 
-  const options = useMemo<CodeViewOptions<AnnotationMeta>>(
+  const options = useMemo<CodeViewOptions<AnnotationMeta, undefined>>(
     () => ({
       // themeType pins the shadow roots' color-scheme — they don't inherit the
       // page's value ('system' leaves their :host default of `light dark`,
