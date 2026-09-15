@@ -36,5 +36,12 @@ export default {
         channel: 'chromium',
       },
     },
+    {
+      name: 'firefox',
+      use: {
+        contextOptions: { reducedMotion: 'reduce' },
+        ...devices['Desktop Firefox'],
+      },
+    },
   ],
 } satisfies PlaywrightTestConfig

@@ -582,6 +582,11 @@ function FileHeader({
   return (
     <div
       className={'file-header' + (focused ? ' focused' : '')}
+      onPointerDown={(e) => {
+        // Firefox keeps old selections when clicking user-select: none.
+        // Clear them before this gesture so only a new drag blocks collapse.
+        if (e.button === 0 && !e.shiftKey) window.getSelection()?.removeAllRanges()
+      }}
       onClick={() => {
         const selection = window.getSelection()
         // Dragging across the filename also produces a click; keep the text
@@ -1793,7 +1798,9 @@ function DiffView() {
         }
         return
       }
-      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement)
+      // Events from the tree's shadow root are retargeted to its host.
+      const origin = e.composedPath()[0]
+      if (origin instanceof HTMLTextAreaElement || origin instanceof HTMLInputElement)
         return
       if (e.ctrlKey || e.metaKey || e.altKey) return
 

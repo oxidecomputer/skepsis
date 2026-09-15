@@ -7,7 +7,7 @@ comment lines).
 
 After changes, run `npm run ci` unless narrowing is clearly justified. That
 runs the build, type-check, oxlint, oxfmt check, unit tests, and the Playwright
-e2e tests (`npm run e2e`; needs a one-time `npx playwright install chromium`).
+e2e tests (`npm run e2e`; needs a one-time `npx playwright install chromium firefox`).
 Use `npm run fmt` to apply formatting — not prettier/eslint. To try the app
 against a real repo, run `node cli.ts --dev` in that repo (`--host 127.0.0.1`
 suppresses auto-opening a browser).

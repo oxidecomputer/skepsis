@@ -6,12 +6,61 @@
  * Copyright Oxide Computer Company
  */
 
+import type { Locator, Page } from '@playwright/test'
+
 import { expect, test, WORKING } from './fixtures.ts'
+
+async function selectText(page: Page, locator: Locator) {
+  await locator.waitFor()
+  const box = (await locator.boundingBox())!
+  await page.mouse.move(box.x + 1, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 10 })
+  await page.mouse.up()
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBeTruthy()
+}
 
 test('renders the diff', async ({ page }) => {
   await expect(page.locator('.file-header-name')).toHaveText(['a.ts', 'b.txt'])
   await expect(page.getByText('const four = 4')).toBeVisible()
   await expect(page.getByText('world')).toBeVisible()
+})
+
+test('header clicks work after selecting code', async ({ page }) => {
+  const header = page.locator('.file-header').first()
+  await selectText(page, page.getByText('const four = 4'))
+
+  await header.locator('.collapse-chevron').click()
+  await expect(header.locator('.collapse-chevron')).toHaveClass(/collapsed/)
+  await expect(page.getByText('const four = 4')).toBeHidden()
+  await header.click({ position: { x: 300, y: 15 } })
+  await expect(page.getByText('const four = 4')).toBeVisible()
+})
+
+test('selecting a filename preserves the selection and the next header click works', async ({
+  page,
+}) => {
+  const header = page.locator('.file-header').first()
+  await selectText(page, header.locator('.file-header-name'))
+  await expect(header.locator('.collapse-chevron')).not.toHaveClass(/collapsed/)
+  await expect(page.getByText('const four = 4')).toBeVisible()
+
+  await header.locator('.collapse-chevron').click()
+  await expect(page.getByText('const four = 4')).toBeHidden()
+})
+
+test('typing in file search does not trigger diff shortcuts', async ({ page }) => {
+  const search = page.locator('.file-tree input')
+  await search.click()
+  await search.pressSequentially('review')
+  await expect(search).toHaveValue('review')
+  await expect(page.locator('.viewed-button.checked')).toHaveCount(0)
+  await expect(page.locator('.collapse-chevron.collapsed')).toHaveCount(0)
+
+  await search.fill('')
+  await search.pressSequentially('a.ts')
+  await expect(search).toHaveValue('a.ts')
+  await expect(page.locator('.file-tree').getByRole('treeitem')).toHaveCount(1)
 })
 
 test('viewed state persists across reload', async ({ page }) => {

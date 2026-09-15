@@ -34,7 +34,7 @@ jobs:
       - name: Build
         run: npm run build
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox
       # Runs against the built UI in dist/web, so this must follow Build
       - name: E2E tests
         run: npm run e2e

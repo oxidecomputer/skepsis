@@ -74,6 +74,23 @@ function startCli(dir: string, home: string): Promise<{ proc: ChildProcess; url:
 }
 
 export const test = base.extend<{ repo: Repo }>({
+  launchOptions: async ({ browserName, launchOptions }, provide) => {
+    if (browserName !== 'firefox') {
+      await provide(launchOptions)
+      return
+    }
+    // Isolate Firefox's app data as well as its profile. On macOS 27, a CLI
+    // launch can fail when it tries to access the user's protected app data.
+    const appData = await mkdtemp(join(tmpdir(), 'skepsis-e2e-firefox-'))
+    try {
+      await provide({
+        ...launchOptions,
+        env: { ...process.env, ...launchOptions.env, MOZ_APP_DATA: appData },
+      })
+    } finally {
+      await rm(appData, { recursive: true, force: true })
+    }
+  },
   // auto: every test gets a server even if it never touches `repo`.
   repo: [
     async ({ page }, use) => {
