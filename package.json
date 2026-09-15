@@ -37,7 +37,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
     "commander": "^15.0.0",
-    "hono": "^4.12.9",
+    "hono": "^4.13.8",
     "linguist-languages": "^9.3.2",
     "oxfmt": "^0.55.0",
     "oxlint": "^1.70.0",
