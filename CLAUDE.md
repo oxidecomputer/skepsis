@@ -23,47 +23,32 @@ the CLI output, so the published package has no production dependencies and
 `dist/` is ignored build output. Do not edit it by hand or include it in
 reviews; regenerate it with `npm run build` when checking package behavior.
 
-## Code map
+## Layout
 
-```
-cli.ts                CLI entry (commander). Detects jj/git, builds DiffArgs
-                      (incl. commentsEnabled: diff must end at @/working copy),
-                      starts the API server, spawns Vite in --dev mode.
-server/
-  main.ts             Hono server. GET /api/diff; POST/DELETE /api/viewed;
-                      POST/DELETE /api/comment; GET/POST /api/theme;
-                      GET /api/theme.js (pre-first-paint theme boot script
-                      loaded by index.html); serves dist/web statics.
-  settings.ts         Global (not per-repo) UI settings — currently just the
-                      theme — in ~/.local/share/skepsis/settings.json.
-  diff.ts             Runs `jj diff --git`/`git diff`, extracts per-file blob
-                      hashes from index lines.
-  viewed.ts           Viewed state, content-addressed by git blob ID — files
-                      auto-unview when content changes; no invalidation logic.
-                      TSV per repo in ~/.local/share/skepsis/.
-  comment.ts          Inserts/removes <review>…</review> comment lines into
-                      real working-copy files (this is how review comments
-                      exist in the diff at all).
-  commentSyntax.ts    Comment syntax (prefix/suffix) by file extension.
-shared/
-  types.ts            API request/response types + zod schemas.
-  reviewComments.ts   <review> open/close tag constants and regexes shared by
-                      server insertion and client detection.
-e2e/
-  fixtures.ts         Playwright fixture: per-test temp git repo + real CLI
-                      process with isolated HOME, serving the built dist/web.
-  review.e2e.ts       Basic flows: render, viewed persistence, comment
-                      add/resolve.
-src/
-  App.tsx             Entire frontend (single file). Renders the diff with
-                      @pierre/diffs CodeView (virtualized, shadow-DOM items);
-                      react-query for API state.
-  styles.css          All styling. OKLCH color tokens with a documented
-                      elevation ramp at the top — extend it, don't add ad hoc
-                      colors.
-```
+`cli.ts` at the repo root is the entry point. `server/` is the Hono API,
+`src/` is the frontend (`App.tsx` is all of it, plus `styles.css`), `shared/`
+holds types and constants both sides import, `e2e/` is Playwright. Unit tests
+live beside their subject as `*.test.ts`.
 
-Review comments only work when the diff ends at the working copy (`-f`
-without `-t`), because they're inserted as real lines into files on disk —
-testing comment submit against a real repo writes `<review>` lines into its
-files.
+## Things that aren't obvious from the code
+
+- Review comments are inserted as real `<review>` lines into working-copy
+  files on disk (`server/comment.ts`) — that's how they show up in the diff at
+  all. They only work when the diff ends at the working copy (`-f` without
+  `-t`), and testing comment submit against a real repo writes those lines
+  into that repo's files.
+- Viewed state is content-addressed by git blob ID, so files auto-unview when
+  their content changes and there is no invalidation logic to maintain.
+- Settings are global rather than per-repo (the theme is about the user, not
+  the diff): `~/.local/share/skepsis/settings.json`. Viewed state is per-repo
+  TSV in the same directory.
+- A forced theme has to reach `<html>` before first paint, so the server
+  serves it as a render-blocking script — `GET /api/theme.js`, loaded by
+  `index.html`.
+- The diff renders through `@pierre/diffs` CodeView: virtualized, with each
+  item in its own shadow root, so page CSS and the page's `color-scheme` don't
+  reach the diff. Pass theming in through CodeView options instead.
+- Hunk expansion needs both diff endpoints to resolve to concrete revisions;
+  exotic revsets leave them null and expansion is disabled.
+- All styling is in `src/styles.css`: OKLCH tokens with a documented elevation
+  ramp at the top. Extend the ramp rather than adding ad hoc colors.
