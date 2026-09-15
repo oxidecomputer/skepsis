@@ -1142,8 +1142,16 @@ function DiffView() {
   )
   const items = useMemo<CodeViewDiffItem<AnnotationMeta>[]>(() => {
     if (!data) return []
-    return files.map((fileDiff) => {
+    return files.map((fileDiff, i) => {
       const name = fileDiff.name
+      // The worker pool caches highlighted output by cacheKey, which the
+      // library defaults to the file name. A refetched diff with new content
+      // under the same name (e.g. right after a comment is written or
+      // resolved) would then render the stale highlight until reload. Key on
+      // the content hash, and separate the patch parse from the whole-file
+      // expand-all parse since they hold different lines for the same hash.
+      const hash = data.fileHashes[name] ?? ''
+      fileDiff.cacheKey = `${name}|${hash}|${fileDiff === patchFiles[i] ? 'patch' : 'full'}`
       const syntax = data.commentSyntaxes[name]
       const annotations = commentsEnabled
         ? detectReviewComments(fileDiff, name, !syntax || syntax.prefix === '')
@@ -1171,7 +1179,7 @@ function DiffView() {
         version,
       }
     })
-  }, [files, data, composing, collapsed, commentsEnabled])
+  }, [files, patchFiles, data, composing, collapsed, commentsEnabled])
   itemsRef.current = items
 
   // The header highlight falls back to the first file before any focus exists
