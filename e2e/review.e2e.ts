@@ -232,3 +232,17 @@ test('cmd/ctrl+k focuses the file search, opening the tree if needed', async ({ 
   await expect(page.locator('.file-tree')).toBeVisible()
   await expect(page.locator('.file-tree input')).toBeFocused()
 })
+
+test('escape in the file search returns focus to the diff', async ({ page }) => {
+  const search = page.locator('.file-tree input')
+  await page.locator('.file-header').first().waitFor()
+  await page.keyboard.press('ControlOrMeta+k')
+  await expect(search).toBeFocused()
+  await search.pressSequentially('b.txt')
+  await page.keyboard.press('Escape')
+  await expect(search).not.toBeFocused()
+  // Shortcuts reach the diff again instead of typing into the box.
+  await page.keyboard.press('n')
+  await expect(page.locator('.file-header.focused .file-header-name')).toHaveText('b.txt')
+  await expect(search).not.toHaveValue(/n/)
+})

@@ -831,11 +831,17 @@ function FileTreePanel({
   return <FileTree className="file-tree" model={model} />
 }
 
-// Focus the file tree's search box. The box is always rendered, and the
-// library's own focus logic only fires on its closed→open transition, so
-// reach into the (open) shadow root. Returns false when the tree is hidden.
+// The file tree's search box, or null when the tree is hidden. The box is
+// always rendered; reach into the (open) shadow root for it.
+function treeSearchInput(): HTMLInputElement | null {
+  return document.querySelector('.file-tree')?.shadowRoot?.querySelector('input') ?? null
+}
+
+// Focus the file tree's search box. The library's own focus logic only fires
+// on its closed→open transition, so focus directly. Returns false when the
+// tree is hidden.
 function focusTreeSearch(): boolean {
-  const input = document.querySelector('.file-tree')?.shadowRoot?.querySelector('input')
+  const input = treeSearchInput()
   if (!input) return false
   input.focus()
   return true
@@ -2064,8 +2070,20 @@ function DiffView() {
       }
     }
 
+    // Escape in the tree's search box. The tree's own handler closes the
+    // search but stops propagation and leaves the (now empty) input focused,
+    // where every diff shortcut is swallowed. Catch it in the capture phase,
+    // ahead of that handler, and hand focus back to the diff.
+    function escapeFromSearch(e: KeyboardEvent) {
+      if (e.key !== 'Escape' || e.composedPath()[0] !== treeSearchInput()) return
+      document.querySelector<HTMLElement>('.codeview-root')?.focus({ preventScroll: true })
+    }
+    window.addEventListener('keydown', escapeFromSearch, true)
     window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    return () => {
+      window.removeEventListener('keydown', escapeFromSearch, true)
+      window.removeEventListener('keydown', handler)
+    }
   }, [
     showHelp,
     composing,
