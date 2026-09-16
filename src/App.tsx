@@ -551,6 +551,22 @@ function MoonIcon() {
   )
 }
 
+function HelpIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M6.5 6a1.5 1.5 0 0 1 3 0c0 1-1.5 1.25-1.5 2.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <circle cx="8" cy="11" r=".75" fill="currentColor" />
+    </svg>
+  )
+}
+
 function FileHeader({
   fileDiff,
   isViewed,
@@ -793,6 +809,7 @@ function ProgressBar({
   onUnviewAll,
   resolvedTheme,
   onToggleTheme,
+  onShowHelp,
 }: {
   treeOpen: boolean
   onToggleTree: () => void
@@ -802,6 +819,7 @@ function ProgressBar({
   onUnviewAll: () => void
   resolvedTheme: 'light' | 'dark'
   onToggleTheme: () => void
+  onShowHelp: () => void
 }) {
   const total = Object.keys(fileHashes).length
   const viewedCount = Object.entries(fileHashes).filter(
@@ -814,7 +832,13 @@ function ProgressBar({
 
   return (
     <div className="progress-bar">
-      <Tip text={treeOpen ? 'Hide file tree' : 'Show file tree'}>
+      <Tip
+        text={
+          <>
+            {treeOpen ? 'Hide file tree' : 'Show file tree'} <kbd>b</kbd>
+          </>
+        }
+      >
         <button
           type="button"
           className="icon-button"
@@ -870,6 +894,23 @@ function ProgressBar({
           {resolvedTheme === 'light' ? <SunIcon /> : <MoonIcon />}
         </button>
       </Tip>
+      <Tip
+        text={
+          <>
+            Keyboard shortcuts <kbd>?</kbd>
+          </>
+        }
+      >
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Keyboard shortcuts"
+          aria-haspopup="dialog"
+          onClick={onShowHelp}
+        >
+          <HelpIcon />
+        </button>
+      </Tip>
     </div>
   )
 }
@@ -899,6 +940,7 @@ const SHORTCUTS: [string, string][] = [
   ['e / E', 'Toggle collapse file / all files'],
   ['s', 'Toggle split mode (responsive / unified)'],
   ['t', 'Toggle light / dark'],
+  ['b', 'Toggle file tree'],
   ['⌘K / Ctrl+K', 'Search files'],
   ['c', 'Comment on line'],
   ['Esc', 'Close / cancel'],
@@ -1917,6 +1959,12 @@ function DiffView() {
             setComposing(null)
           }
           break
+        case 'b': {
+          if (showHelp || composing) break
+          e.preventDefault()
+          toggleTree()
+          break
+        }
         case 's': {
           if (showHelp || composing) break
           e.preventDefault()
@@ -1974,6 +2022,7 @@ function DiffView() {
     setFocused,
     markProgrammaticScroll,
     scrollItemToStart,
+    toggleTree,
     toggleTheme,
   ])
 
@@ -2012,6 +2061,7 @@ function DiffView() {
             viewed={viewed}
             resolvedTheme={resolvedTheme}
             onToggleTheme={toggleTheme}
+            onShowHelp={() => setShowHelp(true)}
             onUnviewAll={() => {
               const entries = Object.entries(viewed).map(([file, hash]) => ({ file, hash }))
               if (entries.length === 0) return
