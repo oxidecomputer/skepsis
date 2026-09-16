@@ -169,6 +169,8 @@ body,
 .file-tree {
   flex: 0 0 280px;
   min-height: 0;
+  /* Include the top border in the tree's 100% height. */
+  box-sizing: border-box;
   /* No top margin: CodeView's layout.paddingTop is 0 (see App.tsx options),
      so the first file header sits at the scroll edge and the sticky header
      pins there too. The sidebar's top border lines up with it in both
