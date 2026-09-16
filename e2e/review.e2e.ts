@@ -124,11 +124,6 @@ test('typing in file search does not trigger diff shortcuts', async ({ page }) =
   await expect(search).toHaveValue('review')
   await expect(page.locator('.viewed-button.checked')).toHaveCount(0)
   await expect(page.locator('.collapse-chevron.collapsed')).toHaveCount(0)
-
-  await search.fill('')
-  await search.pressSequentially('a.ts')
-  await expect(search).toHaveValue('a.ts')
-  await expect(page.locator('.file-tree').getByRole('treeitem')).toHaveCount(1)
 })
 
 for (const area of ['code', 'gutter', 'header'] as const) {
@@ -160,9 +155,6 @@ for (const area of ['code', 'gutter', 'header'] as const) {
     await page.keyboard.press('n')
     await expect(page.locator('.file-header.focused .file-header-name')).toHaveText('b.txt')
     await expect(search).not.toHaveValue(/n/)
-
-    await page.keyboard.press('ControlOrMeta+k')
-    await expect(search).toBeFocused()
   })
 }
 

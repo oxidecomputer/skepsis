@@ -196,7 +196,6 @@ body,
   --trees-font-size-override: 13px;
   --trees-status-added-override: var(--green-text);
   --trees-status-deleted-override: var(--red);
-  --trees-status-modified-override: var(--blue-text);
   --trees-status-renamed-override: var(--amber);
 }
 
@@ -686,11 +685,10 @@ body,
   user-select: none;
 }
 
-/* Icon-only header buttons (file tree toggle, theme toggle): a plain icon
+/* Icon-only header buttons (file tree toggle, theme toggle, help): a plain icon
    rather than a bordered button — quieter than the text controls, but with a
    hover background so it still reads as clickable. */
-.icon-button,
-.theme-toggle-button {
+.icon-button {
   display: flex;
   align-items: center;
   padding: 4px;
@@ -704,14 +702,12 @@ body,
 
 /* The hover step, not --bg-control: in light mode the control fill is level
    with the white canvas this button sits on, so it wouldn't show. */
-.icon-button:hover,
-.theme-toggle-button:hover {
+.icon-button:hover {
   background: var(--bg-control-hover);
   color: var(--fg);
 }
 
-.icon-button svg,
-.theme-toggle-button svg {
+.icon-button svg {
   display: block;
 }
 

@@ -248,15 +248,17 @@ function compareTreeOrder(a: string, b: string): number {
     if (aDir !== bDir) return aDir ? -1 : 1
     if (as[i] !== bs[i]) return as[i]!.localeCompare(bs[i]!)
   }
-  return as.length - bs.length
+  // Only reached when every component matched: a length mismatch would have
+  // hit the dir/file check on the shorter path's last component.
+  return 0
 }
 
 // Tree icons: the built-in minimal set plus a check (octicon check-16) for the
 // viewed-file row decoration. The sprite is zero-sized because the library
-// inserts a custom sheet as a rendered element, not hidden like its own. Also the token setIcons() is called with to make
-// the tree re-render rows when viewed state changes — the decoration renderer
-// is fixed at construction and the library has no invalidate call, but
-// setIcons re-renders unconditionally.
+// inserts a custom sheet as a rendered element, not hidden like its own. This
+// is also what gets passed to setIcons() to re-render rows when viewed state
+// changes: the decoration renderer is fixed at construction and the library
+// has no invalidate call, but setIcons re-renders unconditionally.
 const TREE_ICONS = {
   set: 'minimal',
   spriteSheet:
@@ -819,6 +821,9 @@ function FileTreePanel({
       syncingRef.current = false
     }
     model.scrollToPath(focusedFile, { focus: false, offset: 'nearest' })
+    // `paths` re-runs this after a refetch: the early return above skips a
+    // focused file the tree doesn't have yet, and new paths are when it can
+    // appear. (resetPaths itself keeps selections for paths that survive.)
   }, [model, focusedFile, paths])
 
   return <FileTree className="file-tree" model={model} />
@@ -863,20 +868,21 @@ function ProgressBar({
   if (total === 0) return null
 
   const otherTheme = resolvedTheme === 'dark' ? 'light' : 'dark'
+  const treeLabel = treeOpen ? 'Hide file tree' : 'Show file tree'
 
   return (
     <div className="progress-bar">
       <Tip
         text={
           <>
-            {treeOpen ? 'Hide file tree' : 'Show file tree'} <kbd>b</kbd>
+            {treeLabel} <kbd>b</kbd>
           </>
         }
       >
         <button
           type="button"
           className="icon-button"
-          aria-label={treeOpen ? 'Hide file tree' : 'Show file tree'}
+          aria-label={treeLabel}
           aria-expanded={treeOpen}
           onClick={onToggleTree}
         >
@@ -921,7 +927,7 @@ function ProgressBar({
       >
         <button
           type="button"
-          className="theme-toggle-button"
+          className="icon-button"
           aria-label={`Switch to ${otherTheme} mode`}
           onClick={onToggleTheme}
         >
@@ -1095,13 +1101,13 @@ function DiffView() {
     splitMode === 'responsive' && isWide ? 'split' : 'unified'
   const { toast, showToast } = useToast()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
-  const [treeOpen, setTreeOpen] = useState(loadTreeOpen)
-  const toggleTree = useCallback(() => {
-    setTreeOpen((open) => {
-      saveTreeOpen(!open)
-      return !open
-    })
+  const [treeOpen, setTreeOpenState] = useState(loadTreeOpen)
+  // The only writer of treeOpen, so every change is persisted.
+  const setTreeOpen = useCallback((open: boolean) => {
+    saveTreeOpen(open)
+    setTreeOpenState(open)
   }, [])
+  const toggleTree = useCallback(() => setTreeOpen(!treeOpen), [setTreeOpen, treeOpen])
   // Set when Cmd/Ctrl+K had to open the sidebar first; the search box gets
   // focus once the tree has rendered.
   const focusSearchOnOpen = useRef(false)
@@ -1679,10 +1685,10 @@ function DiffView() {
     ) => {
       const meta = annotation.metadata
       if (!meta) return null
-      const file = item.id
       if (meta.type === 'empty') {
         return <div className="empty-file-message">File is empty</div>
       }
+      const file = item.id
       if (meta.type === 'review') {
         return (
           <div className="review-annotation">
@@ -1883,7 +1889,6 @@ function DiffView() {
         e.preventDefault()
         if (!focusTreeSearch()) {
           focusSearchOnOpen.current = true
-          saveTreeOpen(true)
           setTreeOpen(true)
         }
         return
@@ -2070,6 +2075,7 @@ function DiffView() {
     setFocused,
     markProgrammaticScroll,
     scrollItemToStart,
+    setTreeOpen,
     toggleTree,
     toggleTheme,
   ])
