@@ -35,6 +35,7 @@ import DiffsHighlightWorker from '@pierre/diffs/worker/worker.js?worker'
 import type {
   CodeViewDiffItem,
   CodeViewItem,
+  CodeViewLineSelection,
   CodeViewOptions,
   DiffLineAnnotation,
   FileDiffMetadata,
@@ -1612,21 +1613,20 @@ function DiffView() {
     })
   }, [items, markProgrammaticScroll])
 
-  // Render the cursor through CodeView's native line selection. Re-applied on
-  // items changes too because a version bump re-renders the item's element,
-  // which would otherwise drop the selection styling.
-  useEffect(() => {
-    const inst = codeViewRef.current?.getInstance()
-    if (!inst) return
-    if (cursor) {
-      inst.setSelectedLines({
-        id: cursor.file,
-        range: { start: cursor.line, end: cursor.line, side: 'additions' },
-      })
-    } else {
-      inst.clearSelectedLines()
-    }
-  }, [cursor, items])
+  // The cursor rendered through CodeView's native line selection, as the
+  // controlled `selectedLines` prop. The library keeps the selection on the
+  // item's interaction manager and re-renders it whenever the item's element
+  // is (re)mounted, so re-rendered and pooled elements keep their styling.
+  const selectedLines = useMemo<CodeViewLineSelection | null>(
+    () =>
+      cursor
+        ? {
+            id: cursor.file,
+            range: { start: cursor.line, end: cursor.line, side: 'additions' },
+          }
+        : null,
+    [cursor],
+  )
 
   const renderCustomHeader = useCallback(
     (item: CodeViewItem<AnnotationMeta>) => {
@@ -1819,18 +1819,6 @@ function DiffView() {
           context.item.type === 'diff' && isEmptyFileDiff(context.item.fileDiff),
         )
         tagReviewLines(node, reviewRanges(context.item.annotations))
-        // Re-apply the cursor selection: a re-rendered (version-bumped) or
-        // pooled element loses its selection styling, and the library's own
-        // re-sync short-circuits when the range is unchanged — so force it by
-        // clearing first.
-        const cur = cursorRef.current
-        if (cur?.file === context.item.id) {
-          instance.setSelectedLines(null, { notify: false })
-          instance.setSelectedLines(
-            { start: cur.line, end: cur.line, side: 'additions' },
-            { notify: false },
-          )
-        }
       },
     }),
     [theme, diffStyle, commentsEnabled, expandable],
@@ -2186,6 +2174,7 @@ function DiffView() {
             className="codeview-root"
             items={items}
             options={options}
+            selectedLines={selectedLines}
             onScroll={onScroll}
             renderCustomHeader={renderCustomHeader}
             renderAnnotation={renderAnnotation}
