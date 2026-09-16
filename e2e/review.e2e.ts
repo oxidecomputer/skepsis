@@ -26,19 +26,77 @@ test('renders the diff', async ({ page }) => {
   await expect(page.getByText('world')).toBeVisible()
 })
 
+test('empty files explain their contents and collapse normally', async ({ page }) => {
+  await page.route('**/api/diff', async (route) => {
+    const response = await route.fetch()
+    const data = await response.json()
+    await route.fulfill({
+      json: {
+        ...data,
+        commentsEnabled: false,
+        patch: `diff --git a/empty.txt b/empty.txt
+new file mode 100644
+index 0000000..e69de29
+diff --git a/deleted-empty.txt b/deleted-empty.txt
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/binary.bin b/binary.bin
+new file mode 100644
+index 0000000..1234567
+Binary files /dev/null and b/binary.bin differ
+diff --git a/old-name.txt b/renamed.txt
+similarity index 100%
+rename from old-name.txt
+rename to renamed.txt
+`,
+        fileHashes: {
+          'empty.txt': 'e69de29',
+          'deleted-empty.txt': '0000000',
+          'binary.bin': '1234567',
+        },
+        viewed: {},
+      },
+    })
+  })
+  await page.reload()
+
+  const messages = page.getByText('File is empty', { exact: true })
+  await expect(messages).toHaveCount(2)
+  async function checkCollapse(file: string) {
+    const diff = page.locator('diffs-container').filter({
+      has: page.locator('.file-header-name').getByText(file, { exact: true }),
+    })
+    await expect(diff.getByText('File is empty')).toBeVisible()
+    await diff.locator('.collapse-chevron').click()
+    await expect(diff.getByText('File is empty')).toBeHidden()
+    await diff.locator('.collapse-chevron').click()
+    await expect(diff.getByText('File is empty')).toBeVisible()
+  }
+  await checkCollapse('empty.txt')
+  await checkCollapse('deleted-empty.txt')
+
+  await page.keyboard.press('s')
+  await expect(messages).toHaveCount(2)
+  await expect(messages.first()).toBeVisible()
+  await expect(messages.last()).toBeVisible()
+})
+
 test('header clicks work after selecting code', async ({ page }) => {
   const header = page.locator('.file-header').first()
   // This regression needs an existing selection, independent of mouse-drag
   // timing while the syntax highlighter replaces the code rows.
-  const selected = await page.getByText('const four = 4').evaluate((line) => {
-    const range = document.createRange()
-    range.selectNodeContents(line)
-    const selection = window.getSelection()!
-    selection.removeAllRanges()
-    selection.addRange(range)
-    return selection.toString()
-  })
-  expect(selected).toContain('const four = 4')
+  await expect
+    .poll(() =>
+      page.getByText('const four = 4').evaluate((line) => {
+        const range = document.createRange()
+        range.selectNodeContents(line)
+        const selection = window.getSelection()!
+        selection.removeAllRanges()
+        selection.addRange(range)
+        return selection.toString()
+      }),
+    )
+    .toContain('const four = 4')
 
   await header.locator('.collapse-chevron').click()
   await expect(header.locator('.collapse-chevron')).toHaveClass(/collapsed/)

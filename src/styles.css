@@ -274,6 +274,17 @@ body,
   box-shadow: none;
 }
 
+.empty-file-message {
+  padding: 16px;
+  color: var(--fg-muted);
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 13px;
+  text-align: center;
+}
+
 /* Custom file header. Sticky positioning is handled by CodeView (stickyHeaders),
    so this no longer sets position: sticky itself. */
 .file-header {

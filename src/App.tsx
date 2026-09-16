@@ -152,6 +152,7 @@ function useToast(duration = 1400) {
 type AnnotationMeta =
   | { type: 'review'; startLine: number; endLine: number; file: string }
   | { type: 'composing'; file: string }
+  | { type: 'empty' }
 
 /** Walk the addition side of a diff and find <review>...</review> blocks.
  *  Bare-fallback files get bare tags on insert, so detection matches bare tag
@@ -196,10 +197,28 @@ function detectReviewComments(
 // other file — additions on the right, an empty deletions side on the left —
 // and the column-dropping is the only thing the renderer keys off the type
 // (we render our own headers), so coerce it before handing files to CodeView.
-// Mutates in place to keep object identity stable across renders.
+// Files without hunks keep their type so file-level annotations span the
+// available width. Mutates in place to keep object identity stable.
 function normalizeFileType(f: FileDiffMetadata): FileDiffMetadata {
-  if (f.type === 'new' || f.type === 'deleted') f.type = 'change'
+  if (f.hunks.length > 0 && (f.type === 'new' || f.type === 'deleted')) f.type = 'change'
   return f
+}
+
+// Hashes of the empty Git blob ("blob 0\0") in SHA-1 and SHA-256 repositories.
+// No hunks can also mean a binary, rename-only, or mode-only change, so the
+// content ID must confirm emptiness. Patch IDs may be abbreviated.
+const EMPTY_BLOB_IDS = [
+  'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391',
+  '473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813',
+]
+
+function isEmptyFileDiff(file: FileDiffMetadata): boolean {
+  const objectId = file.type === 'deleted' ? file.prevObjectId : file.newObjectId
+  return (
+    file.hunks.length === 0 &&
+    objectId != null &&
+    EMPTY_BLOB_IDS.some((id) => id.startsWith(objectId))
+  )
 }
 
 // The file tree's per-row status marker, from the diff's change type. Read
@@ -285,12 +304,27 @@ function getFileStats(fileDiff: FileDiffMetadata) {
   return { additions, deletions }
 }
 
-// --- Review-comment line highlighting ---
+// --- Diff body styling ---
 
 // Injected into every CodeView item's shadow root via the `unsafeCSS` option.
 // Lines inside a <review> block get `data-review-comment` tagged onto them in
 // `tagReviewLines` (called from CodeView's onPostRender), and this styles them.
-const REVIEW_CSS = `
+const DIFF_CSS = `
+  /* Empty-file annotations are the whole body: omit the code gutter, split
+     columns, and trailing code padding. Their own padding defines the row. */
+  :host([data-empty-file]) {
+    [data-diff], [data-code], [data-content] {
+      display: block;
+      padding: 0;
+      border: 0;
+    }
+    [data-code] {
+      overflow: visible;
+      scrollbar-gutter: auto;
+    }
+    [data-gutter], [data-content-buffer] { display: none; }
+    [data-line-annotation] { --diffs-annotation-bg: var(--diffs-bg); }
+  }
   [data-review-comment] {
     --diffs-bg-addition: rgba(56, 139, 253, 0.14) !important;
     --diffs-addition-base: rgba(56, 139, 253, 0.85) !important;
@@ -313,7 +347,7 @@ const REVIEW_CSS = `
 
 /**
  * Tag addition lines within review-block ranges with `data-review-comment` so
- * REVIEW_CSS can style them. `node` is the item's `diffs-container` element;
+ * DIFF_CSS can style them. `node` is the item's `diffs-container` element;
  * we re-derive tags from scratch each call so recycled (pooled) elements never
  * carry stale highlights from a previously-rendered file.
  */
@@ -1449,6 +1483,13 @@ function DiffView() {
       const annotations = commentsEnabled
         ? detectReviewComments(fileDiff, name, !syntax || syntax.prefix === '')
         : []
+      if (isEmptyFileDiff(fileDiff)) {
+        annotations.push({
+          side: fileDiff.type === 'deleted' ? 'deletions' : 'additions',
+          lineNumber: 0,
+          metadata: { type: 'empty' },
+        })
+      }
       if (composing?.file === name) {
         annotations.push({
           side: 'additions',
@@ -1639,6 +1680,9 @@ function DiffView() {
       const meta = annotation.metadata
       if (!meta) return null
       const file = item.id
+      if (meta.type === 'empty') {
+        return <div className="empty-file-message">File is empty</div>
+      }
       if (meta.type === 'review') {
         return (
           <div className="review-annotation">
@@ -1743,13 +1787,17 @@ function DiffView() {
             }
           }
         : undefined,
-      unsafeCSS: REVIEW_CSS,
+      unsafeCSS: DIFF_CSS,
       onGutterUtilityClick: (range, context) => gutterClickRef.current(range, context.item),
       // Re-tag review-comment lines whenever an item (re)renders. Runs per item
       // and re-derives tags from scratch, so pooled/recycled elements never keep
       // stale highlights from a previously-rendered file.
       onPostRender: (node, instance, phase, context) => {
         if (phase === 'unmount') return
+        node.toggleAttribute(
+          'data-empty-file',
+          context.item.type === 'diff' && isEmptyFileDiff(context.item.fileDiff),
+        )
         tagReviewLines(node, reviewRanges(context.item.annotations))
         // Re-apply the cursor selection: a re-rendered (version-bumped) or
         // pooled element loses its selection styling, and the library's own
