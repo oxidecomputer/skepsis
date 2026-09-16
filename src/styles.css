@@ -855,7 +855,7 @@ body,
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 20px;
+  padding: 16px;
   min-width: 320px;
   font-family:
     system-ui,
@@ -884,7 +884,7 @@ body,
 }
 
 .help-modal h3 {
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   font-size: 15px;
   font-weight: 600;
 }
@@ -897,6 +897,10 @@ body,
 .help-modal td {
   padding: 5px 0;
   font-size: 13px;
+}
+
+.help-modal tr:last-child td {
+  padding-bottom: 0;
 }
 
 .help-modal td:first-child {
