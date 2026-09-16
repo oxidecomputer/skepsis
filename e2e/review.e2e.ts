@@ -28,7 +28,17 @@ test('renders the diff', async ({ page }) => {
 
 test('header clicks work after selecting code', async ({ page }) => {
   const header = page.locator('.file-header').first()
-  await selectText(page, page.getByText('const four = 4'))
+  // This regression needs an existing selection, independent of mouse-drag
+  // timing while the syntax highlighter replaces the code rows.
+  const selected = await page.getByText('const four = 4').evaluate((line) => {
+    const range = document.createRange()
+    range.selectNodeContents(line)
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+    return selection.toString()
+  })
+  expect(selected).toContain('const four = 4')
 
   await header.locator('.collapse-chevron').click()
   await expect(header.locator('.collapse-chevron')).toHaveClass(/collapsed/)
@@ -62,6 +72,41 @@ test('typing in file search does not trigger diff shortcuts', async ({ page }) =
   await expect(search).toHaveValue('a.ts')
   await expect(page.locator('.file-tree').getByRole('treeitem')).toHaveCount(1)
 })
+
+for (const area of ['code', 'gutter', 'header'] as const) {
+  test(`clicking the diff ${area} after searching restores file shortcuts`, async ({
+    page,
+  }) => {
+    const search = page.locator('.file-tree input')
+    await search.click()
+    await search.pressSequentially('a.ts')
+    await expect(search).toHaveValue('a.ts')
+
+    if (area === 'code') {
+      await page.getByText('const four = 4').click()
+    } else if (area === 'gutter') {
+      await page
+        .locator('diffs-container')
+        .first()
+        .locator('[data-gutter] [data-column-number]')
+        .first()
+        .click()
+    } else {
+      await page
+        .locator('.file-header')
+        .first()
+        .click({ position: { x: 300, y: 15 } })
+    }
+
+    await expect(search).not.toBeFocused()
+    await page.keyboard.press('n')
+    await expect(page.locator('.file-header.focused .file-header-name')).toHaveText('b.txt')
+    await expect(search).not.toHaveValue(/n/)
+
+    await page.keyboard.press('ControlOrMeta+k')
+    await expect(search).toBeFocused()
+  })
+}
 
 test('viewed state persists across reload', async ({ page }) => {
   const viewed = page.locator('.viewed-button').first()

@@ -2034,7 +2034,20 @@ function DiffView() {
         {showCommentsInfo && (
           <CommentsModal vcs={data.vcs} onClose={() => setShowCommentsInfo(false)} />
         )}
-        <div className="diff-body">
+        <div
+          className="diff-body"
+          onPointerDownCapture={(e) => {
+            if (e.button !== 0 || !(e.target instanceof Element)) return
+            const diff = e.target.closest<HTMLElement>('.codeview-root')
+            // Work around @pierre/trees reclaiming focus when search blurs.
+            // A native click can trigger the search-close render before focusout
+            // releases the tree's focus ownership. Calling focus() here completes
+            // the transfer synchronously, before that render can reclaim focus.
+            if (diff && !diff.contains(document.activeElement)) {
+              diff.focus({ preventScroll: true })
+            }
+          }}
+        >
           {treeOpen && (
             <FileTreePanel
               paths={treePaths}
