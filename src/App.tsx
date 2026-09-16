@@ -775,6 +775,7 @@ function FileTreePanel({
     gitStatus,
     initialExpansion: 'open',
     flattenEmptyDirectories: true,
+    stickyFolders: true,
     search: true,
     density: 'compact',
     icons: TREE_ICONS,
