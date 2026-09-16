@@ -21,8 +21,8 @@
     "lint": "oxlint",
     "tsc": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test",
-    "ci": "npm run build && npm run tsc && npm run lint && npm run fmt:check && npm test && npm run e2e"
+    "e2e": "npm run build && playwright test",
+    "ci": "npm run build && npm run tsc && npm run lint && npm run fmt:check && npm test && playwright test"
   },
   "devDependencies": {
     "@base-ui/react": "^1.8.0",

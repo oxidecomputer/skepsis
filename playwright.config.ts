@@ -11,8 +11,9 @@ import { devices, type PlaywrightTestConfig } from '@playwright/test'
 /**
  * See https://playwright.dev/docs/test-configuration. Each test boots its own
  * server against its own temp repo (see e2e/fixtures.ts), so there is no
- * shared webServer here — but the server serves the built UI from dist/web,
- * so run `npm run build` first.
+ * shared webServer here. The server serves the built UI from dist/web, which
+ * is why `npm run e2e` builds first; a bare `playwright test` (as `npm run
+ * ci` does, after its own build) runs against whatever dist/ holds.
  */
 export default {
   testDir: './e2e',
