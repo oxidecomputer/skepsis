@@ -1552,18 +1552,31 @@ function DiffView() {
   // for a few frames and re-issue while the header isn't where it should be.
   // Bounded, so a clamped target (the last file can't reach the top) just
   // gives up quietly.
+  //
+  // Only the most recent target's loop may re-issue. Held-down n/p starts a
+  // new loop every repeat, and scrollTo only queues a render for the next
+  // frame, so an older loop would read the newer target's position as drift
+  // and scroll back to its own file; the newer loop then undoes that, and the
+  // two alternate until the older one runs out of frames. The ref holds the
+  // in-flight target and clears when its loop ends.
+  const anchorTargetRef = useRef<string | null>(null)
   const scrollItemToStart = useCallback(
     (id: string) => {
       const handle = codeViewRef.current
       if (!handle) return
+      anchorTargetRef.current = id
       markProgrammaticScroll()
       handle.scrollTo({ type: 'item', id, align: 'start' })
       let frames = 0
+      const done = () => {
+        if (anchorTargetRef.current === id) anchorTargetRef.current = null
+      }
       const check = () => {
+        if (anchorTargetRef.current !== id) return // superseded
         const inst = codeViewRef.current?.getInstance()
-        if (!inst || ++frames > 8) return
+        if (!inst || ++frames > 8) return done()
         const top = inst.getTopForItem(id)
-        if (top == null) return
+        if (top == null) return done()
         if (Math.abs(top - inst.getScrollTop()) > 1) {
           markProgrammaticScroll()
           codeViewRef.current?.scrollTo({ type: 'item', id, align: 'start' })
@@ -1912,10 +1925,15 @@ function DiffView() {
             if (cur === items.length - 1) break // already at the last file
             target = cur + 1
           } else {
-            const curTop = inst.getTopForItem(items[cur]!.id) ?? 0
+            const curId = items[cur]!.id
+            const curTop = inst.getTopForItem(curId) ?? 0
             // If scrolled into the body of the current file, snap to its top
-            // first; otherwise step to the previous file.
-            target = scrollTopRef.current > curTop + 4 ? cur : Math.max(cur - 1, 0)
+            // first; otherwise step to the previous file. A scroll to the
+            // current file's top that hasn't rendered yet (held-down p) counts
+            // as already there, or every repeat would re-target the same file.
+            const inBody =
+              anchorTargetRef.current !== curId && scrollTopRef.current > curTop + 4
+            target = inBody ? cur : Math.max(cur - 1, 0)
           }
           const targetId = items[target]!.id
           // Move focus immediately rather than waiting for the scroll-driven
@@ -1950,6 +1968,7 @@ function DiffView() {
           }
           if (cur?.file === name && cur.line === nextLine) break
           setCursor({ file: name, line: nextLine })
+          anchorTargetRef.current = null // a line scroll supersedes a running re-anchor loop
           markProgrammaticScroll()
           codeViewRef.current?.scrollTo({
             type: 'line',
