@@ -153,6 +153,58 @@ body,
   min-height: 0;
 }
 
+/* Sidebar + diff side by side under the header bar. Each child owns its own
+   scroll; min-height: 0 lets them shrink to the row instead of growing it. */
+.diff-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The file tree host (@pierre/trees). Like the diff, it renders in a shadow
+   root, so page CSS stops at this element: colors go in through the
+   library's --trees-*-override hooks, mapped onto the elevation ramp. The
+   library sets color-scheme: light dark inside its shadow root; this outer
+   rule beats that so a forced theme reaches the tree's light-dark() values. */
+.file-tree {
+  flex: 0 0 280px;
+  min-height: 0;
+  /* Include the top border in the tree's 100% height. */
+  box-sizing: border-box;
+  /* No top margin: CodeView's layout.paddingTop is 0 (see App.tsx options),
+     so the first file header sits at the scroll edge and the sticky header
+     pins there too. The sidebar's top border lines up with it in both
+     states. */
+  /* GitHub-style framing: flush with the left edge, only a top border. The
+     sidebar's right edge is the first file's left border (the diff's left
+     padding is dropped when the tree is open, below), and the two top
+     borders meet into one continuous line from the page edge. The header
+     bar above keeps its own side padding, so the tree toggle stays inset.
+     --border-soft matches the file edges the line runs into. */
+  border-top: 1px solid var(--border-soft);
+  color-scheme: inherit;
+  --trees-bg-override: var(--bg-canvas);
+  --trees-fg-override: var(--fg);
+  --trees-fg-muted-override: var(--fg-muted);
+  --trees-accent-override: var(--blue);
+  --trees-border-color-override: var(--border-soft);
+  --trees-selected-bg-override: var(--bg-control-hover);
+  --trees-selected-fg-override: var(--fg-bright);
+  --trees-bg-muted-override: var(--bg-panel);
+  --trees-input-bg-override: var(--bg-muted);
+  --trees-font-family-override: system-ui, -apple-system, sans-serif;
+  --trees-font-size-override: 13px;
+  --trees-status-added-override: var(--green-text);
+  --trees-status-deleted-override: var(--red);
+  --trees-status-renamed-override: var(--amber);
+}
+
+/* With the sidebar open, the diff sits flush against it so the file's left
+   border reads as the sidebar's edge. */
+.file-tree + .codeview-root {
+  padding-left: 0;
+}
+
 /* CodeView's scroll container. The library manages the scroll position but
    does not set overflow itself, so we own that here. Horizontal + bottom
    padding is on the inside so the scrollbar reaches the right edge while the
@@ -161,6 +213,7 @@ body,
 .codeview-root {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   padding: 0 12px 16px;
   --diffs-font-size: 12px;
@@ -194,27 +247,43 @@ body,
    (.file-header background + border) and inter-file spacing instead. Side
    borders (matching the header's top border) close off the file's edges —
    without them the header/body strips just stop mid-air. No border-radius:
-   rounding fights the sticky header. */
+   rounding fights the sticky header.
+
+   The bottom edge is a box-shadow, not a border: CodeView lays items out from
+   its own height math (header + rows), not the DOM, and a border-bottom adds
+   a pixel it doesn't know about. Every item rendered below another then sits
+   1px lower than the library thinks, so a file scrolled to the top lands 1px
+   below the scroll edge. A shadow paints the same line without taking up
+   layout height.
+
+   Every file edge is --border-soft, focused or not; focus shows only in the
+   header background. With the sidebar open the left edge doubles as the
+   sidebar's border, and whichever file happens to sit at the top of the
+   viewport draws it, so the color can't depend on focus without the
+   sidebar's edge visibly changing shade as you scroll. */
 .codeview-root diffs-container {
   display: block;
   border-left: 1px solid var(--border-soft);
   border-right: 1px solid var(--border-soft);
-  border-bottom: 1px solid var(--border-soft);
-}
-
-/* Track the focused header (which swaps to --border-strong): otherwise its
-   darkened top border visibly mismatches the file's soft side borders where
-   they meet at the corners. This also outlines the focused file's full
-   extent. */
-.codeview-root diffs-container:has(.file-header.focused) {
-  border-color: var(--border-strong);
+  box-shadow: 0 1px 0 var(--border-soft);
 }
 
 /* Collapsed file: the header is the only content, so its border-bottom would
-   sit directly on the container's and read as a double line. Let the header's
-   (which tracks focus) be the file's bottom edge. */
+   sit directly on the container's bottom line and read as a double line. Let
+   the header's (which tracks focus) be the file's bottom edge. */
 .codeview-root diffs-container:has(.collapse-chevron.collapsed) {
-  border-bottom: none;
+  box-shadow: none;
+}
+
+.empty-file-message {
+  padding: 16px;
+  color: var(--fg-muted);
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 13px;
+  text-align: center;
 }
 
 /* Custom file header. Sticky positioning is handled by CodeView (stickyHeaders),
@@ -241,12 +310,12 @@ body,
 }
 
 /* The focused file — the one n/p step through and e/v/j/k act on. Raised one
-   elevation step above the resting header (with borders to match) so it reads
-   as the active bar within the existing lightness ramp, rather than tagged
-   with an accent stripe. */
+   elevation step above the resting header so it reads as the active bar
+   within the existing lightness ramp, rather than tagged with an accent
+   stripe. Borders stay put: the file edges are one color everywhere (see
+   diffs-container above), so the background is the only focus cue. */
 .file-header.focused {
   background: var(--bg-control-hover);
-  border-color: var(--border-strong);
 }
 
 .file-header.focused .collapse-chevron {
@@ -616,10 +685,10 @@ body,
   user-select: none;
 }
 
-/* Theme toggle: a plain icon rather than a bordered button — quieter than
-   the text controls, but with a hover background so it still reads as
-   clickable. */
-.theme-toggle-button {
+/* Icon-only header buttons (file tree toggle, theme toggle, help): a plain icon
+   rather than a bordered button — quieter than the text controls, but with a
+   hover background so it still reads as clickable. */
+.icon-button {
   display: flex;
   align-items: center;
   padding: 4px;
@@ -633,12 +702,12 @@ body,
 
 /* The hover step, not --bg-control: in light mode the control fill is level
    with the white canvas this button sits on, so it wouldn't show. */
-.theme-toggle-button:hover {
+.icon-button:hover {
   background: var(--bg-control-hover);
   color: var(--fg);
 }
 
-.theme-toggle-button svg {
+.icon-button svg {
   display: block;
 }
 
@@ -795,7 +864,7 @@ body,
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 20px;
+  padding: 16px;
   min-width: 320px;
   font-family:
     system-ui,
@@ -824,7 +893,7 @@ body,
 }
 
 .help-modal h3 {
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   font-size: 15px;
   font-weight: 600;
 }
@@ -837,6 +906,10 @@ body,
 .help-modal td {
   padding: 5px 0;
   font-size: 13px;
+}
+
+.help-modal tr:last-child td {
+  padding-bottom: 0;
 }
 
 .help-modal td:first-child {

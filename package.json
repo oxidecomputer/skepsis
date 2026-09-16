@@ -1,6 +1,6 @@
 {
   "name": "@oxide/skepsis",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "repository": "github:oxidecomputer/skepsis",
   "bin": {
     "skepsis": "dist/cli.js"
@@ -21,8 +21,8 @@
     "lint": "oxlint",
     "tsc": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test",
-    "ci": "npm run build && npm run tsc && npm run lint && npm run fmt:check && npm test && npm run e2e"
+    "e2e": "npm run build && playwright test",
+    "ci": "npm run build && npm run tsc && npm run lint && npm run fmt:check && npm test && playwright test"
   },
   "devDependencies": {
     "@base-ui/react": "^1.8.0",
@@ -30,6 +30,7 @@
     "@hono/node-server": "^2.1.1",
     "@hono/zod-validator": "^0.9.1",
     "@pierre/diffs": "^1.4.2",
+    "@pierre/trees": "^1.0.0-beta.6",
     "@playwright/test": "^1.63.0",
     "@tanstack/react-query": "^5.102.8",
     "@types/node": "^22.20.3",
