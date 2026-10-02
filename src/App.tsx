@@ -202,6 +202,15 @@ function useIsWide(): boolean {
   )
 }
 
+// Handlers take Ctrl wherever they take ⌘, so this only changes the labels.
+// userAgentData is Chromium-only and not in lib.dom yet.
+const isMac = /mac/i.test(
+  (navigator as { userAgentData?: { platform: string } }).userAgentData?.platform ??
+    navigator.platform,
+)
+const SEARCH_KEYS = isMac ? '⌘K' : 'Ctrl+K'
+const SUBMIT_KEYS = isMac ? '⌘⏎' : 'Ctrl+Enter'
+
 function useToast(duration = 1400) {
   const [toast, setToast] = useState<{
     content: React.ReactNode
@@ -575,7 +584,7 @@ function CommentForm({
           }
           if (e.key === 'Escape') onCancel()
         }}
-        placeholder="Leave a review comment... (Cmd+Enter to submit)"
+        placeholder={`Leave a review comment... (${SUBMIT_KEYS} to submit)`}
         rows={3}
         disabled={submitting}
       />
@@ -595,12 +604,14 @@ function CommentForm({
           )}
         </div>
         {error && <div className="comment-form-error">{error}</div>}
-        <Button onClick={onCancel} disabled={submitting}>
-          Cancel
-        </Button>
-        <Button variant="primary" disabled={!text.trim() || submitting} onClick={submit}>
-          Comment
-        </Button>
+        <div className="comment-form-buttons">
+          <Button onClick={onCancel} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={!text.trim() || submitting} onClick={submit}>
+            Comment
+          </Button>
+        </div>
       </div>
     </div>
   )
@@ -1103,7 +1114,7 @@ const SHORTCUTS: [string, string][] = [
   ['s', 'Toggle split mode (responsive / unified)'],
   ['t', 'Toggle light / dark'],
   ['b', 'Toggle file tree'],
-  ['⌘K / Ctrl+K', 'Search files'],
+  [SEARCH_KEYS, 'Search files'],
   ['c', 'Comment on line'],
   ['r', 'Refresh after the diff changes on disk'],
   ['Esc', 'Close / cancel'],

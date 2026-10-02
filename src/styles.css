@@ -93,6 +93,9 @@
   --amber: light-dark(oklch(50% 0.12 80), oklch(72% 0.14 80));
   --amber-deep: light-dark(oklch(52% 0.11 78), oklch(56% 0.12 78));
 
+  /* Set on body; repeat it only where body's font doesn't reach: form
+     controls, <code>, and the diff's shadow roots, which default to mono. */
+  --font-sans: system-ui, -apple-system, sans-serif;
   /* Monospace stack. Berkeley Mono first for those who have it, then each OS's
      best system mono (ui-monospace → SF Mono on macOS, Consolas/Cascadia on
      Windows) and common dev fonts, so the bare `monospace` fallback — which
@@ -116,10 +119,7 @@
 body {
   margin: 0;
   background: var(--bg-canvas);
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-sans);
   color: var(--fg);
 }
 
@@ -192,7 +192,7 @@ body,
   --trees-selected-fg-override: var(--fg-bright);
   --trees-bg-muted-override: var(--bg-panel);
   --trees-input-bg-override: var(--bg-muted);
-  --trees-font-family-override: system-ui, -apple-system, sans-serif;
+  --trees-font-family-override: var(--font-sans);
   --trees-font-size-override: 13px;
   --trees-status-added-override: var(--green-text);
   --trees-status-deleted-override: var(--red);
@@ -278,10 +278,7 @@ body,
 .file-notice {
   padding: 16px;
   color: var(--fg-muted);
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   text-align: center;
 }
@@ -300,10 +297,7 @@ body,
   background: var(--bg-header);
   border-top: 1px solid var(--border-soft);
   border-bottom: 1px solid var(--border-soft);
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   cursor: pointer;
   user-select: none;
@@ -366,10 +360,6 @@ body,
   background: var(--bg-control-hover);
   border: 1px solid var(--border-strong);
   color: var(--fg-bright);
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
   font-size: 12px;
   font-weight: 500;
   animation: tooltip-in 0.09s ease;
@@ -389,8 +379,11 @@ body,
      interior to about --border-strong's level, swallowing that border. */
   border: 1px solid light-dark(var(--border-strong), var(--border-muted));
   border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  /* The surrounding font, not kbd's default mono: the keys are mostly
+     modifier symbols, which mono fonts draw too small to read at tooltip size */
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.1;
   color: var(--fg-bright);
 }
 
@@ -621,10 +614,6 @@ body,
   align-items: center;
   gap: 10px;
   padding: 2px 12px;
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
   font-size: 13px;
   line-height: 1;
   color: var(--fg-muted);
@@ -771,10 +760,7 @@ body,
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--fg-bright);
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   resize: vertical;
   box-sizing: border-box;
@@ -787,19 +773,27 @@ body,
 
 .comment-form-note {
   color: var(--fg-muted);
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   /* nudge right: text flush with the textarea's outer edge reads as
      overhanging it, since the textarea's own text sits inside its border */
   padding-left: 2px;
   margin-right: auto;
+  /* In a narrow column, shrinking would crush it to one character per line;
+     the row wraps instead */
+  white-space: nowrap;
+}
+
+/* The buttons wrap as a group, below the note */
+.comment-form-buttons {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .comment-form-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
@@ -808,20 +802,14 @@ body,
 
 .comment-form-error {
   color: var(--red);
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
 }
 
 .btn {
   padding: 6px 16px;
   border-radius: 6px;
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -882,10 +870,6 @@ body,
   border-radius: 10px;
   padding: 16px;
   min-width: 320px;
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
   color: var(--fg-bright);
   max-width: 400px;
 }
@@ -955,10 +939,6 @@ body,
   color: var(--fg-bright);
   font-size: 13px;
   font-weight: 500;
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
   z-index: 200;
   pointer-events: none;
   /* The duration is set inline from showToast's */
@@ -1135,8 +1115,9 @@ body,
   background: var(--bg-muted);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 12px;
+  /* Not mono, for the modifier symbols, as in .tooltip-popup kbd */
+  font-family: inherit;
+  font-size: 14px;
   color: var(--fg-bright);
   min-width: 18px;
   text-align: center;

@@ -10,7 +10,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { test as base } from '@playwright/test'
+import { test as base, type Page } from '@playwright/test'
 import { exec } from '../server/testUtil.ts'
 
 export * from '@playwright/test'
@@ -24,6 +24,17 @@ export type Repo = {
   read: (name: string) => Promise<string>
   /** Overwrite a working-copy file (the next /api/diff picks it up). */
   write: (name: string, contents: string) => Promise<void>
+}
+
+/** Reload the page reporting `platform`, for the shortcut labels. Chromium
+ *  reads userAgentData and Firefox navigator.platform, so set both. */
+export async function setPlatform(page: Page, platform: string) {
+  await page.addInitScript((value) => {
+    Object.defineProperty(navigator, 'platform', { get: () => value })
+    Object.defineProperty(navigator, 'userAgentData', { get: () => ({ platform: value }) })
+  }, platform)
+  await page.reload()
+  await page.locator('.file-header').first().waitFor()
 }
 
 // Unchanged in WORKING, so it stays out of the diff until a test edits it.
