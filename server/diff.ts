@@ -7,6 +7,7 @@
  */
 
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import type { DiffArgs, FileHashes } from '../shared/types.ts'
 
 function run(
@@ -119,25 +120,45 @@ export async function getDiff(
  * The a//b/ prefixes are guaranteed by GIT_PREFIX_OVERRIDE / JJ_PREFIX_OVERRIDE
  * regardless of the user's diff config, and must match the names @pierre/diffs
  * parses on the client so viewed-state keys line up.
+ *
+ * Pure renames and mode-only changes have no index line, so they get a hash
+ * of their extended header lines instead. That changes when the rename or
+ * mode does, and a content change adds an index line, so viewed state still
+ * resets whenever there is something new to look at.
  */
-function extractFileHashes(patch: string): FileHashes {
+export function extractFileHashes(patch: string): FileHashes {
   const hashes: FileHashes = {}
   let currentFile: string | null = null
+  let header: string[] = []
+
+  const finishHeaderOnly = () => {
+    if (currentFile == null) return
+    hashes[currentFile] = createHash('sha1')
+      .update(header.join('\n'))
+      .digest('hex')
+      .slice(0, 12)
+  }
 
   for (const line of patch.split('\n')) {
     const diffMatch = line.match(/^diff --git a\/.+ b\/(.+)$/)
     if (diffMatch) {
+      finishHeaderOnly()
       currentFile = diffMatch[1]!
+      header = [line]
       continue
     }
-    if (currentFile && line.startsWith('index ')) {
+    if (currentFile == null) continue
+    if (line.startsWith('index ')) {
       const indexMatch = line.match(/^index [0-9a-f]+\.\.([0-9a-f]+)/)
       if (indexMatch) {
         hashes[currentFile] = indexMatch[1]!
       }
       currentFile = null
+    } else {
+      header.push(line)
     }
   }
+  finishHeaderOnly()
 
   return hashes
 }

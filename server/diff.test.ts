@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { parsePatchFiles } from '@pierre/diffs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { DiffArgs } from '../shared/types.ts'
-import { diffCommand, normalizeJjRenames } from './diff.ts'
+import { diffCommand, extractFileHashes, normalizeJjRenames } from './diff.ts'
 import { isolateVcsConfig, requireJj, run } from './testUtil.ts'
 
 const base = { commentsEnabled: true, files: [], endpoints: null }
@@ -152,6 +152,16 @@ describe('jj rename headers (integration)', () => {
       ['rename-changed', 'changed.txt', 'changed2.txt'],
       ['rename-pure', 'pure.txt', 'pure2.txt'],
     ])
+  })
+
+  // A pure rename has no index line to take a blob ID from, but still needs
+  // a hash for viewed state to key on.
+  it('gives pure renames a file hash', async () => {
+    const { cmd, args } = diffCommand({ vcs: 'jj', args: ['-r', '@'], ...base })
+    const { stdout } = await run(cmd, args, repo)
+    const hashes = extractFileHashes(stdout)
+    expect(Object.keys(hashes).toSorted()).toEqual(['changed2.txt', 'pure2.txt'])
+    expect(hashes['pure2.txt']).toMatch(/^[0-9a-f]+$/)
   })
 
   it('sanity: without normalizing, renames parse as plain changes', async () => {
