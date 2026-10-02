@@ -2,8 +2,9 @@
 
 > [σκέψις](https://www.perseus.tufts.edu/hopper/text?doc=Perseus:text:1999.04.0057:entry=ske/yis): viewing, perception by the senses. Examination, speculation, consideration.
 
-A fully local browser-based code review UI. Review your (or your agent's) diff _before_ inflicting it on the world.
+A fast, fully local browser-based code review UI. Review your (or your agent's) diff _before_ inflicting it on the world.
 
+- Fast even with huge diffs
 - GitHub-style split or unified diff view with syntax highlighting
 - Mark files as viewed
 - Inline review comments are written directly into source files as code comments
