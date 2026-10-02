@@ -8,7 +8,7 @@
 
 import type { Locator, Page } from '@playwright/test'
 
-import { expect, LONG_LINES, test, WORKING } from './fixtures.ts'
+import { expect, LONG_LINES, setPlatform, test, WORKING } from './fixtures.ts'
 
 async function selectText(page: Page, locator: Locator) {
   await locator.waitFor()
@@ -242,6 +242,26 @@ test('cmd/ctrl+k focuses the file search, opening the tree if needed', async ({ 
   await expect(page.locator('.file-tree')).toBeVisible()
   await expect(page.locator('.file-tree input')).toBeFocused()
 })
+
+for (const [platform, search, submit] of [
+  ['macOS', '⌘K', '⌘⏎'],
+  ['Windows', 'Ctrl+K', 'Ctrl+Enter'],
+] as const) {
+  test(`shortcut labels on ${platform}`, async ({ page }) => {
+    await setPlatform(page, platform)
+    await page.keyboard.press('?')
+    await expect(page.getByRole('row', { name: /Search files/ }).locator('kbd')).toHaveText(
+      search,
+    )
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('j')
+    await page.keyboard.press('c')
+    await expect(page.getByPlaceholder('Leave a review comment')).toHaveAttribute(
+      'placeholder',
+      `Leave a review comment... (${submit} to submit)`,
+    )
+  })
+}
 
 test('escape in the file search returns focus to the diff', async ({ page }) => {
   const search = page.locator('.file-tree input')

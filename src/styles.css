@@ -389,8 +389,14 @@ body,
      interior to about --border-strong's level, swallowing that border. */
   border: 1px solid light-dark(var(--border-strong), var(--border-muted));
   border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  /* The system font, not mono: the keys are mostly modifier symbols, which
+     mono fonts draw too small to read at tooltip size */
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 13px;
+  line-height: 1.1;
   color: var(--fg-bright);
 }
 
@@ -796,10 +802,21 @@ body,
      overhanging it, since the textarea's own text sits inside its border */
   padding-left: 2px;
   margin-right: auto;
+  /* In a narrow column, shrinking would crush it to one character per line;
+     the row wraps instead */
+  white-space: nowrap;
+}
+
+/* The buttons wrap as a group, below the note */
+.comment-form-buttons {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .comment-form-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
@@ -999,8 +1016,12 @@ body,
   background: var(--bg-muted);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 12px;
+  /* System font for the modifier symbols, as in .tooltip-popup kbd */
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 14px;
   color: var(--fg-bright);
   min-width: 18px;
   text-align: center;
