@@ -26,7 +26,9 @@ test('renders the diff', async ({ page }) => {
   await expect(page.getByText('world')).toBeVisible()
 })
 
-test('empty files explain their contents and collapse normally', async ({ page }) => {
+test('empty files and pure renames explain their contents and collapse normally', async ({
+  page,
+}) => {
   await page.route('**/api/diff', async (route) => {
     const response = await route.fetch()
     const data = await response.json()
@@ -79,6 +81,14 @@ rename to renamed.txt
   await expect(messages).toHaveCount(2)
   await expect(messages.first()).toBeVisible()
   await expect(messages.last()).toBeVisible()
+
+  const renamed = page.locator('diffs-container').filter({
+    has: page.locator('.file-header-name', { hasText: 'renamed.txt' }),
+  })
+  await expect(renamed.locator('.file-header-name')).toHaveText(
+    'old-name.txt → renamed.txt',
+  )
+  await expect(renamed.getByText('File renamed without changes')).toBeVisible()
 })
 
 test('header clicks work after selecting code', async ({ page }) => {

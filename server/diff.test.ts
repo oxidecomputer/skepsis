@@ -6,12 +6,13 @@
  * Copyright Oxide Computer Company
  */
 
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parsePatchFiles } from '@pierre/diffs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { DiffArgs } from '../shared/types.ts'
-import { diffCommand } from './diff.ts'
+import { diffCommand, normalizeJjRenames } from './diff.ts'
 import { isolateVcsConfig, requireJj, run } from './testUtil.ts'
 
 const base = { commentsEnabled: true, files: [], endpoints: null }
@@ -112,5 +113,54 @@ describe('jj show-path-prefix override (integration)', () => {
     const { stdout } = await run(cmd, args, repo)
     expect(stdout).toContain('diff --git a/f.txt b/f.txt')
     expect(stdout).not.toContain('g.txt')
+  })
+})
+
+// jj's git-format diff omits the "similarity index" line, and @pierre/diffs
+// only treats a git diff block as a rename when it has one. Without it, a
+// rename parses as a plain change to the new path and loses the old name.
+describe('jj rename headers (integration)', () => {
+  let tmp: string
+  let repo: string
+
+  beforeAll(async () => {
+    await requireJj()
+    tmp = await mkdtemp(join(tmpdir(), 'skepsis-jj-rename-test-'))
+    await run('jj', ['git', 'init', 'repo'], tmp)
+    repo = join(tmp, 'repo')
+    await writeFile(join(repo, 'pure.txt'), 'same\n')
+    await writeFile(join(repo, 'changed.txt'), 'a\nb\nc\nd\ne\n')
+    await run('jj', ['commit', '-m', 'base'], repo)
+    await rename(join(repo, 'pure.txt'), join(repo, 'pure2.txt'))
+    await rename(join(repo, 'changed.txt'), join(repo, 'changed2.txt'))
+    await writeFile(join(repo, 'changed2.txt'), 'a\nb\nC\nd\ne\n')
+  })
+
+  afterAll(async () => {
+    if (tmp) await rm(tmp, { recursive: true, force: true })
+  })
+
+  async function parsedFiles() {
+    const { cmd, args } = diffCommand({ vcs: 'jj', args: ['-r', '@'], ...base })
+    const { stdout } = await run(cmd, args, repo)
+    return parsePatchFiles(normalizeJjRenames(stdout)).flatMap((p) => p.files)
+  }
+
+  it('parses pure and changed renames with their old names', async () => {
+    const files = await parsedFiles()
+    expect(files.map((f) => [f.type, f.prevName, f.name])).toEqual([
+      ['rename-changed', 'changed.txt', 'changed2.txt'],
+      ['rename-pure', 'pure.txt', 'pure2.txt'],
+    ])
+  })
+
+  it('sanity: without normalizing, renames parse as plain changes', async () => {
+    const { cmd, args } = diffCommand({ vcs: 'jj', args: ['-r', '@'], ...base })
+    const { stdout } = await run(cmd, args, repo)
+    const files = parsePatchFiles(stdout).flatMap((p) => p.files)
+    expect(files.map((f) => [f.type, f.prevName])).toEqual([
+      ['change', undefined],
+      ['change', undefined],
+    ])
   })
 })
