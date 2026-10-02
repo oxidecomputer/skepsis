@@ -1508,8 +1508,13 @@ function DiffView() {
       // resolved) would then render the stale highlight until reload. Key on
       // the content hash, and separate the patch parse from the whole-file
       // expand-all parse since they hold different lines for the same hash.
+      // Set it only once per object: loadDiffFiles hydrates a patch diff in
+      // place and gives it its own `:hydrated` key, and putting the patch key
+      // back would pair the hydrated lines with the patch-only highlight.
+      // The inputs never change for a given object anyway, since a new patch
+      // or hash means a new parse.
       const hash = data.fileHashes[name] ?? ''
-      fileDiff.cacheKey = `${name}|${hash}|${fileDiff === patchFiles[i] ? 'patch' : 'full'}`
+      fileDiff.cacheKey ??= `${name}|${hash}|${fileDiff === patchFiles[i] ? 'patch' : 'full'}`
       const syntax = data.commentSyntaxes[name]
       const annotations = commentsEnabled
         ? detectReviewComments(fileDiff, name, !syntax || syntax.prefix === '')
