@@ -26,9 +26,14 @@ export type Repo = {
   write: (name: string, contents: string) => Promise<void>
 }
 
+// Unchanged in WORKING, so it stays out of the diff until a test edits it.
+// Long enough that an edit in the middle leaves collapsed context to expand.
+export const LONG_LINES = Array.from({ length: 60 }, (_, i) => `// line ${i + 1}`)
+
 export const COMMITTED: Record<string, string> = {
   'a.ts': 'const one = 1\nconst two = 2\nconst three = 3\n',
   'b.txt': 'hello\n',
+  'long.ts': LONG_LINES.join('\n') + '\n',
 }
 
 export const WORKING: Record<string, string> = {

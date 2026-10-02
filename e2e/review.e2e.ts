@@ -8,7 +8,7 @@
 
 import type { Locator, Page } from '@playwright/test'
 
-import { expect, test, WORKING } from './fixtures.ts'
+import { expect, LONG_LINES, test, WORKING } from './fixtures.ts'
 
 async function selectText(page: Page, locator: Locator) {
   await locator.waitFor()
@@ -26,7 +26,9 @@ test('renders the diff', async ({ page }) => {
   await expect(page.getByText('world')).toBeVisible()
 })
 
-test('empty files explain their contents and collapse normally', async ({ page }) => {
+test('empty files and pure renames explain their contents and collapse normally', async ({
+  page,
+}) => {
   await page.route('**/api/diff', async (route) => {
     const response = await route.fetch()
     const data = await response.json()
@@ -79,6 +81,14 @@ rename to renamed.txt
   await expect(messages).toHaveCount(2)
   await expect(messages.first()).toBeVisible()
   await expect(messages.last()).toBeVisible()
+
+  const renamed = page.locator('diffs-container').filter({
+    has: page.locator('.file-header-name', { hasText: 'renamed.txt' }),
+  })
+  await expect(renamed.locator('.file-header-name')).toHaveText(
+    'old-name.txt → renamed.txt',
+  )
+  await expect(renamed.getByText('File renamed without changes')).toBeVisible()
 })
 
 test('header clicks work after selecting code', async ({ page }) => {
@@ -245,4 +255,55 @@ test('escape in the file search returns focus to the diff', async ({ page }) => 
   await page.keyboard.press('n')
   await expect(page.locator('.file-header.focused .file-header-name')).toHaveText('b.txt')
   await expect(search).not.toHaveValue(/n/)
+})
+
+// Expanding context hydrates the patch diff in place with full file contents
+// and a new cache key. A later re-render of the items list must not reset
+// that key, or the worker serves the patch-only highlight for the hydrated
+// diff and rendering throws once the file is recycled and drawn again.
+test('expanded context survives an unrelated re-render', async ({ page, repo }) => {
+  const errors: string[] = []
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text())
+  })
+  page.on('pageerror', (e) => errors.push(e.message))
+  // A tall a.ts above long.ts gives room to scroll long.ts out of the
+  // virtualizer's window so its element is recycled.
+  const tall = Array.from({ length: 300 }, (_, i) => `const n${i} = ${i}`)
+  await repo.write('a.ts', tall.join('\n') + '\n')
+  await repo.write('long.ts', LONG_LINES.with(29, '// line 30 changed').join('\n') + '\n')
+  await page.reload()
+
+  const card = (file: string) =>
+    page.locator('diffs-container').filter({
+      has: page.locator('.file-header-name').getByText(file, { exact: true }),
+    })
+  const focused = (file: string) => card(file).locator('.file-header.focused')
+  const long = card('long.ts')
+  // Matches on both sides in split mode.
+  const line10 = long.getByText('// line 10', { exact: true }).first()
+  // n/p move between files: a.ts → b.txt → long.ts. It starts out of the
+  // virtualizer's window, so it's only drawn once navigated to.
+  await expect(focused('a.ts')).toBeVisible()
+  await page.keyboard.press('n')
+  await expect(focused('b.txt')).toBeVisible()
+  await page.keyboard.press('n')
+  await expect(focused('long.ts')).toBeVisible()
+  await long.locator('[data-expand-button]:visible').first().click()
+  await expect(line10).toBeVisible()
+
+  // Collapsing b.txt re-runs the items memo. Going back to the top of a.ts
+  // recycles long.ts's element, and coming back draws it again.
+  await page.keyboard.press('p')
+  await expect(focused('b.txt')).toBeVisible()
+  await page.keyboard.press('e')
+  await page.keyboard.press('p')
+  await expect(focused('a.ts')).toBeVisible()
+  await expect(long).toHaveCount(0)
+  await page.keyboard.press('n')
+  await expect(focused('b.txt')).toBeVisible()
+  await page.keyboard.press('n')
+  await expect(focused('long.ts')).toBeVisible()
+  await expect(line10).toBeVisible()
+  expect(errors).toEqual([])
 })

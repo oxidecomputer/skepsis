@@ -153,7 +153,7 @@ function useToast(duration = 1400) {
 type AnnotationMeta =
   | { type: 'review'; startLine: number; endLine: number; file: string }
   | { type: 'composing'; file: string }
-  | { type: 'empty' }
+  | { type: 'notice'; message: string }
 
 /** Walk the addition side of a diff and find <review>...</review> blocks.
  *  Bare-fallback files get bare tags on insert, so detection matches bare tag
@@ -220,6 +220,14 @@ function isEmptyFileDiff(file: FileDiffMetadata): boolean {
     objectId != null &&
     EMPTY_BLOB_IDS.some((id) => id.startsWith(objectId))
   )
+}
+
+// Hunkless diffs have no body, so the ones we can describe get a message in
+// its place. Binary and mode-only changes have nothing useful to say yet.
+function fileNotice(file: FileDiffMetadata): string | null {
+  if (file.type === 'rename-pure') return 'File renamed without changes'
+  if (isEmptyFileDiff(file)) return 'File is empty'
+  return null
 }
 
 // The file tree's per-row status marker, from the diff's change type. Read
@@ -313,9 +321,13 @@ function getFileStats(fileDiff: FileDiffMetadata) {
 // Lines inside a <review> block get `data-review-comment` tagged onto them in
 // `tagReviewLines` (called from CodeView's onPostRender), and this styles them.
 const DIFF_CSS = `
-  /* Empty-file annotations are the whole body: omit the code gutter, split
+  /* No gap between the last line and the card's bottom border. The split-wrap
+     layout puts it on [data-diff], unified on [data-code]. Must match
+     itemMetrics.paddingBottom in the CodeView options. */
+  [data-diff], [data-code] { padding-bottom: 0; }
+  /* File notice annotations are the whole body: omit the code gutter, split
      columns, and trailing code padding. Their own padding defines the row. */
-  :host([data-empty-file]) {
+  :host([data-file-notice]) {
     [data-diff], [data-code], [data-content] {
       display: block;
       padding: 0;
@@ -651,7 +663,12 @@ function FileHeader({
       <span className={'collapse-chevron' + (collapsed ? ' collapsed' : '')}>
         {'\u25B6'}
       </span>
-      <span className="file-header-name">{fileDiff.name}</span>
+      <span className="file-header-name">
+        {fileDiff.prevName != null && fileDiff.prevName !== fileDiff.name && (
+          <span className="file-header-prev-name">{fileDiff.prevName} → </span>
+        )}
+        {fileDiff.name}
+      </span>
       {/* closeOnClick={false} so the tooltip stays up and flips to "Copied!". */}
       <Tip text={copied ? 'Copied!' : 'Copy file name to clipboard'} closeOnClick={false}>
         <button
@@ -1491,17 +1508,23 @@ function DiffView() {
       // resolved) would then render the stale highlight until reload. Key on
       // the content hash, and separate the patch parse from the whole-file
       // expand-all parse since they hold different lines for the same hash.
+      // Set it only once per object: loadDiffFiles hydrates a patch diff in
+      // place and gives it its own `:hydrated` key, and putting the patch key
+      // back would pair the hydrated lines with the patch-only highlight.
+      // The inputs never change for a given object anyway, since a new patch
+      // or hash means a new parse.
       const hash = data.fileHashes[name] ?? ''
-      fileDiff.cacheKey = `${name}|${hash}|${fileDiff === patchFiles[i] ? 'patch' : 'full'}`
+      fileDiff.cacheKey ??= `${name}|${hash}|${fileDiff === patchFiles[i] ? 'patch' : 'full'}`
       const syntax = data.commentSyntaxes[name]
       const annotations = commentsEnabled
         ? detectReviewComments(fileDiff, name, !syntax || syntax.prefix === '')
         : []
-      if (isEmptyFileDiff(fileDiff)) {
+      const notice = fileNotice(fileDiff)
+      if (notice) {
         annotations.push({
           side: fileDiff.type === 'deleted' ? 'deletions' : 'additions',
           lineNumber: 0,
-          metadata: { type: 'empty' },
+          metadata: { type: 'notice', message: notice },
         })
       }
       if (composing?.file === name) {
@@ -1705,8 +1728,8 @@ function DiffView() {
     ) => {
       const meta = annotation.metadata
       if (!meta) return null
-      if (meta.type === 'empty') {
-        return <div className="empty-file-message">File is empty</div>
+      if (meta.type === 'notice') {
+        return <div className="file-notice">{meta.message}</div>
       }
       const file = item.id
       if (meta.type === 'review') {
@@ -1781,8 +1804,9 @@ function DiffView() {
       // file, and the sticky container's bottom-clamp turns that into a
       // visible downward shift of all content whenever the diff fits the
       // viewport (e.g. everything collapsed) — content then "jumps" on any
-      // fits/overflows transition.
-      itemMetrics: { diffHeaderHeight: 40 },
+      // fits/overflows transition. paddingBottom 0 matches DIFF_CSS, which
+      // drops the gap below the last line.
+      itemMetrics: { diffHeaderHeight: 40, paddingBottom: 0 },
       diffIndicators: 'classic',
       hunkSeparators: 'line-info-basic',
       overflow: 'wrap',
@@ -1794,8 +1818,9 @@ function DiffView() {
       // paddingTop 0 (default 8): the first file header sits at the scroll
       // edge, where the sticky header pins anyway, so the file tree sidebar's
       // top border lines up with it whether or not the diff is scrolled.
-      // paddingBottom and gap are the library defaults.
-      layout: { paddingTop: 0, paddingBottom: 8, gap: 8 },
+      // gap 12 (default 8) separates file cards; 8 read as too tight.
+      // paddingBottom is the library default.
+      layout: { paddingTop: 0, paddingBottom: 8, gap: 12 },
       enableGutterUtility: commentsEnabled,
       // Hydrates a partial diff with full file contents on the first expand
       // click, then re-renders the item itself. Setting it is also what makes
@@ -1821,8 +1846,8 @@ function DiffView() {
       onPostRender: (node, instance, phase, context) => {
         if (phase === 'unmount') return
         node.toggleAttribute(
-          'data-empty-file',
-          context.item.type === 'diff' && isEmptyFileDiff(context.item.fileDiff),
+          'data-file-notice',
+          context.item.type === 'diff' && fileNotice(context.item.fileDiff) != null,
         )
         tagReviewLines(node, reviewRanges(context.item.annotations))
       },

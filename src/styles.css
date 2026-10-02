@@ -275,7 +275,7 @@ body,
   box-shadow: none;
 }
 
-.empty-file-message {
+.file-notice {
   padding: 16px;
   color: var(--fg-muted);
   font-family:
@@ -347,6 +347,10 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.file-header-prev-name {
+  color: var(--fg);
 }
 
 /* Base UI tooltip (see Tip in App.tsx). The positioner is placed by the
