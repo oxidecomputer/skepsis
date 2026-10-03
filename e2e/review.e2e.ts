@@ -193,6 +193,33 @@ test('comment appears in the diff without a reload', async ({ page, repo }) => {
   )
 })
 
+// The line cursor must not pin the gutter "+" to its line: hovering another
+// line in the same file moves the "+" there.
+test('the gutter + follows the pointer with the line cursor in the file', async ({
+  page,
+}) => {
+  await page.keyboard.press('j')
+  const a = page.locator('diffs-container').first()
+  const lineNumber = (n: number) =>
+    a
+      .locator(
+        `[data-additions] [data-column-number="${n}"], [data-unified] [data-column-number="${n}"]`,
+      )
+      .first()
+  await expect(lineNumber(1)).toHaveAttribute('data-editor-active-line')
+
+  // A re-render shortly after load can drop the hovered "+", so hover again
+  // until it shows. With the cursor pinning it, no number of hovers would.
+  await expect(async () => {
+    await lineNumber(3).hover()
+    await lineNumber(4).hover()
+    await expect(lineNumber(4).locator('[data-gutter-utility-slot]')).toBeVisible({
+      timeout: 1000,
+    })
+  }).toPass()
+  await expect(lineNumber(1).locator('[data-gutter-utility-slot]')).toHaveCount(0)
+})
+
 test('resolving a comment removes it', async ({ page, repo }) => {
   await repo.write(
     'a.ts',

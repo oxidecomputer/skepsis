@@ -41,7 +41,6 @@ import DiffsHighlightWorker from '@pierre/diffs/worker/worker.js?worker'
 import type {
   CodeViewDiffItem,
   CodeViewItem,
-  CodeViewLineSelection,
   CodeViewOptions,
   DiffLineAnnotation,
   FileDiffMetadata,
@@ -447,6 +446,20 @@ const DIFF_CSS = `
     color: var(--diffs-fg) !important;
   }
   [data-review-comment] [data-gutter-utility-slot] { display: none !important; }
+  /* The j/k cursor is the item's editor active line. Give it the look of a
+     single selected line, which the library only computes for selections. */
+  [data-line][data-editor-active-line] {
+    --mix-selection-light: 82%;
+    --mix-selection-dark: 75%;
+  }
+  [data-line], [data-column-number] {
+    &[data-editor-active-line] {
+      --diffs-computed-selected-line-bg: light-dark(
+        color-mix(in lab, var(--diffs-computed-diff-line-bg) var(--mix-selection-light), var(--diffs-selection-mix-target)),
+        color-mix(in lab, var(--diffs-computed-diff-line-bg) var(--mix-selection-dark), var(--diffs-selection-mix-target))
+      );
+    }
+  }
   /* The comment "+" only works on the additions side (comments are inserted
      after an addition/context line in the new file). Hide it on the deletions
      side — the whole left column in split mode, and change-deletion lines in
@@ -510,6 +523,9 @@ function reviewRanges(
       : [],
   )
 }
+
+/** What the line cursor needs from a CodeView item's instance (FileDiff or File). */
+type ActiveLineTarget = { setEditorActiveLine(lineNumber: number | null): void }
 
 type ButtonProps = {
   variant?: 'primary' | 'secondary'
@@ -1693,8 +1709,8 @@ function DiffView() {
   const composingRef = useRef(composing)
   composingRef.current = composing
 
-  // j/k line cursor: a (file, line) position on the additions side. Rendered
-  // through CodeView's native line selection (see effect below) so cursor
+  // j/k line cursor: a (file, line) position on the additions side. Drawn
+  // through each item's editor active line (see instancesRef below) so cursor
   // moves don't bump item versions. Ref-mirrored for the key handler.
   const [cursor, setCursor] = useState<{ file: string; line: number } | null>(null)
   const cursorRef = useRef(cursor)
@@ -1941,20 +1957,16 @@ function DiffView() {
     })
   }, [items, markProgrammaticScroll])
 
-  // The cursor rendered through CodeView's native line selection, as the
-  // controlled `selectedLines` prop. The library keeps the selection on the
-  // item's interaction manager and re-renders it whenever the item's element
-  // is (re)mounted, so re-rendered and pooled elements keep their styling.
-  const selectedLines = useMemo<CodeViewLineSelection | null>(
-    () =>
-      cursor
-        ? {
-            id: cursor.file,
-            range: { start: cursor.line, end: cursor.line, side: 'additions' },
-          }
-        : null,
-    [cursor],
-  )
+  // The cursor is drawn as each item's editor active line rather than as a
+  // line selection, because the library pins the gutter "+" to a selection and
+  // stops moving it on hover. Mounted instances are tracked from onPostRender,
+  // which also re-applies the cursor when an element is (re)mounted or pooled.
+  const instancesRef = useRef(new Map<string, ActiveLineTarget>())
+  useEffect(() => {
+    for (const [file, instance] of instancesRef.current) {
+      instance.setEditorActiveLine(cursor?.file === file ? cursor.line : null)
+    }
+  }, [cursor])
 
   const renderCustomHeader = useCallback(
     (item: CodeViewItem<AnnotationMeta>) => {
@@ -2152,7 +2164,19 @@ function DiffView() {
       // and re-derives tags from scratch, so pooled/recycled elements never keep
       // stale highlights from a previously-rendered file.
       onPostRender: (node, instance, phase, context) => {
-        if (phase === 'unmount') return
+        const id = context.item.id
+        const instances = instancesRef.current
+        if (phase === 'unmount') {
+          if (instances.get(id) === instance) instances.delete(id)
+          return
+        }
+        // A pooled instance may still be listed under the file it drew before.
+        for (const [file, other] of instances) {
+          if (other === instance && file !== id) instances.delete(file)
+        }
+        instances.set(id, instance)
+        const cur = cursorRef.current
+        instance.setEditorActiveLine(cur?.file === id ? cur.line : null)
         node.toggleAttribute(
           'data-file-notice',
           context.item.type === 'diff' && fileNotice(context.item.fileDiff) != null,
@@ -2544,7 +2568,6 @@ function DiffView() {
             className="codeview-root"
             items={items}
             options={options}
-            selectedLines={selectedLines}
             onScroll={onScroll}
             renderCustomHeader={renderCustomHeader}
             renderAnnotation={renderAnnotation}
