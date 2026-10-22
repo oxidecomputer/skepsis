@@ -71,6 +71,17 @@ skepsis opens the page in a browser when it starts on localhost. Pass
 background: once the server is listening, it prints one line to stdout,
 `skepsis on <url> (<diff command>)`.
 
+To open it some other way, such as in a particular browser or a window of
+its own, pass `--open-cmd <command>` (or set `SKEPSIS_OPEN` in the
+environment). skepsis runs it with `sh -c`, with the URL appended as the last
+argument:
+
+```
+skepsis --open-cmd 'open -a Firefox'
+```
+
+`--dev` mode ignores it, since Vite opens the page itself.
+
 ### jj examples
 
 The examples use `skepsis`, the installed bin name. An `sk` alias works the

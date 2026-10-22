@@ -34,6 +34,10 @@ const program = new Command()
   .option('--host <address>', 'address to bind the HTTP server to', 'localhost')
   .option('-p, --port <number>', 'port for the browser UI (default: a free one)', parsePort)
   .option('--no-open', "don't open a browser")
+  .option(
+    '--open-cmd <command>',
+    'shell command that opens the page, given the URL as its last argument (default: $SKEPSIS_OPEN, else the system opener)',
+  )
   .option('--no-poll', "don't check for changes to the diff while the page is open")
   .argument('[files...]', 'Limit diff to these paths (passed through to jj/git)')
   .addHelpText(
@@ -47,6 +51,9 @@ const program = new Command()
 const opts = program.opts()
 const files = program.processedArgs[0] ?? []
 const hostname = opts.host
+// The flag wins over the environment, and an empty value means the system
+// opener.
+const openCmd = (opts.openCmd ?? process.env['SKEPSIS_OPEN']) || null
 
 function detectVcs(): 'jj' | 'git' {
   try {
@@ -256,6 +263,9 @@ const { port: apiPort } = await startServer({
 })
 
 function urlOpenCommand(url: string): { cmd: string; args: string[] } {
+  // "$1" rather than splicing the URL into the command, so the shell never
+  // parses it.
+  if (openCmd) return { cmd: 'sh', args: ['-c', `${openCmd} "$1"`, 'sh', url] }
   switch (process.platform) {
     case 'darwin':
       return { cmd: 'open', args: [url] }
@@ -284,9 +294,18 @@ if (opts.dev) {
 } else if (shouldAutoOpen) {
   const url = `http://localhost:${apiPort}`
   const { cmd, args } = urlOpenCommand(url)
-  const opener = spawn(cmd, args, { detached: true, stdio: 'ignore' })
-  // The URL is already printed on server startup, so a failed opener (e.g. no
-  // xdg-open on illumos) needs no message — swallow the error and carry on.
+  // A custom command's stderr shows, since a typo there is the user's to fix.
+  const opener = spawn(cmd, args, {
+    detached: true,
+    stdio: ['ignore', 'ignore', openCmd ? 'inherit' : 'ignore'],
+  })
+  // The URL is already printed on server startup, so a failed system opener
+  // (e.g. no xdg-open on illumos) needs no message — swallow the error and
+  // carry on.
   opener.on('error', () => {})
+  if (openCmd)
+    opener.on('exit', (code) => {
+      if (code) console.error(`The open command exited with status ${code}`)
+    })
   opener.unref()
 }
