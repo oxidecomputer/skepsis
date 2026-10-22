@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package example.registry.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "example.com/registry/v1;registryv1";
+
+// Lifecycle state of an instance.
+enum InstanceState {
+  INSTANCE_STATE_UNSPECIFIED = 0;
+  INSTANCE_STATE_CREATING = 1;
+  INSTANCE_STATE_RUNNING = 2;
+  INSTANCE_STATE_FAILED = 3;
+}
+
+message Instance {
+  uint32 id = 1;
+  string name = 2;
+  InstanceState state = 3;
+  google.protobuf.Timestamp created = 4;
+  repeated string tags = 5 [deprecated = true];
+  map<string, string> labels = 6;
+  oneof placement {
+    string sled_id = 7;
+    bool any = 8;
+  }
+}
+
+service Registry {
+  rpc GetInstance(GetInstanceRequest) returns (Instance);
+  rpc WatchInstances(WatchRequest) returns (stream Instance) {}
+}
+
+message GetInstanceRequest { uint32 id = 1; }
+message WatchRequest {}

@@ -1,0 +1,37 @@
+/* Checklist styles */
+@import url('https://fonts.example.com/inter.css');
+
+:root {
+  --surface: oklch(98% 0.01 250);
+  --accent: #3b82f6;
+  --radius: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface: oklch(22% 0.02 250);
+  }
+}
+
+.checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: calc(var(--radius) * 2);
+  background: var(--surface);
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+}
+
+.checklist li[data-done]::before {
+  content: '✓';
+  color: rgb(34 197 94 / 0.9);
+}
+
+.checklist > button:hover:not(:disabled) {
+  transform: translateY(-1px) !important;
+  transition: transform 120ms ease-out;
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

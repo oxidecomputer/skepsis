@@ -1,0 +1,37 @@
+# Runs on every push and pull request.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        toolchain: ['1.91', stable]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: rustup toolchain install ${{ matrix.toolchain }} --profile minimal
+      - name: Test
+        run: |
+          cargo nextest run --workspace
+          cargo test --doc
+        env:
+          SKIP_SLOW: true
+          RETRIES: 3
+      - &upload
+        name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: logs, path: target/nextest }

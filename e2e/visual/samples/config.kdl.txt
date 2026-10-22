@@ -1,0 +1,11 @@
+// Unsupported by Highlights: renders as plain text there.
+registry name="vms" max-entries=4096 {
+    listen "127.0.0.1:8080"
+    tls enabled=#false
+    instance id=1 name="web-1" {
+        ncpus 4
+        memory "16 GiB"
+        tags "web" "public"
+    }
+    /- instance id=2 name="disabled"
+}

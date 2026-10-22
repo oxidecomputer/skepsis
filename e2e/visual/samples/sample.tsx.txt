@@ -1,0 +1,40 @@
+import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+
+type Props = {
+  title: string
+  items: { id: number; label: string; done?: boolean }[]
+  footer?: ReactNode
+  onToggle: (id: number) => void
+}
+
+export function Checklist({ title, items, footer, onToggle }: Props) {
+  const [filter, setFilter] = useState<'all' | 'open'>('all')
+  const visible = useMemo(
+    () => (filter === 'all' ? items : items.filter((i) => !i.done)),
+    [filter, items],
+  )
+
+  return (
+    <section className="checklist" aria-label={title}>
+      <h2>
+        {title} <small>({visible.length})</small>
+      </h2>
+      {/* Toggle between all and open items */}
+      <button type="button" onClick={() => setFilter(filter === 'all' ? 'open' : 'all')}>
+        Show {filter === 'all' ? 'open' : 'all'}
+      </button>
+      <ul>
+        {visible.map((item) => (
+          <li key={item.id} data-done={item.done || undefined}>
+            <label>
+              <input type="checkbox" checked={!!item.done} onChange={() => onToggle(item.id)} />
+              {item.label}
+            </label>
+          </li>
+        ))}
+      </ul>
+      {footer && <footer style={{ opacity: 0.7, marginTop: 8 }}>{footer}</footer>}
+    </section>
+  )
+}

@@ -1,0 +1,10 @@
+; Unsupported by Highlights: renders as plain text there.
+[registry]
+name = vms
+max_entries = 4096
+listen = 127.0.0.1:8080
+
+[logging]
+level = info
+# file logging is off by default
+file =

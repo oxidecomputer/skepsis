@@ -1,0 +1,31 @@
+[package]
+name = "instance-registry"
+version = "0.3.1"
+edition = "2024"
+license = "MPL-2.0"
+description = """
+Bookkeeping for instance lifecycles.
+"""
+
+[features]
+default = ["tokio"]
+testing = []
+
+[dependencies]
+anyhow = "1.0"
+serde = { version = "1.0.210", features = ["derive"] }
+tokio = { version = "1", features = ["sync", "macros"], optional = true }
+
+[dev-dependencies]
+expectorate = "1.1"
+
+[[bin]]
+name = "registry"
+path = "src/main.rs"
+
+[profile.release]
+debug = true
+lto = 'thin'
+opt-level = 3
+overflow-checks = false
+build-date = 2026-10-22T00:00:00Z

@@ -1,0 +1,51 @@
+// Package registry serves instance state over HTTP.
+package registry
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+)
+
+// ErrFull is returned when the registry has no room.
+var ErrFull = errors.New("registry full")
+
+const maxEntries = 1 << 12
+
+type Instance struct {
+	ID      uint32    `json:"id"`
+	Name    string    `json:"name"`
+	Created time.Time `json:"created"`
+}
+
+type Registry struct {
+	mu      sync.RWMutex
+	entries map[uint32]Instance
+}
+
+func (r *Registry) Insert(inst Instance) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.entries) >= maxEntries {
+		return fmt.Errorf("insert %q: %w", inst.Name, ErrFull)
+	}
+	r.entries[inst.ID] = inst
+	return nil
+}
+
+func (r *Registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	list := make([]Instance, 0, len(r.entries))
+	for _, inst := range r.entries {
+		list = append(list, inst)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(list); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+	go func(n int) { _ = n }(len(list))
+}

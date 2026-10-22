@@ -1,0 +1,34 @@
+-- Instance registry schema.
+CREATE TYPE IF NOT EXISTS instance_state AS ENUM (
+    'creating',
+    'running',
+    'stopped',
+    'failed'
+);
+
+CREATE TABLE IF NOT EXISTS instance (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name STRING(63) NOT NULL,
+    state instance_state NOT NULL DEFAULT 'creating',
+    ncpus INT8 NOT NULL CHECK (ncpus > 0 AND ncpus <= 64),
+    memory_bytes INT8 NOT NULL,
+    time_created TIMESTAMPTZ NOT NULL DEFAULT now(),
+    time_deleted TIMESTAMPTZ,
+    /* soft-deleted rows keep their name reserved */
+    CONSTRAINT name_unique UNIQUE (name, time_deleted)
+);
+
+CREATE INDEX IF NOT EXISTS lookup_instance_by_state
+    ON instance (state) WHERE time_deleted IS NULL;
+
+SELECT
+    i.name,
+    count(*) AS n,
+    sum(i.memory_bytes) / (1024 * 1024 * 1024)::FLOAT AS gib
+FROM instance AS i
+LEFT JOIN instance_state_history h ON h.instance_id = i.id
+WHERE i.time_deleted IS NULL AND i.name LIKE 'web-%'
+GROUP BY i.name
+HAVING count(*) > 1
+ORDER BY gib DESC
+LIMIT 10;

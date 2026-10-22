@@ -1,0 +1,21 @@
+{
+  "name": "@example/checklist",
+  "version": "2.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A small checklist component",
+  "scripts": {
+    "build": "tsc -p . && vite build",
+    "test": "vitest run --reporter=dot"
+  },
+  "engines": { "node": ">=22" },
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "vitest": "^4.0.1"
+  },
+  "workspaces": [],
+  "config": { "port": 5173, "open": true, "proxy": null, "ratio": 0.75 }
+}

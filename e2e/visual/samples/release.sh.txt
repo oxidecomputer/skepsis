@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Tag and publish a release.
+set -euo pipefail
+
+VERSION="${1:?usage: release.sh <version>}"
+ROOT="$(git rev-parse --show-toplevel)"
+readonly DRY_RUN=${DRY_RUN:-0}
+
+log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
+
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  log "bad version: $VERSION"
+  exit 1
+fi
+
+cd "$ROOT"
+for f in package.json Cargo.toml; do
+  [ -f "$f" ] || continue
+  sed -i.bak "s/^version = .*/version = \"$VERSION\"/" "$f" && rm -f "$f.bak"
+done
+
+case "$(uname -s)" in
+  Darwin) OPEN=open ;;
+  Linux) OPEN=xdg-open ;;
+  *) OPEN=true ;;
+esac
+
+if (( DRY_RUN )); then
+  log "would tag v$VERSION"
+else
+  git tag -a "v$VERSION" -m "Release $VERSION" && git push origin "v$VERSION"
+fi
+cat <<MSG
+Released $VERSION from $(git rev-parse --short HEAD)
+MSG
+$OPEN "https://example.com/releases/v$VERSION" 2>/dev/null || true

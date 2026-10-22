@@ -1,0 +1,61 @@
+/*
+ * Copyright Example Co.
+ */
+
+import { readFile } from 'node:fs/promises'
+import type { Stats } from 'node:fs'
+
+export type Side = 'additions' | 'deletions'
+
+export interface Comment<T = unknown> {
+  readonly file: string
+  side: Side
+  lines: [start: number, end: number]
+  text: string
+  meta?: T
+}
+
+const MAX_BYTES = 64 * 1024
+const pattern = /^(?<name>[\w.-]+)@(?<version>\d+\.\d+\.\d+)$/u
+
+enum Level {
+  Debug = 'debug',
+  Info = 'info',
+}
+
+/** Read a file and return its first `n` lines. */
+export async function head(path: string, n = 10): Promise<string[]> {
+  const text = await readFile(path, 'utf8')
+  return text.split('\n').slice(0, n)
+}
+
+export class Queue<T extends object> {
+  #items: T[] = []
+  private static count = 0
+
+  constructor(private readonly name: string) {
+    Queue.count += 1
+  }
+
+  push(item: T): this {
+    this.#items.push(item)
+    return this
+  }
+
+  get size(): number {
+    return this.#items.length
+  }
+
+  async *drain(): AsyncGenerator<T, void, undefined> {
+    while (this.#items.length > 0) yield this.#items.shift()!
+  }
+}
+
+export function describe(stats: Stats | null, level = Level.Info): string {
+  if (!stats) return `missing (${level})`
+  const kind = stats.isDirectory() ? 'dir' : stats.isFile() ? 'file' : 'other'
+  return `${kind}, ${(stats.size / 1024).toFixed(1)} KiB` satisfies string
+}
+
+export const parse = (s: string) => pattern.exec(s)?.groups ?? null
+void MAX_BYTES

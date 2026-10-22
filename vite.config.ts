@@ -32,6 +32,10 @@ export default defineConfig({
   build: {
     outDir: 'dist/web',
   },
+  // The highlighter worker loads languages and themes with dynamic imports.
+  // The default IIFE format can't code-split, so it would inline every one
+  // of them (11 MB); ES module workers keep them as lazy chunks.
+  worker: { format: 'es' },
   server: {
     proxy: {
       '/api': `http://${apiHost}:${apiPort}`,

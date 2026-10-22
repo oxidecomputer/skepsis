@@ -1,0 +1,47 @@
+"""Summarize instance usage from a CSV export."""
+
+from __future__ import annotations
+
+import csv
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable
+
+GIB = 1024**3
+
+
+@dataclass(frozen=True)
+class Row:
+    name: str
+    ncpus: int
+    memory: int = 0
+    tags: list[str] = field(default_factory=list)
+
+    @property
+    def gib(self) -> float:
+        return self.memory / GIB
+
+
+def read_rows(path: Path) -> Iterable[Row]:
+    with path.open(newline="") as f:
+        for record in csv.DictReader(f):
+            yield Row(record["name"], int(record["ncpus"]), int(record.get("memory", 0)))
+
+
+async def main(argv: list[str]) -> int:
+    if len(argv) < 2:
+        print(f"usage: {argv[0]} <csv>", file=sys.stderr)
+        return 2
+    rows = sorted(read_rows(Path(argv[1])), key=lambda r: (-r.ncpus, r.name))
+    total = sum(r.gib for r in rows)
+    for row in rows[:10]:
+        print(f"{row.name:<20} {row.ncpus:>3} {row.gib:8.2f} GiB")
+    print(rf"total: {total:.1f} GiB \o/", end="\n")
+    return 0 if rows else 1
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    raise SystemExit(asyncio.run(main(sys.argv)))

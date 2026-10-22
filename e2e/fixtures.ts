@@ -77,7 +77,16 @@ function startCli(dir: string, home: string): Promise<{ proc: ChildProcess; url:
   })
 }
 
-export const test = base.extend<{ repo: Repo }>({
+/** What the temp repo holds: `committed` in its one commit, `working` written
+ *  on top. Files only in `working` are added with intent-to-add, so they show
+ *  in the diff as new files. */
+export type RepoFiles = {
+  committed: Record<string, string>
+  working: Record<string, string>
+}
+
+export const test = base.extend<{ repo: Repo; repoFiles: RepoFiles }>({
+  repoFiles: [{ committed: COMMITTED, working: WORKING }, { option: true }],
   launchOptions: async ({ browserName, launchOptions }, provide) => {
     if (browserName !== 'firefox') {
       await provide(launchOptions)
@@ -97,7 +106,7 @@ export const test = base.extend<{ repo: Repo }>({
   },
   // auto: every test gets a server even if it never touches `repo`.
   repo: [
-    async ({ page }, use) => {
+    async ({ page, repoFiles }, use) => {
       const dir = await mkdtemp(join(tmpdir(), 'skepsis-e2e-repo-'))
       const home = await mkdtemp(join(tmpdir(), 'skepsis-e2e-home-'))
       await writeFile(
@@ -117,10 +126,11 @@ export const test = base.extend<{ repo: Repo }>({
 
       // A `main` branch is what the CLI's default diff resolves as trunk.
       await git('init', '-q', '-b', 'main')
-      await writeFiles(dir, COMMITTED)
+      await writeFiles(dir, repoFiles.committed)
       await git('add', '.')
-      await git('commit', '-qm', 'init')
-      await writeFiles(dir, WORKING)
+      await git('commit', '-qm', 'init', '--allow-empty')
+      await writeFiles(dir, repoFiles.working)
+      await git('add', '--intent-to-add', '.')
 
       const { proc, url } = await startCli(dir, home)
       await page.goto(url)

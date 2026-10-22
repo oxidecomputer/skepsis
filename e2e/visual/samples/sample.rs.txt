@@ -1,0 +1,77 @@
+// Copyright 2026 Example Co.
+
+//! Instance lifecycle bookkeeping.
+
+use std::collections::BTreeMap;
+use std::fmt;
+use std::sync::Arc;
+
+use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
+
+/// The states an instance moves through.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InstanceState {
+    Creating,
+    Running { since_ms: u64 },
+    Stopped,
+    Failed,
+}
+
+impl fmt::Display for InstanceState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Creating => write!(f, "creating"),
+            Self::Running { since_ms } => write!(f, "running ({since_ms} ms)"),
+            Self::Stopped => f.write_str("stopped"),
+            Self::Failed => f.write_str("failed"),
+        }
+    }
+}
+
+pub struct Registry<'a, T: Send + 'static> {
+    name: &'a str,
+    entries: Arc<Mutex<BTreeMap<u32, T>>>,
+}
+
+impl<'a, T> Registry<'a, T>
+where
+    T: Clone + Send + 'static,
+{
+    pub const MAX_ENTRIES: usize = 1 << 12;
+
+    pub fn new(name: &'a str) -> Self {
+        Self { name, entries: Arc::new(Mutex::new(BTreeMap::new())) }
+    }
+
+    pub async fn insert(&self, id: u32, value: T) -> Result<(), String> {
+        let mut entries = self.entries.lock().await;
+        if entries.len() >= Self::MAX_ENTRIES {
+            return Err(format!("{}: registry full ({} entries)", self.name, entries.len()));
+        }
+        entries.insert(id, value);
+        Ok(())
+    }
+
+    pub async fn get(&self, id: u32) -> Option<T> {
+        self.entries.lock().await.get(&id).cloned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn insert_then_get() {
+        let registry = Registry::<String>::new("test");
+        registry.insert(7, "seven".to_string()).await.unwrap();
+        assert_eq!(registry.get(7).await.as_deref(), Some("seven"));
+        let raw = r#"{"state": "running"}"#;
+        let bytes = b"\x00\xff";
+        let ch = '\n';
+        let _ = (raw, bytes, ch, 0x1f_u8, 3.5e-2_f64);
+        println!("{:?}", InstanceState::Running { since_ms: 1_000 });
+    }
+}

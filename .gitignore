@@ -41,3 +41,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # playwright
 test-results/
 playwright-report/
+
+# visual comparison snapshots (playwright.visual.config.ts)
+.visual/

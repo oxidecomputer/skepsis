@@ -25,7 +25,13 @@ import {
 } from 'react'
 import type { ReactElement } from 'react'
 import { Tooltip } from '@base-ui/react/tooltip'
-import { parsePatchFiles, parseDiffFromFile } from '@pierre/diffs'
+import {
+  canUseWASM,
+  parsePatchFiles,
+  parseDiffFromFile,
+  registerCustomTheme,
+} from '@pierre/diffs'
+import type { ThemeSyntaxSettings } from '@pierre/highlights'
 import { CodeView, WorkerPoolContextProvider } from '@pierre/diffs/react'
 import type { CodeViewHandle } from '@pierre/diffs/react'
 import { FileTree, useFileTree } from '@pierre/trees/react'
@@ -39,6 +45,7 @@ import type {
   CodeViewOptions,
   DiffLineAnnotation,
   FileDiffMetadata,
+  HighlighterTypes,
   LineAnnotation,
   SelectedLineRange,
 } from '@pierre/diffs'
@@ -62,10 +69,68 @@ import {
 
 const queryClient = new QueryClient()
 
-// Always the dual theme: Shiki tokenizes both up front and switching themes is
-// purely a CSS flip (a single theme would retokenize on every toggle). Shared
-// with the worker pool's highlighter, which is initialized separately.
+// Always the dual theme: the highlighter tokenizes both up front and switching
+// themes is purely a CSS flip (a single theme would retokenize on every
+// toggle). Shared with the worker pool's highlighter, which is initialized
+// separately.
 const DIFF_THEME = { light: 'github-light-default', dark: 'github-dark-default' } as const
+
+// Highlights' port of the light theme disagrees with its dark one: properties
+// (YAML keys, TOML tables, TSX object keys) come out in the plain text color,
+// and types, constructors and titles take other hues. So for Highlights, build
+// the light theme's syntax colors from the dark theme's, each mapped to its
+// counterpart in GitHub's light palette. Font styles from either side are kept.
+// Registered under the same name as a Zed theme, it replaces the bundled one for
+// Highlights only; Shiki loads its own. Themes are resolved on the main thread
+// and sent to the workers, so this reaches them too.
+const LIGHT_FOR_DARK: Record<string, string> = {
+  '#ffa657': '#953800', // orange
+  '#79c0ff': '#0550ae', // blue
+  '#7ee787': '#116329', // green
+  '#ff7b72': '#cf222e', // red
+  '#d2a8ff': '#8250df', // purple
+  '#a5d6ff': '#0a3069', // strings
+  '#e6edf3': '#1f2328', // text
+  '#8b949e': '#59636e', // comments
+  '#7d8590': '#59636e', // hints
+  '#ffa198': '#82071e', // diff.minus
+}
+
+const syntaxSettings = (
+  s: string | ThemeSyntaxSettings | undefined,
+): ThemeSyntaxSettings => (typeof s === 'string' ? { color: s } : (s ?? {}))
+
+registerCustomTheme(
+  DIFF_THEME.light,
+  async () => {
+    const [{ default: light }, { default: dark }] = await Promise.all([
+      import('@pierre/highlights/themes/github-light-default'),
+      import('@pierre/highlights/themes/github-dark-default'),
+    ])
+    const syntax: Record<string, ThemeSyntaxSettings> = {}
+    for (const key of new Set([
+      ...Object.keys(light.style.syntax ?? {}),
+      ...Object.keys(dark.style.syntax ?? {}),
+    ])) {
+      // A key only the light theme has loses its color, so it falls back to
+      // its parent scope the way it does in dark
+      const { color: _, ...lightFont } = syntaxSettings(light.style.syntax?.[key])
+      const { color, ...darkFont } = syntaxSettings(dark.style.syntax?.[key])
+      const mapped = color && LIGHT_FOR_DARK[color.toLowerCase()]
+      if (color && !mapped) console.warn(`No light color for ${color} (${key})`)
+      syntax[key] = { ...lightFont, ...darkFont, ...(mapped && { color: mapped }) }
+    }
+    return { ...light, style: { ...light.style, syntax } }
+  },
+  'zed',
+)
+
+// Highlights (WASM lexers, beta in @pierre/diffs 1.6) rather than the default
+// Shiki. It has fewer languages (about 80); the rest render as plain text, with
+// no fallback to Shiki, since one highlighter serves the whole page. Like the
+// theme, this has to reach both the CodeView options and the worker pool.
+// canUseWASM also requires SIMD, which every current browser has.
+const HIGHLIGHTER: HighlighterTypes = canUseWASM() ? 'highlights' : 'shiki-js'
 
 // The /api/theme.js boot script in index.html stamps the stored theme
 // preference onto <html> as data-theme before this bundle loads, so CSS pins
@@ -1724,6 +1789,7 @@ function DiffView() {
   const renderAnnotation = useCallback(
     (
       annotation: LineAnnotation<AnnotationMeta> | DiffLineAnnotation<AnnotationMeta>,
+      _fileOrDiff: unknown,
       item: CodeViewItem<AnnotationMeta>,
     ) => {
       const meta = annotation.metadata
@@ -1795,6 +1861,7 @@ function DiffView() {
       // following the OS).
       theme: DIFF_THEME,
       themeType: theme,
+      preferredHighlighter: HIGHLIGHTER,
       diffStyle,
       // The library lays out collapsed files (and unmeasured estimates) from
       // these metrics rather than the DOM. Its diffHeaderHeight default (44)
@@ -2228,18 +2295,18 @@ function DiffView() {
   )
 }
 
-// Without this provider CodeView's worker pool is undefined and Shiki
-// tokenizes on the main thread, which stalls the UI for hundreds of ms every
-// time a big file's virtualization window moves (TextMate tokenization has to
-// walk the file from the top to reach the window). The pool's highlighter is
-// initialized separately from the CodeView options, so it needs the same theme
-// pair — miss it and the workers hand back tokens in the library's default
-// theme.
+// Without this provider CodeView's worker pool is undefined and highlighting
+// runs on the main thread, which stalled the UI for hundreds of ms every time a
+// big file's virtualization window moved under Shiki (TextMate tokenization
+// has to walk the file from the top to reach the window). The pool's
+// highlighter is initialized separately from the CodeView options, so it needs
+// the same theme pair and highlighter — miss the theme and the workers hand
+// back tokens in the library's default theme.
 const poolOptions = {
   workerFactory: () => new DiffsHighlightWorker(),
   poolSize: 2,
 }
-const highlighterOptions = { theme: DIFF_THEME }
+const highlighterOptions = { theme: DIFF_THEME, preferredHighlighter: HIGHLIGHTER }
 
 export function App() {
   return (
