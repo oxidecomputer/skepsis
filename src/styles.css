@@ -844,6 +844,18 @@ body,
   background: var(--bg-control-hover);
 }
 
+/* Green tint for a primary action that shouldn't shout, like Refresh in the
+   diff-changed toast */
+.btn-tinted {
+  background: color-mix(in oklab, var(--green) 14%, transparent);
+  border: 1px solid color-mix(in oklab, var(--green) 40%, transparent);
+  color: var(--green-text);
+}
+
+.btn-tinted:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--green) 22%, transparent);
+}
+
 .btn-primary {
   background: var(--green);
   border: 1px solid transparent;
@@ -962,8 +974,124 @@ body,
   }
 }
 
-/* Comments-disabled banner. Blue-tinted info surface: a low-chroma --blue wash
-   over the canvas, with text and links climbing the --blue lightness ramp. */
+/* Diff-changed toast: floats centered on the header bar, like .toast, until
+   Refresh. The file list hangs below the summary row in the same card, so
+   the card is placed by its row (top border + half the row's fixed height)
+   rather than centered as a whole, and the list grows it downward only. Below .toast, which can briefly cover it. */
+.diff-changed-toast {
+  --row-height: 38px;
+  position: absolute;
+  top: calc(50% - 1px - var(--row-height) / 2);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 190;
+  /* left: 50% leaves only half the bar to shrink-wrap into */
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px light-dark(oklch(0% 0 0 / 0.1), oklch(0% 0 0 / 0.4));
+  color: var(--fg-bright);
+  font-size: 13px;
+  animation: diff-changed-in 0.18s ease-out;
+}
+
+@keyframes diff-changed-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* With no header bar (an empty diff), a bar-height strip to center in */
+.diff-changed-standalone {
+  height: 56px;
+}
+
+.diff-changed-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--row-height);
+  box-sizing: border-box;
+  padding: 0 6px 0 14px;
+}
+
+.diff-changed-summary {
+  display: flex;
+  /* Baseline, not center: the counts are a smaller mono font, whose box
+     centers a pixel higher than the label's text */
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.diff-changed-count {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+.diff-changed-row .btn {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.diff-changed-row .btn kbd {
+  margin-left: 4px;
+  padding: 0 4px;
+  border: 1px solid color-mix(in oklab, currentColor 45%, transparent);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.line-counts {
+  display: inline-flex;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.diff-changed-files {
+  /* The summary row sets the card's width, so the list doesn't widen it:
+     long paths truncate instead, and a big change scrolls, about 15 rows at
+     most */
+  contain: inline-size;
+  max-height: min(40vh, 340px);
+  list-style: none;
+  margin: 0;
+  padding: 6px 14px 8px;
+  border-top: 1px solid var(--border);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.diff-changed-files li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.diff-changed-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: auto;
+}
+
+.diff-changed-status {
+  color: var(--fg-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Comments-disabled banner. Blue-tinted info surface: a low-chroma --blue
+   wash over the canvas, with text and links climbing the --blue lightness
+   ramp. */
 .comments-disabled-banner {
   background: color-mix(in oklab, var(--blue) 16%, var(--bg-canvas));
   border-bottom: 1px solid color-mix(in oklab, var(--blue) 32%, var(--bg-canvas));

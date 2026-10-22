@@ -34,6 +34,7 @@ const program = new Command()
   .option('--host <address>', 'address to bind the HTTP server to', 'localhost')
   .option('-p, --port <number>', 'port for the browser UI (default: a free one)', parsePort)
   .option('--no-open', "don't open a browser")
+  .option('--no-poll', "don't check for changes to the diff while the page is open")
   .argument('[files...]', 'Limit diff to these paths (passed through to jj/git)')
   .addHelpText(
     'after',
@@ -248,6 +249,7 @@ const { port: apiPort } = await startServer({
   cwd,
   hostname,
   port: opts.dev ? undefined : opts.port,
+  poll: opts.poll,
 }).catch((err: Error) => {
   console.error(err.message)
   return cleanup(1)

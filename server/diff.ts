@@ -114,6 +114,12 @@ export async function getDiff(
   return { patch, fileHashes: extractFileHashes(patch) }
 }
 
+/** A short content hash of the whole patch, so the page can ask whether the
+ *  diff changed without fetching it. */
+export function patchHash(patch: string): string {
+  return createHash('sha1').update(patch).digest('hex').slice(0, 12)
+}
+
 /**
  * Extract newObjectId per file from the git diff's index lines.
  * Format: "diff --git a/<path> b/<path>" followed by "index <old>..<new> <mode>".

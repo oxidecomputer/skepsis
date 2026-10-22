@@ -51,6 +51,7 @@ import type {
 } from '@pierre/diffs'
 import { THEME_MODES } from '../shared/types.ts'
 import type {
+  DiffHashResponse,
   DiffResponse,
   ErrorResponse,
   FileContentsResponse,
@@ -66,6 +67,7 @@ import {
   REVIEW_CLOSE_PATTERN,
   REVIEW_OPEN_PATTERN,
 } from '../shared/reviewComments.ts'
+import { diffChanges, type FileChange } from './diffChanges.ts'
 
 const queryClient = new QueryClient()
 
@@ -130,6 +132,10 @@ registerCustomTheme(
 // theme, this has to reach both the CodeView options and the worker pool.
 // canUseWASM also requires SIMD, which every current browser has.
 const HIGHLIGHTER: HighlighterTypes = canUseWASM() ? 'highlights' : 'shiki-js'
+
+// How often the page asks /api/diff-hash whether the diff changed on disk.
+// The e2e tests shorten it with ?poll-ms=.
+const POLL_MS = Number(new URLSearchParams(window.location.search).get('poll-ms')) || 4000
 
 // The /api/theme.js boot script in index.html stamps the stored theme
 // preference onto <html> as data-theme before this bundle loads, so CSS pins
@@ -501,12 +507,18 @@ function Button({ variant = 'secondary', onClick, disabled, children }: ButtonPr
 // --- Comment form ---
 
 function CommentForm({
+  initialText,
+  onTextChange,
   onSubmit,
   onCancel,
   submitting,
   error,
   syntax,
 }: {
+  /** The draft to start from. The form remounts when the diff refetches, so
+   *  the parent keeps the text and hands it back. */
+  initialText: string
+  onTextChange: (text: string) => void
   onSubmit: (text: string) => void
   onCancel: () => void
   submitting: boolean
@@ -515,7 +527,7 @@ function CommentForm({
    *  no comment syntax; null: unrecognized file type. Both insert bare. */
   syntax: CommentSyntax | null
 }) {
-  const [text, setText] = useState('')
+  const [text, setText] = useState(initialText)
   // useEffect instead of a function ref because the function ref didn't
   // actually focus the textarea on open.
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -534,7 +546,10 @@ function CommentForm({
       <textarea
         ref={ref}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value)
+          onTextChange(e.target.value)
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault()
@@ -1072,6 +1087,7 @@ const SHORTCUTS: [string, string][] = [
   ['b', 'Toggle file tree'],
   ['⌘K / Ctrl+K', 'Search files'],
   ['c', 'Comment on line'],
+  ['r', 'Refresh after the diff changes on disk'],
   ['Esc', 'Close / cancel'],
   ['?', 'Toggle this help'],
 ]
@@ -1162,6 +1178,69 @@ function CommentsDisabledBanner({
   )
 }
 
+/** Floats on the header bar while the diff on disk differs from the one on
+ *  screen, listing the files that changed. `changes` is null until the newer
+ *  diff has loaded. */
+function DiffChangedToast({
+  changes,
+  onRefresh,
+}: {
+  changes: FileChange[] | null
+  onRefresh: () => void
+}) {
+  let additions = 0
+  let deletions = 0
+  for (const c of changes ?? []) {
+    additions += c.additions
+    deletions += c.deletions
+  }
+  return (
+    <div className="diff-changed-toast" role="status">
+      <div className="diff-changed-row">
+        <span className="diff-changed-summary">
+          The diff changed on disk
+          {changes && changes.length > 0 && (
+            <>
+              <span className="diff-changed-count">
+                {changes.length} {changes.length === 1 ? 'file' : 'files'}
+              </span>
+              <LineCounts additions={additions} deletions={deletions} />
+            </>
+          )}
+        </span>
+        <button type="button" className="btn btn-tinted" onClick={onRefresh}>
+          Refresh <kbd>r</kbd>
+        </button>
+      </div>
+      {changes && changes.length > 0 && (
+        <ul className="diff-changed-files">
+          {changes.map((c) => (
+            <li key={c.name}>
+              <span className="diff-changed-name">{c.name}</span>
+              {c.status !== 'changed' && (
+                <span className="diff-changed-status">
+                  {c.status === 'added' ? 'new in diff' : 'gone from diff'}
+                </span>
+              )}
+              <LineCounts additions={c.additions} deletions={c.deletions} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** +/- line counts, as in the file header; zeros are left out. */
+function LineCounts({ additions, deletions }: { additions: number; deletions: number }) {
+  return (
+    <span className="line-counts">
+      {additions > 0 && <span className="stat-add">+{additions}</span>}
+      {deletions > 0 && <span className="stat-del">-{deletions}</span>}
+    </span>
+  )
+}
+
 type SplitMode = 'responsive' | 'unified'
 const SPLIT_CYCLE: SplitMode[] = ['responsive', 'unified']
 
@@ -1208,14 +1287,52 @@ function DiffView() {
   // Files the user expanded via the header's expand-all-lines button: these are
   // re-parsed with whole-file context so every collapsed region is revealed.
   const [expandedFiles, setExpandedFiles] = useState<Record<string, boolean>>({})
-  const [composing, setComposing] = useState<{
+  // The comment box the user opened. What's shown is `composing`, below,
+  // which drops it while its line is missing from the diff.
+  const [composingState, setComposing] = useState<{
     file: string
     line: number
   } | null>(null)
+  // The open comment box's text, keyed by its file and line. A refetched diff
+  // remounts the box, and it starts again from this.
+  const draftRef = useRef({ key: '', text: '' })
   const seededFromInitialLoad = useRef(false)
+  const qc = useQueryClient()
   const { data, error, isLoading } = useQuery({
     queryKey: ['diff'],
+    queryFn: async () => {
+      const diff = await apiFetch<DiffResponse>('/api/diff')
+      // The last poll's hash can predate the page's own writes (a comment),
+      // which would raise the banner until the next poll, and a poll still in
+      // flight can land after this with the old hash. This diff is at least
+      // as fresh as either, so it stands in for both.
+      await qc.cancelQueries({ queryKey: ['diff-hash'] })
+      qc.setQueryData<DiffHashResponse>(['diff-hash'], { hash: diff.patchHash })
+      return diff
+    },
+    // Coming back to the tab refetches the hash below, which raises the
+    // banner. Swapping the diff in place would change it under the reader.
+    refetchOnWindowFocus: false,
+  })
+
+  // Ask whether the diff changed while the page is visible (React Query skips
+  // the interval while the document is hidden, and refetches as soon as it's
+  // visible again). This only raises the banner; the diff itself waits for
+  // Refresh.
+  const { data: hashData } = useQuery({
+    queryKey: ['diff-hash'],
+    queryFn: () => apiFetch<DiffHashResponse>('/api/diff-hash'),
+    enabled: data?.poll === true,
+    refetchInterval: POLL_MS,
+  })
+  const diffChanged = !!data && !!hashData && hashData.hash !== data.patchHash
+  const refreshDiff = useCallback(() => qc.invalidateQueries({ queryKey: ['diff'] }), [qc])
+  // The newer diff, fetched on the side so the toast can say what changed
+  // without replacing the one on screen.
+  const { data: nextDiff } = useQuery({
+    queryKey: ['diff-preview', hashData?.hash],
     queryFn: () => apiFetch<DiffResponse>('/api/diff'),
+    enabled: diffChanged,
   })
 
   useEffect(() => {
@@ -1234,8 +1351,6 @@ function DiffView() {
     }
     setCollapsed(initial)
   }, [data])
-
-  const qc = useQueryClient()
 
   // Server-persisted so the preference survives the per-run ephemeral port (a
   // fresh browser origin every run, which defeats web storage) and reaches
@@ -1350,6 +1465,14 @@ function DiffView() {
       treeStatus: status,
     }
   }, [patch])
+  const nextPatch = nextDiff?.patch
+  const changes = useMemo(() => {
+    if (nextPatch === undefined) return null
+    const parse = (p: string) => parsePatchFiles(p).flatMap((x) => x.files)
+    return diffChanges(parse(patch ?? ''), parse(nextPatch)).toSorted((a, b) =>
+      compareTreeOrder(a.name, b.name),
+    )
+  }, [patch, nextPatch])
 
   // Hunk expansion needs "non-partial" diffs built from full file contents: the
   // library reads revealed lines straight out of the full content arrays. It
@@ -1457,6 +1580,32 @@ function DiffView() {
     }
     return map
   }, [files])
+
+  // A refetched diff can drop the open comment box's line, or its whole
+  // file. Hide the box then: an open box blocks most shortcuts, and there's
+  // nowhere left to show it. If the line comes back, so does the box and its
+  // draft. A partial diff only knows the lines in its hunks; a whole-file one
+  // (needed for hunk expansion, which lets the box open on an expanded line)
+  // knows them all.
+  const composing = useMemo(() => {
+    if (!composingState) return null
+    const { file, line } = composingState
+    const fileDiff = files.find((f) => f.name === file)
+    if (!fileDiff) return null
+    const exists = fileDiff.isPartial
+      ? fileLines.get(file)?.includes(line)
+      : line <= fileDiff.additionLines.length
+    return exists ? composingState : null
+  }, [composingState, files, fileLines])
+  const composingHidden = composingState !== null && composing === null
+  useEffect(() => {
+    if (composingHidden && draftRef.current.text.trim())
+      showToast('Comment box hidden: its line left the diff')
+  }, [composingHidden, showToast])
+  // Cancel and submit clear the draft, so reopening the same line starts empty.
+  useEffect(() => {
+    if (!composingState) draftRef.current = { key: '', text: '' }
+  }, [composingState])
 
   // j/k line cursor: a (file, line) position on the additions side. Rendered
   // through CodeView's native line selection (see effect below) so cursor
@@ -1807,8 +1956,13 @@ function DiffView() {
         )
       }
       if (meta.type === 'composing') {
+        const draftKey = `${file}:${annotation.lineNumber}`
         return (
           <CommentForm
+            initialText={draftRef.current.key === draftKey ? draftRef.current.text : ''}
+            onTextChange={(text) => {
+              draftRef.current = { key: draftKey, text }
+            }}
             onSubmit={(text) =>
               commentMutation.mutate({
                 file,
@@ -2108,6 +2262,11 @@ function DiffView() {
           e.preventDefault()
           setShowHelp((v) => !v)
           break
+        case 'r':
+          if (showHelp || !diffChanged) break
+          e.preventDefault()
+          void refreshDiff()
+          break
         case 'Escape':
           if (showHelp) {
             e.preventDefault()
@@ -2195,6 +2354,8 @@ function DiffView() {
     setTreeOpen,
     toggleTree,
     toggleTheme,
+    diffChanged,
+    refreshDiff,
   ])
 
   // Error before loading: on a failed fetch react-query settles with `data`
@@ -2204,9 +2365,16 @@ function DiffView() {
   if (data.error) return <pre style={{ color: 'red', padding: 20 }}>{data.error}</pre>
   if (!patch)
     return (
-      <div className="empty-diff">
-        <code>{data.revset}</code> is empty
-      </div>
+      <>
+        {diffChanged && (
+          <div className="header-row diff-changed-standalone">
+            <DiffChangedToast changes={changes} onRefresh={refreshDiff} />
+          </div>
+        )}
+        <div className="empty-diff">
+          <code>{data.revset}</code> is empty
+        </div>
+      </>
     )
 
   const { fileHashes } = data
@@ -2250,6 +2418,7 @@ function DiffView() {
               {toast.content}
             </div>
           )}
+          {diffChanged && <DiffChangedToast changes={changes} onRefresh={refreshDiff} />}
         </div>
         {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
         {showCommentsInfo && (

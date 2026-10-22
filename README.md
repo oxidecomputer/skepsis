@@ -106,6 +106,12 @@ The CLI starts a local HTTP server that shells out to `jj diff`
 or `git diff`, then serves the diff to a React frontend that uses
 [`@pierre/diffs`](https://diffs.com/) to render it with syntax highlighting.
 
+While the page is visible, it reruns the diff every few seconds, and when the
+diff has changed, shows a toast with a Refresh button (or press `r`). It
+lists which files changed and by how many lines. The diff doesn't change
+under you on its own, except when the window regains focus. Pass `--no-poll`
+to turn this off.
+
 The npm package ships compiled CLI/server JavaScript plus a prebuilt frontend
 bundle, so installing or running with `npx` does not build anything. In dev
 mode (`--dev`), a Vite dev server runs alongside the API server with hot

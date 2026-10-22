@@ -13,7 +13,7 @@ import { zValidator } from '@hono/zod-validator'
 import { join, relative } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
-import { getDiff } from './diff.ts'
+import { getDiff, patchHash } from './diff.ts'
 import { displayCommand } from './displayCommand.ts'
 import { getFileContents } from './fileContents.ts'
 import { loadViewed, markViewed, unmarkViewed, unmarkViewedAll } from './viewed.ts'
@@ -30,6 +30,7 @@ import {
   themeRequestSchema,
 } from '../shared/types.ts'
 import type {
+  DiffHashResponse,
   DiffResponse,
   FileContentsResponse,
   OkResponse,
@@ -42,8 +43,10 @@ export async function startServer(opts: {
   port?: number
   hostname?: string
   cwd: string
+  /** Serve /api/diff-hash for the page's change polling. Default true. */
+  poll?: boolean
 }): Promise<{ port: number; close: () => void }> {
-  const { diffSource, port = 0, hostname = 'localhost', cwd } = opts
+  const { diffSource, port = 0, hostname = 'localhost', cwd, poll = true } = opts
   // Fail fast on bad args by running the exact diff command we'll serve.
   // Result is discarded: /api/diff re-runs it per request to stay fresh.
   await getDiff(diffSource)
@@ -63,9 +66,28 @@ export async function startServer(opts: {
       commentsEnabled: diffSource.commentsEnabled,
       expandable: diffSource.endpoints !== null,
       fileHashes,
+      patchHash: patchHash(patch),
+      poll,
       viewed,
       commentSyntaxes,
     } satisfies DiffResponse)
+  })
+
+  // Polled every few seconds while the page is visible. Requests that arrive
+  // while a diff is running share its result rather than starting another, so
+  // several tabs, or a diff slower than the interval, never pile up. /api/diff
+  // doesn't share: it follows the page's own edits (a comment), and a poll
+  // that started before the edit would hand back the old patch.
+  let hashInFlight: Promise<string> | null = null
+  app.get('/api/diff-hash', async (c) => {
+    if (!poll)
+      return c.json({ error: 'polling is off (--no-poll)' } satisfies ErrorResponse, 404)
+    hashInFlight ??= getDiff(diffSource)
+      .then(({ patch }) => patchHash(patch))
+      .finally(() => {
+        hashInFlight = null
+      })
+    return c.json({ hash: await hashInFlight } satisfies DiffHashResponse)
   })
 
   app.get('/api/file-contents', zValidator('query', fileContentsQuerySchema), async (c) => {

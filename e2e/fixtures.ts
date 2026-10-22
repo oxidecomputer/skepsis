@@ -49,10 +49,14 @@ const writeFiles = (dir: string, files: Record<string, string>) =>
   )
 
 /** Spawn the CLI in `dir` and resolve with the URL it prints on startup. */
-function startCli(dir: string, home: string): Promise<{ proc: ChildProcess; url: string }> {
+function startCli(
+  dir: string,
+  home: string,
+  args: string[],
+): Promise<{ proc: ChildProcess; url: string }> {
   return new Promise((resolve, reject) => {
     // No --port means an ephemeral one, so parallel tests can't collide.
-    const proc = spawn('node', [CLI, '--git', '--no-open'], {
+    const proc = spawn('node', [CLI, '--git', '--no-open', ...args], {
       cwd: dir,
       env: {
         ...process.env,
@@ -85,8 +89,18 @@ export type RepoFiles = {
   working: Record<string, string>
 }
 
-export const test = base.extend<{ repo: Repo; repoFiles: RepoFiles }>({
+export const test = base.extend<{
+  repo: Repo
+  repoFiles: RepoFiles
+  /** Extra CLI arguments. */
+  cliArgs: string[]
+  /** How often the page polls for diff changes, in ms. Unset, the app's own
+   *  interval, which is too slow to wait for in a test. */
+  pollMs: number | undefined
+}>({
   repoFiles: [{ committed: COMMITTED, working: WORKING }, { option: true }],
+  cliArgs: [[], { option: true }],
+  pollMs: [undefined, { option: true }],
   launchOptions: async ({ browserName, launchOptions }, provide) => {
     if (browserName !== 'firefox') {
       await provide(launchOptions)
@@ -106,7 +120,7 @@ export const test = base.extend<{ repo: Repo; repoFiles: RepoFiles }>({
   },
   // auto: every test gets a server even if it never touches `repo`.
   repo: [
-    async ({ page, repoFiles }, use) => {
+    async ({ page, repoFiles, cliArgs, pollMs }, use) => {
       const dir = await mkdtemp(join(tmpdir(), 'skepsis-e2e-repo-'))
       const home = await mkdtemp(join(tmpdir(), 'skepsis-e2e-home-'))
       await writeFile(
@@ -132,8 +146,8 @@ export const test = base.extend<{ repo: Repo; repoFiles: RepoFiles }>({
       await writeFiles(dir, repoFiles.working)
       await git('add', '--intent-to-add', '.')
 
-      const { proc, url } = await startCli(dir, home)
-      await page.goto(url)
+      const { proc, url } = await startCli(dir, home, cliArgs)
+      await page.goto(pollMs === undefined ? url : `${url}?poll-ms=${pollMs}`)
       // The diff is fetched after load; wait for it so tests can act at once.
       await page.locator('.file-header').first().waitFor()
       await use({
