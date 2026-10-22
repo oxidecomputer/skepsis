@@ -66,6 +66,11 @@ skepsis --host 0.0.0.0 --port 8080
 In `--dev` mode, `--port` sets the browser-facing Vite port; the proxied API
 server continues to use a free port.
 
+skepsis opens the page in a browser when it starts on localhost. Pass
+`--no-open` to skip that, for example when a script starts it in the
+background: once the server is listening, it prints one line to stdout,
+`skepsis on <url> (<diff command>)`.
+
 ### jj examples
 
 The examples use `skepsis`, the installed bin name. An `sk` alias works the

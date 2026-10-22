@@ -16,8 +16,9 @@ import type { DiffArgs, DiffEndpoints } from './shared/types.ts'
 
 function parsePort(value: string): number {
   const port = /^\d+$/.test(value) ? Number(value) : NaN
-  if (!(port >= 1 && port <= 65535)) {
-    throw new InvalidArgumentError('port must be an integer between 1 and 65535')
+  // 0 asks for a free port, the same as leaving the flag out
+  if (!(port >= 0 && port <= 65535)) {
+    throw new InvalidArgumentError('port must be an integer between 0 and 65535')
   }
   return port
 }
@@ -31,8 +32,15 @@ const program = new Command()
   .option('--git', 'force git mode (skip jj detection)')
   .option('--dev', 'run with Vite dev server for development')
   .option('--host <address>', 'address to bind the HTTP server to', 'localhost')
-  .option('-p, --port <number>', 'port for the browser UI', parsePort)
+  .option('-p, --port <number>', 'port for the browser UI (default: a free one)', parsePort)
+  .option('--no-open', "don't open a browser")
   .argument('[files...]', 'Limit diff to these paths (passed through to jj/git)')
+  .addHelpText(
+    'after',
+    '\nOnce the server is listening, it prints one line to stdout,\n' +
+      '`skepsis on <url> (<diff command>)`, for scripts that start it in the\n' +
+      'background with --no-open.',
+  )
   .parse()
 
 const opts = program.opts()
@@ -259,11 +267,11 @@ function urlOpenCommand(url: string): { cmd: string; args: string[] } {
 // Only auto-open a browser when bound to localhost. With any other host,
 // the user is likely on a remote dev box and the browser lives elsewhere
 // — opening locally would just spawn an unwanted browser.
-const shouldAutoOpen = hostname === 'localhost'
+const shouldAutoOpen = opts.open && hostname === 'localhost'
 
 if (opts.dev) {
   const viteArgs = ['vite', '--host', hostname]
-  if (opts.port !== undefined) viteArgs.push('--port', String(opts.port), '--strictPort')
+  if (opts.port) viteArgs.push('--port', String(opts.port), '--strictPort')
   if (shouldAutoOpen) viteArgs.push('--open')
   const vite = spawn('npx', viteArgs, {
     cwd: checkoutRoot,

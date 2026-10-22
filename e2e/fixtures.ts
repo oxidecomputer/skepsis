@@ -51,9 +51,8 @@ const writeFiles = (dir: string, files: Record<string, string>) =>
 /** Spawn the CLI in `dir` and resolve with the URL it prints on startup. */
 function startCli(dir: string, home: string): Promise<{ proc: ChildProcess; url: string }> {
   return new Promise((resolve, reject) => {
-    // --host 127.0.0.1 suppresses the auto-open of a browser. No --port means
-    // an ephemeral one, so parallel tests can't collide.
-    const proc = spawn('node', [CLI, '--git', '--host', '127.0.0.1'], {
+    // No --port means an ephemeral one, so parallel tests can't collide.
+    const proc = spawn('node', [CLI, '--git', '--no-open'], {
       cwd: dir,
       env: {
         ...process.env,
