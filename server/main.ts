@@ -10,7 +10,7 @@ import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { zValidator } from '@hono/zod-validator'
-import { join, relative } from 'node:path'
+import { basename, join, relative } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
 import { getDiff, patchHash } from './diff.ts'
@@ -62,6 +62,7 @@ export async function startServer(opts: {
     return c.json({
       patch,
       revset: displayCommand(diffSource),
+      repo: basename(cwd),
       vcs: diffSource.vcs,
       commentsEnabled: diffSource.commentsEnabled,
       expandable: diffSource.endpoints !== null,

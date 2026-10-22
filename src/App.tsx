@@ -1399,9 +1399,11 @@ function DiffView() {
     showToast(`Couldn't reload the diff: ${error.message}`, 6000)
   }, [error, data, errorUpdatedAt, showToast])
 
+  const repo = data?.repo
+  const revset = data?.revset
   useEffect(() => {
-    if (data?.revset) document.title = `skepsis | ${data.revset}`
-  }, [data?.revset])
+    if (repo && revset) document.title = `skepsis | ${repo} | ${revset}`
+  }, [repo, revset])
 
   // Seed collapse state from the first successful fetch: viewed files start collapsed
   useEffect(() => {
