@@ -784,9 +784,12 @@ body,
   white-space: nowrap;
 }
 
-/* The buttons wrap as a group, below the note */
+/* The buttons wrap as a group, below the note, and then among themselves
+   when even that row is too narrow for them */
 .comment-form-buttons {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
   margin-left: auto;
 }
@@ -852,6 +855,64 @@ body,
 
 .btn-primary:hover:not(:disabled) {
   background: var(--green-bright);
+}
+
+/* Quiet button for the least likely action, like Cancel next to two that
+   do something */
+.btn-ghost {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-dim);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-control-hover);
+  color: var(--fg-bright);
+}
+
+/* A comment sent with --send, kept in the diff until reload */
+.sent-comment {
+  padding: 8px 12px 10px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  font-family: var(--font-sans);
+}
+
+.sent-comment-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.sent-comment-label {
+  color: var(--fg-dim);
+  font-weight: 600;
+}
+
+.sent-comment-dismiss {
+  margin-left: auto;
+  padding: 0 4px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--fg-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sent-comment-dismiss:hover {
+  background: var(--bg-control-hover);
+  color: var(--fg-bright);
+}
+
+.sent-comment-text {
+  margin-top: 4px;
+  color: var(--fg-bright);
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* Review comment annotation row */

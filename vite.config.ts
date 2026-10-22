@@ -38,7 +38,9 @@ export default defineConfig({
   worker: { format: 'es' },
   server: {
     proxy: {
-      '/api': `http://${apiHost}:${apiPort}`,
+      // changeOrigin off (the string shorthand turns it on) so the API sees
+      // the page's own Host, which /api/send's gate compares with Origin.
+      '/api': { target: `http://${apiHost}:${apiPort}`, changeOrigin: false },
     },
   },
 })

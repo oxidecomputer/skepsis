@@ -13,19 +13,23 @@ import { zValidator } from '@hono/zod-validator'
 import { basename, join, relative } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
-import { getDiff, patchHash } from './diff.ts'
+import { extractBlobs, getDiff, patchHash } from './diff.ts'
 import { displayCommand } from './displayCommand.ts'
 import { getFileContents } from './fileContents.ts'
 import { loadViewed, markViewed, unmarkViewed, unmarkViewedAll } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
 import { getCommentSyntaxes } from './commentSyntax.ts'
 import { loadTheme, saveTheme, themeBootScript } from './settings.ts'
+import { sendGate } from './gate.ts'
+import { buildPayload, runSend } from './send.ts'
+import type { SendResult } from './send.ts'
 import {
   viewedRequestSchema,
   viewedDeleteSchema,
   viewedDeleteAllSchema,
   commentRequestSchema,
   commentDeleteSchema,
+  sendRequestSchema,
   fileContentsQuerySchema,
   themeRequestSchema,
 } from '../shared/types.ts'
@@ -45,8 +49,12 @@ export async function startServer(opts: {
   cwd: string
   /** Serve /api/diff-hash for the page's change polling. Default true. */
   poll?: boolean
+  /** The --send command. Unset, /api/send doesn't exist. */
+  send?: string | null
+  /** Overrides runSend's timeout, for tests */
+  sendTimeoutMs?: number
 }): Promise<{ port: number; close: () => void }> {
-  const { diffSource, port = 0, hostname = 'localhost', cwd, poll = true } = opts
+  const { diffSource, port = 0, hostname = 'localhost', cwd, poll = true, send } = opts
   // Fail fast on bad args by running the exact diff command we'll serve.
   // Result is discarded: /api/diff re-runs it per request to stay fresh.
   await getDiff(diffSource)
@@ -69,6 +77,7 @@ export async function startServer(opts: {
       fileHashes,
       patchHash: patchHash(patch),
       poll,
+      send: !!send,
       viewed,
       commentSyntaxes,
     } satisfies DiffResponse)
@@ -121,6 +130,47 @@ export async function startServer(opts: {
     return c.json({ ok: true } satisfies OkResponse)
   })
 
+  // Runs the --send command, so only the page may call it (see gate.ts).
+  // Sends run one at a time in arrival order, so two quick ones can't reach
+  // the far end swapped.
+  let sendQueue: Promise<SendResult> = Promise.resolve({ ok: true, output: '' })
+  // Known once listening; for SKEPSIS_URL.
+  let serverUrl = ''
+  if (send) {
+    app.post(
+      '/api/send',
+      async (c, next) => {
+        const headers = {
+          host: c.req.header('host'),
+          origin: c.req.header('origin'),
+        }
+        if (!sendGate(headers))
+          return c.json({ error: 'forbidden' } satisfies ErrorResponse, 403)
+        await next()
+      },
+      zValidator('json', sendRequestSchema),
+      async (c) => {
+        const input = c.req.valid('json')
+        // From the server's own diff, not the page's, so a stale page can't
+        // send a wrong one.
+        const blobs =
+          input.file === null
+            ? null
+            : extractBlobs((await getDiff(diffSource)).patch)[input.file]
+        const blob = (input.side === 'deletions' ? blobs?.old : blobs?.new) ?? null
+        const payload = buildPayload(diffSource, cwd, input, blob)
+        const env = { SKEPSIS_URL: serverUrl, SKEPSIS_ROOT: cwd }
+        const run = () =>
+          runSend(send, payload, { cwd, env, timeoutMs: opts.sendTimeoutMs })
+        const result = sendQueue.then(run, run)
+        sendQueue = result
+        const r = await result
+        if (!r.ok) return c.json({ error: r.error } satisfies ErrorResponse, 502)
+        return c.json({ ok: true } satisfies OkResponse)
+      },
+    )
+  }
+
   app.delete('/api/comment', zValidator('json', commentDeleteSchema), async (c) => {
     const { file, line } = c.req.valid('json')
     await removeComment(cwd, file, line)
@@ -166,9 +216,8 @@ export async function startServer(opts: {
   return new Promise((resolve, reject) => {
     const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
       const assignedPort = typeof info === 'string' ? port : info.port
-      console.info(
-        `skepsis on http://${hostname}:${assignedPort} (${displayCommand(diffSource)})`,
-      )
+      serverUrl = `http://${hostname}:${assignedPort}`
+      console.info(`skepsis on ${serverUrl} (${displayCommand(diffSource)})`)
       resolve({ port: assignedPort, close: () => server.close() })
     })
     server.on('error', reject)

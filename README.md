@@ -137,6 +137,73 @@ a revset ending in `@` for jj, or an open-ended range ending at the working
 tree for git), since that's where the inserted lines land. The default diff
 in both modes ends at the working copy, so comments are enabled by default.
 
+### Sending comments to another program
+
+`--send <command>` (or `SKEPSIS_SEND` in the environment) adds a Send to agent
+button to the comment box, which hands the comment to a shell command instead of
+writing it into the file. Use it to pass review comments straight to a coding
+agent, a terminal, or a log. The flag wins over the variable, and an empty
+value turns it off.
+
+With send on, the comment box has two buttons: **Send to agent** (⌘⏎, or
+Ctrl+Enter off macOS) and **Comment** (⌥⌘⏎ or Ctrl+Alt+Enter), which writes a
+`<review>` marker as usual. Sending also works where inline comments can't: on
+removed lines, and on diffs that don't end at the working copy.
+
+skepsis runs `sh -c <command>` in the directory it was started in, with
+`SKEPSIS_URL` and `SKEPSIS_ROOT` set, and writes the comment to its stdin as
+one line of JSON:
+
+````json
+{
+  "version": 1,
+  "root": "/home/me/project",
+  "diff": { "command": "jj diff -r @-", "toWorkingCopy": false },
+  "file": "src/a.ts",
+  "side": "additions",
+  "lines": [42, 45],
+  "code": { "lines": [41, 46], "text": "const z = 0\nconst a = 1\n…" },
+  "blob": "9daeafb",
+  "text": "why two?",
+  "prompt": "Review comment on src/a.ts, lines 42–45 (new side of `jj diff -r @-`), in lines 41–46:\n\n```\nconst z = 0\nconst a = 1\n…\n```\n\nwhy two?"
+}
+````
+
+`side` is `additions` or `deletions`, and `lines` (1-based, inclusive) are in
+that side's numbering. `code` is an excerpt of that side around the lines
+commented on, with its own first and last line. `blob` is the ID of the
+version of the file those line numbers refer to (old or new, by `side`), or
+null where the diff has none, as for an added file's old side or a pure
+rename. `prompt` is all of it as plain text, for consumers that only want a
+message.
+
+Exit 0 means the comment was delivered, and the page keeps it in the diff,
+under the line it was on, until you dismiss it or reload. skepsis ignores
+stdout. Any other exit, or running past 10 seconds, is a failure: the page
+shows stderr (or the exit status) and keeps the comment in the box.
+Sends run one at a time, in the order they were submitted.
+
+Some commands to start from:
+
+```sh
+# Claude Code, when skepsis was started from inside the session
+SKEPSIS_SEND='jq -c --arg t "$CLAUDE_CODE_MESSAGING_TOKEN" "{type:\"auth\",token:\$t}, {type:\"user\",message:{role:\"user\",content:.prompt}}" | nc -U "$CLAUDE_CODE_MESSAGING_SOCKET"'
+# Codex, likewise
+SKEPSIS_SEND='codex queue --thread "$CODEX_THREAD_ID" --message "$(jq -r .prompt)"'
+# a tmux pane named review, pasted so newlines don't submit early
+SKEPSIS_SEND='jq -r .prompt | tmux load-buffer -b skepsis - && tmux paste-buffer -p -d -b skepsis -t review && tmux send-keys -t review Enter'
+# a file, for later
+SKEPSIS_SEND='jq -c . >> ~/review-comments.jsonl'
+```
+
+The agent recipes deliver the comment as a message to the session; its answer
+appears in that session's terminal, not in skepsis.
+
+The command only ever comes from your flag or environment. skepsis never reads
+it from the repo under review. Because the page can run it, `/api/send` only
+accepts same-origin requests to a loopback host, and `--send` refuses to start
+with a non-loopback `--host`.
+
 ### Marking files viewed
 
 Viewed state is stored per file in `~/.local/share/skepsis/` using the file's
@@ -178,7 +245,8 @@ npm run ci
 - **minor** — new features: flags, keyboard shortcuts, UI capabilities
 - **major** — breaking changes to anything scriptable or on disk: removed or
   renamed flags, changed flag defaults, changed `<review>` comment or
-  viewed-state formats
+  viewed-state formats, removed or changed fields in the `--send` JSON
+  (adding a field is minor)
 
 ## Releases
 

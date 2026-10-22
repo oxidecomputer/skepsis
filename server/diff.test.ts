@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { parsePatchFiles } from '@pierre/diffs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { DiffArgs } from '../shared/types.ts'
-import { diffCommand, extractFileHashes, normalizeJjRenames } from './diff.ts'
+import { diffCommand, extractBlobs, extractFileHashes, normalizeJjRenames } from './diff.ts'
 import { isolateVcsConfig, requireJj, run } from './testUtil.ts'
 
 const base = { commentsEnabled: true, files: [], endpoints: null }
@@ -172,5 +172,35 @@ describe('jj rename headers (integration)', () => {
       ['change', undefined],
       ['change', undefined],
     ])
+  })
+})
+
+describe('extractBlobs', () => {
+  it('takes both sides from the index line, null where there is none', () => {
+    const patch = [
+      'diff --git a/changed.ts b/changed.ts',
+      'index 1a2b3c4..5d6e7f8 100644',
+      '--- a/changed.ts',
+      '+++ b/changed.ts',
+      '@@ -1 +1 @@',
+      '-index 0000000..1111111 inside a hunk is content',
+      '+x',
+      'diff --git a/added.ts b/added.ts',
+      'new file mode 100644',
+      'index 0000000..9a9a9a9',
+      'diff --git a/gone.ts b/gone.ts',
+      'deleted file mode 100644',
+      'index 8b8b8b8..0000000',
+      'diff --git a/old.ts b/new.ts',
+      'similarity index 100%',
+      'rename from old.ts',
+      'rename to new.ts',
+    ].join('\n')
+    expect(extractBlobs(patch)).toEqual({
+      'changed.ts': { old: '1a2b3c4', new: '5d6e7f8' },
+      'added.ts': { old: null, new: '9a9a9a9' },
+      'gone.ts': { old: '8b8b8b8', new: null },
+      'new.ts': { old: null, new: null },
+    })
   })
 })

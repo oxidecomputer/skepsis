@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Command, InvalidArgumentError } from '@commander-js/extra-typings'
 import { startServer } from './server/main.ts'
+import { LOOPBACK } from './server/gate.ts'
 import type { DiffArgs, DiffEndpoints } from './shared/types.ts'
 
 function parsePort(value: string): number {
@@ -39,12 +40,21 @@ const program = new Command()
     'shell command that opens the page, given the URL as its last argument (default: $SKEPSIS_OPEN, else the system opener)',
   )
   .option('--no-poll', "don't check for changes to the diff while the page is open")
+  .option(
+    '--send <command>',
+    'add a Send button that pipes the comment to this shell command (default: $SKEPSIS_SEND)',
+  )
   .argument('[files...]', 'Limit diff to these paths (passed through to jj/git)')
   .addHelpText(
     'after',
     '\nOnce the server is listening, it prints one line to stdout,\n' +
       '`skepsis on <url> (<diff command>)`, for scripts that start it in the\n' +
-      'background with --no-open.',
+      'background with --no-open.\n\n' +
+      'With --send, the comment box sends to `sh -c <command>`, run in this\n' +
+      'directory, with the comment as one JSON object on stdin (its `prompt`\n' +
+      'field has it all as plain text). Exit 0 means delivered; anything else,\n' +
+      'or taking over 10 s, is an error, and stderr is shown.\n' +
+      'See the README for the fields and recipes.',
   )
   .parse()
 
@@ -54,6 +64,15 @@ const hostname = opts.host
 // The flag wins over the environment, and an empty value means the system
 // opener.
 const openCmd = (opts.openCmd ?? process.env['SKEPSIS_OPEN']) || null
+// The flag wins over the environment, and an empty value turns sending off.
+const send = (opts.send ?? process.env['SKEPSIS_SEND']) || null
+if (send && !LOOPBACK.has(hostname === '::1' ? '[::1]' : hostname)) {
+  console.error(
+    `--send runs a command on request from the page, so it needs a loopback\n` +
+      `--host (localhost, 127.0.0.1 or ::1), not ${hostname}.`,
+  )
+  process.exit(1)
+}
 
 function detectVcs(): 'jj' | 'git' {
   try {
@@ -257,6 +276,7 @@ const { port: apiPort } = await startServer({
   hostname,
   port: opts.dev ? undefined : opts.port,
   poll: opts.poll,
+  send,
 }).catch((err: Error) => {
   console.error(err.message)
   return cleanup(1)
