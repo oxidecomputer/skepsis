@@ -81,8 +81,7 @@ const DIFF_THEME = { light: 'github-light-default', dark: 'github-dark-default' 
 // the light theme's syntax colors from the dark theme's, each mapped to its
 // counterpart in GitHub's light palette. Font styles from either side are kept.
 // Registered under the same name as a Zed theme, it replaces the bundled one for
-// Highlights only; Shiki loads its own. Themes are resolved on the main thread
-// and sent to the workers, so this reaches them too.
+// Highlights only; Shiki loads its own.
 const LIGHT_FOR_DARK: Record<string, string> = {
   '#ffa657': '#953800', // orange
   '#79c0ff': '#0550ae', // blue
@@ -2295,13 +2294,14 @@ function DiffView() {
   )
 }
 
-// Without this provider CodeView's worker pool is undefined and highlighting
-// runs on the main thread, which stalled the UI for hundreds of ms every time a
-// big file's virtualization window moved under Shiki (TextMate tokenization
-// has to walk the file from the top to reach the window). The pool's
-// highlighter is initialized separately from the CodeView options, so it needs
-// the same theme pair and highlighter — miss the theme and the workers hand
-// back tokens in the library's default theme.
+// Shiki highlights on a worker pool. On the main thread it froze the page for
+// about 700 ms loading a 10k-line file, because TextMate tokenization has to
+// walk a file from the top. Highlights runs on the main thread: it's fast
+// enough that a worker round trip costs more than the highlighting, and a
+// pool delayed the first colored screen by 20-30 ms with no less blocking.
+// The pool's highlighter is initialized separately from the CodeView options,
+// so it needs the same theme pair and highlighter — miss the theme and the
+// workers hand back tokens in the library's default theme.
 const poolOptions = {
   workerFactory: () => new DiffsHighlightWorker(),
   poolSize: 2,
@@ -2309,16 +2309,23 @@ const poolOptions = {
 const highlighterOptions = { theme: DIFF_THEME, preferredHighlighter: HIGHLIGHTER }
 
 export function App() {
+  const app = (
+    <Tooltip.Provider>
+      <DiffView />
+    </Tooltip.Provider>
+  )
   return (
     <QueryClientProvider client={queryClient}>
-      <WorkerPoolContextProvider
-        poolOptions={poolOptions}
-        highlighterOptions={highlighterOptions}
-      >
-        <Tooltip.Provider>
-          <DiffView />
-        </Tooltip.Provider>
-      </WorkerPoolContextProvider>
+      {HIGHLIGHTER === 'highlights' ? (
+        app
+      ) : (
+        <WorkerPoolContextProvider
+          poolOptions={poolOptions}
+          highlighterOptions={highlighterOptions}
+        >
+          {app}
+        </WorkerPoolContextProvider>
+      )}
     </QueryClientProvider>
   )
 }
