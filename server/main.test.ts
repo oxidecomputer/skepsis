@@ -55,6 +55,7 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     await writeFile(join(dir, 'del.txt'), 'bye\n')
     await writeFile(join(dir, 'r.txt'), 'rename me\n')
     await writeFile(join(dir, 'c.ts'), 'const one = 1\n')
+    await writeFile(join(dir, '-dash.txt'), 'old\n')
     if (vcs === 'git') {
       await run('git', ['add', '.'])
       await run('git', ['commit', '-qm', 'init'])
@@ -68,6 +69,7 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     await rename(join(dir, 'r.txt'), join(dir, 'r2.txt'))
     await appendFile(join(dir, 'r2.txt'), 'plus\n')
     await appendFile(join(dir, 'c.ts'), 'const two = 2\n')
+    await writeFile(join(dir, '-dash.txt'), 'new\n')
 
     // getDiff and file-contents spawn git/jj in the process cwd (the CLI
     // always starts the server from inside the target repo), so chdir in.
@@ -264,6 +266,14 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     expect((await res.json()) as FileContentsResponse).toEqual({
       oldContents: 'rename me\n',
       newContents: 'rename me\nplus\n',
+    })
+  })
+
+  it('serves contents of a file whose name starts with a dash', async () => {
+    const res = await authed(`${url}/api/file-contents?path=-dash.txt`)
+    expect((await res.json()) as FileContentsResponse).toEqual({
+      oldContents: 'old\n',
+      newContents: 'new\n',
     })
   })
 

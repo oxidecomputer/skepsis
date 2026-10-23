@@ -34,7 +34,7 @@ function fetchOld(src: DiffArgs, oldPath: string): Promise<string | null> {
   if (!src.endpoints) return Promise.resolve(null)
   const { left } = src.endpoints
   return src.vcs === 'jj'
-    ? tryRun('jj', ['file', 'show', '-r', left, oldPath])
+    ? tryRun('jj', ['file', 'show', '-r', left, '--', oldPath])
     : tryRun('git', ['show', `${left}:${oldPath}`])
 }
 
@@ -46,7 +46,7 @@ async function fetchNew(src: DiffArgs, path: string, cwd: string): Promise<strin
     return readFile(join(cwd, path), 'utf-8').catch(() => null)
   }
   return src.vcs === 'jj'
-    ? tryRun('jj', ['file', 'show', '-r', right.rev, path])
+    ? tryRun('jj', ['file', 'show', '-r', right.rev, '--', path])
     : tryRun('git', ['show', `${right.rev}:${path}`])
 }
 

@@ -37,8 +37,9 @@ export function newToken(): string {
  * Whether a request's token header matches the run's token. Every API request
  * must carry it, so only a page opened from the URL skepsis printed can use
  * the API. Unlike the checks in sendGate, this doesn't depend on how the
- * request reached the port: it also keeps out other users on this machine and
- * anything coming in through a forwarded port.
+ * request reached the port, so it also keeps out anything coming in through a
+ * forwarded port. It doesn't keep out other users on this machine, who can
+ * see the URL in a browser's argv on Linux, or processes running as you.
  */
 export function tokenMatches(given: string | undefined, token: string): boolean {
   if (given === undefined) return false
