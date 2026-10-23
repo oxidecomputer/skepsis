@@ -68,6 +68,10 @@ export type CommentRequest = z.infer<typeof commentRequestSchema>
 export type CommentDeleteRequest = z.infer<typeof commentDeleteSchema>
 export type SendRequest = z.infer<typeof sendRequestSchema>
 
+/** The header every API request carries the per-run token in. The page gets
+ *  the token from the `#token=` fragment of the URL skepsis prints and opens. */
+export const TOKEN_HEADER = 'X-Skepsis-Token'
+
 // --- UI types ---
 
 /** Color scheme. 'system' follows the OS preference; 'light' and 'dark' force

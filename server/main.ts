@@ -20,7 +20,7 @@ import { loadViewed, markViewed, unmarkViewed, unmarkViewedAll } from './viewed.
 import { insertComment, removeComment } from './comment.ts'
 import { getCommentSyntaxes } from './commentSyntax.ts'
 import { loadTheme, saveTheme, themeBootScript } from './settings.ts'
-import { sendGate } from './gate.ts'
+import { newToken, sendGate, tokenMatches } from './gate.ts'
 import { buildPayload, runSend } from './send.ts'
 import type { SendResult } from './send.ts'
 import {
@@ -32,6 +32,7 @@ import {
   sendRequestSchema,
   fileContentsQuerySchema,
   themeRequestSchema,
+  TOKEN_HEADER,
 } from '../shared/types.ts'
 import type {
   DiffHashResponse,
@@ -53,13 +54,29 @@ export async function startServer(opts: {
   send?: string | null
   /** Overrides runSend's timeout, for tests */
   sendTimeoutMs?: number
-}): Promise<{ port: number; close: () => void }> {
+}): Promise<{ port: number; token: string; close: () => void }> {
   const { diffSource, port = 0, hostname = 'localhost', cwd, poll = true, send } = opts
   // Fail fast on bad args by running the exact diff command we'll serve.
   // Result is discarded: /api/diff re-runs it per request to stay fresh.
   await getDiff(diffSource)
 
   const app = new Hono()
+  const token = newToken()
+
+  // Every API call must carry the token (see tokenMatches). The theme boot
+  // script is the exception: a <script src> can't send a header, and all it
+  // gives away is the theme.
+  app.use('/api/*', async (c, next) => {
+    if (c.req.path === '/api/theme.js' || tokenMatches(c.req.header(TOKEN_HEADER), token))
+      return next()
+    return c.json(
+      {
+        error:
+          'This page has no valid token. Open the URL skepsis printed when it started.',
+      } satisfies ErrorResponse,
+      401,
+    )
+  })
 
   app.get('/api/diff', async (c) => {
     const { patch, fileHashes } = await getDiff(diffSource)
@@ -217,8 +234,10 @@ export async function startServer(opts: {
     const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
       const assignedPort = typeof info === 'string' ? port : info.port
       serverUrl = `http://${hostname}:${assignedPort}`
-      console.info(`skepsis on ${serverUrl} (${displayCommand(diffSource)})`)
-      resolve({ port: assignedPort, close: () => server.close() })
+      console.info(
+        `skepsis on ${serverUrl}/#token=${token} (${displayCommand(diffSource)})`,
+      )
+      resolve({ port: assignedPort, token, close: () => server.close() })
     })
     server.on('error', reject)
   })

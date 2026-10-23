@@ -11,7 +11,11 @@ import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures.ts'
 
 const storedTheme = (page: Page) =>
-  page.evaluate(() => fetch('/api/theme').then((r) => r.json() as Promise<unknown>))
+  page.evaluate(() =>
+    fetch('/api/theme', {
+      headers: { 'X-Skepsis-Token': localStorage.getItem('skepsis.token') ?? '' },
+    }).then((r) => r.json() as Promise<unknown>),
+  )
 
 test.describe('desktop set to light', () => {
   test.use({ colorScheme: 'light' })

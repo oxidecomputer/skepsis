@@ -1170,6 +1170,38 @@ body,
   font-size: 14px;
 }
 
+/* A failure that stops the page from loading, e.g. a missing token */
+.error-panel {
+  max-width: 560px;
+  margin: 30vh auto 0;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in oklab, var(--red) 45%, transparent);
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--red) 8%, var(--bg-canvas));
+  font-family: var(--font-sans);
+}
+
+.error-panel h1 {
+  margin: 0 0 6px;
+  color: var(--red);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.error-panel p {
+  margin: 0;
+  color: var(--fg);
+  font-size: 14px;
+}
+
+.error-panel code {
+  padding: 1px 4px;
+  background: var(--bg-muted);
+  border-radius: 3px;
+  color: var(--fg-bright);
+  font-size: 13px;
+}
+
 .help-modal kbd {
   display: inline-block;
   padding: 2px 6px;

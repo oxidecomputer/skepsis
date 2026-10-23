@@ -49,7 +49,8 @@ const program = new Command()
     'after',
     '\nOnce the server is listening, it prints one line to stdout,\n' +
       '`skepsis on <url> (<diff command>)`, for scripts that start it in the\n' +
-      'background with --no-open.\n\n' +
+      'background with --no-open. The URL ends in a per-run #token= the page\n' +
+      'needs, so open it whole.\n\n' +
       'With --send, the comment box sends to `sh -c <command>`, run in this\n' +
       'directory, with the comment as one JSON object on stdin (its `prompt`\n' +
       'field has it all as plain text). Exit 0 means delivered; anything else,\n' +
@@ -270,7 +271,7 @@ const checkoutRoot = opts.dev ? requireCheckoutRoot() : undefined
 // In development Vite owns the browser-facing port and proxies API requests
 // to this server, so leave the API on an ephemeral port. In the packaged app
 // the API server also serves the UI and can bind the requested port directly.
-const { port: apiPort } = await startServer({
+const { port: apiPort, token } = await startServer({
   diffSource,
   cwd,
   hostname,
@@ -304,7 +305,8 @@ const shouldAutoOpen = opts.open && hostname === 'localhost'
 if (opts.dev) {
   const viteArgs = ['vite', '--host', hostname]
   if (opts.port) viteArgs.push('--port', String(opts.port), '--strictPort')
-  if (shouldAutoOpen) viteArgs.push('--open')
+  // Vite resolves a string --open against its own URL, fragment included.
+  if (shouldAutoOpen) viteArgs.push('--open', `/#token=${token}`)
   const vite = spawn('npx', viteArgs, {
     cwd: checkoutRoot,
     stdio: 'inherit',
@@ -312,7 +314,7 @@ if (opts.dev) {
   })
   children.push(vite)
 } else if (shouldAutoOpen) {
-  const url = `http://localhost:${apiPort}`
+  const url = `http://localhost:${apiPort}/#token=${token}`
   const { cmd, args } = urlOpenCommand(url)
   // A custom command's stderr shows, since a typo there is the user's to fix.
   const opener = spawn(cmd, args, {

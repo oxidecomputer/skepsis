@@ -16,6 +16,7 @@ import type {
   DiffResponse,
   FileContentsResponse,
 } from '../shared/types.ts'
+import { TOKEN_HEADER } from '../shared/types.ts'
 import { exec, isolateVcsConfig, requireJj } from './testUtil.ts'
 
 // HOME is also where viewed state is stored, and it's read at module load —
@@ -38,6 +39,10 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
   let origCwd: string
   let close: (() => void) | undefined
   let url: string
+  let token: string
+  /** fetch with the run's token, as the page sends it */
+  const authed = (input: string, init: RequestInit = {}) =>
+    fetch(input, { ...init, headers: { ...init.headers, [TOKEN_HEADER]: token } })
 
   const run = (cmd: string, args: string[]) => exec(cmd, args, { cwd: dir })
 
@@ -86,6 +91,7 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
           }
     const started = await startServer({ diffSource, cwd: dir })
     close = started.close
+    token = started.token
     url = `http://localhost:${started.port}`
   })
 
@@ -96,18 +102,28 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
   })
 
   async function getDiffResponse(): Promise<DiffResponse> {
-    const res = await fetch(`${url}/api/diff`)
+    const res = await authed(`${url}/api/diff`)
     expect(res.status).toBe(200)
     return res.json()
   }
 
   async function api(method: string, path: string, body: unknown): Promise<Response> {
-    return fetch(`${url}${path}`, {
+    return authed(`${url}${path}`, {
       method,
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
   }
+
+  it('rejects API requests without the token, except the theme script', async () => {
+    expect((await fetch(`${url}/api/diff`)).status).toBe(401)
+    const wrong = { headers: { [TOKEN_HEADER]: 'x'.repeat(token.length) } }
+    expect((await fetch(`${url}/api/diff`, wrong)).status).toBe(401)
+    expect((await fetch(`${url}/api/diff-hash`)).status).toBe(401)
+    expect((await fetch(`${url}/api/theme.js`)).status).toBe(200)
+    // The page itself loads without one; its fragment holds the token.
+    expect((await fetch(`${url}/`)).status).not.toBe(401)
+  })
 
   it('serves the diff with content-addressed file hashes', async () => {
     const diff = await getDiffResponse()
@@ -222,7 +238,7 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
   })
 
   it('serves full file contents at both diff endpoints', async () => {
-    const res = await fetch(`${url}/api/file-contents?path=f.txt`)
+    const res = await authed(`${url}/api/file-contents?path=f.txt`)
     expect(res.status).toBe(200)
     const contents: FileContentsResponse = await res.json()
     expect(contents.oldContents).toBe('hello\n')
@@ -230,12 +246,12 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
   })
 
   it('returns null for the missing side of added and deleted files', async () => {
-    let res = await fetch(`${url}/api/file-contents?path=added.txt`)
+    let res = await authed(`${url}/api/file-contents?path=added.txt`)
     expect((await res.json()) as FileContentsResponse).toEqual({
       oldContents: null,
       newContents: 'new\n',
     })
-    res = await fetch(`${url}/api/file-contents?path=del.txt`)
+    res = await authed(`${url}/api/file-contents?path=del.txt`)
     expect((await res.json()) as FileContentsResponse).toEqual({
       oldContents: 'bye\n',
       newContents: null,
@@ -243,7 +259,7 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
   })
 
   it('serves old contents via oldPath for renamed files', async () => {
-    const res = await fetch(`${url}/api/file-contents?path=r2.txt&oldPath=r.txt`)
+    const res = await authed(`${url}/api/file-contents?path=r2.txt&oldPath=r.txt`)
     expect(res.status).toBe(200)
     expect((await res.json()) as FileContentsResponse).toEqual({
       oldContents: 'rename me\n',
@@ -260,7 +276,7 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
   // don't expect.
   it('reports diff changes through /api/diff-hash', async () => {
     const diffHash = async () => {
-      const res = await fetch(`${url}/api/diff-hash`)
+      const res = await authed(`${url}/api/diff-hash`)
       expect(res.status).toBe(200)
       return ((await res.json()) as DiffHashResponse).hash
     }

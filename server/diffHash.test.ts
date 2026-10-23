@@ -9,6 +9,7 @@
 import { rm } from 'node:fs/promises'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DiffArgs, DiffHashResponse, ErrorResponse } from '../shared/types.ts'
+import { TOKEN_HEADER } from '../shared/types.ts'
 import { isolateVcsConfig } from './testUtil.ts'
 import type * as DiffModule from './diff.ts'
 
@@ -40,8 +41,11 @@ const result = (patch: string) => ({ patch, fileHashes: {} })
 
 async function serve(poll: boolean) {
   getDiff.mockResolvedValueOnce(result('startup'))
-  const { port, close } = await startServer({ diffSource, cwd: process.cwd(), poll })
-  return { url: `http://localhost:${port}`, close }
+  const { port, token, close } = await startServer({ diffSource, cwd: process.cwd(), poll })
+  const url = `http://localhost:${port}`
+  const diffHash = () =>
+    fetch(`${url}/api/diff-hash`, { headers: { [TOKEN_HEADER]: token } })
+  return { diffHash, close }
 }
 
 beforeEach(() => {
@@ -58,13 +62,13 @@ describe('patchHash', () => {
 
 describe('/api/diff-hash', () => {
   it('shares a running diff between requests instead of starting another', async () => {
-    const { url, close } = await serve(true)
+    const { diffHash, close } = await serve(true)
     let finish!: (value: ReturnType<typeof result>) => void
     getDiff.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)))
 
-    const first = fetch(`${url}/api/diff-hash`)
+    const first = diffHash()
     await vi.waitFor(() => expect(getDiff).toHaveBeenCalledTimes(2))
-    const second = fetch(`${url}/api/diff-hash`)
+    const second = diffHash()
     // Give the second request time to reach the server before the diff ends.
     await new Promise((resolve) => setTimeout(resolve, 50))
     finish(result('slow'))
@@ -79,15 +83,15 @@ describe('/api/diff-hash', () => {
 
     // Once it's done, the next request runs a fresh diff.
     getDiff.mockResolvedValueOnce(result('later'))
-    const res = await fetch(`${url}/api/diff-hash`)
+    const res = await diffHash()
     expect(((await res.json()) as DiffHashResponse).hash).toBe(patchHash('later'))
     expect(getDiff).toHaveBeenCalledTimes(3)
     close()
   })
 
   it('is a 404 with --no-poll', async () => {
-    const { url, close } = await serve(false)
-    const res = await fetch(`${url}/api/diff-hash`)
+    const { diffHash, close } = await serve(false)
+    const res = await diffHash()
     expect(res.status).toBe(404)
     expect(((await res.json()) as ErrorResponse).error).toMatch(/no-poll/)
     expect(getDiff).toHaveBeenCalledTimes(1)

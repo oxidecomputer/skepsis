@@ -19,12 +19,33 @@
  * with any other --host.
  */
 
+import { randomBytes, timingSafeEqual } from 'node:crypto'
+
 export interface GateHeaders {
   host: string | undefined
   origin: string | undefined
 }
 
 export const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/** A fresh secret for one run of the server. */
+export function newToken(): string {
+  return randomBytes(24).toString('base64url')
+}
+
+/**
+ * Whether a request's token header matches the run's token. Every API request
+ * must carry it, so only a page opened from the URL skepsis printed can use
+ * the API. Unlike the checks in sendGate, this doesn't depend on how the
+ * request reached the port: it also keeps out other users on this machine and
+ * anything coming in through a forwarded port.
+ */
+export function tokenMatches(given: string | undefined, token: string): boolean {
+  if (given === undefined) return false
+  const a = Buffer.from(given)
+  const b = Buffer.from(token)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
 
 export function sendGate({ host, origin }: GateHeaders): boolean {
   if (!host || !LOOPBACK.has(host.replace(/:\d+$/, ''))) return false

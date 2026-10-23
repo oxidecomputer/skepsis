@@ -158,7 +158,10 @@ export const test = base.extend<{
       await git('add', '--intent-to-add', '.')
 
       const { proc, url } = await startCli(dir, home, cliArgs)
-      await page.goto(pollMs === undefined ? url : `${url}?poll-ms=${pollMs}`)
+      // The URL ends in the #token= fragment, so the query goes in before it.
+      const pageUrl = new URL(url)
+      if (pollMs !== undefined) pageUrl.searchParams.set('poll-ms', String(pollMs))
+      await page.goto(pageUrl.href)
       // The diff is fetched after load; wait for it so tests can act at once.
       await page.locator('.file-header').first().waitFor()
       await use({

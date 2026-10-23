@@ -48,7 +48,7 @@ import type {
   LineAnnotation,
   SelectedLineRange,
 } from '@pierre/diffs'
-import { THEME_MODES } from '../shared/types.ts'
+import { THEME_MODES, TOKEN_HEADER } from '../shared/types.ts'
 import type {
   CommentRequest,
   DiffHashResponse,
@@ -71,7 +71,15 @@ import {
 import { diffChanges, type FileChange } from './diffChanges.ts'
 import { lineText as diffLineText, relocateLine } from './lineAnchor.ts'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // React Query's default of three retries, except for a missing token,
+      // which no retry fixes.
+      retry: (failures, error) => !isTokenError(error) && failures < 3,
+    },
+  },
+})
 
 // Always the dual theme: the highlighter tokenizes both up front and switching
 // themes is purely a CSS flip (a single theme would retokenize on every
@@ -173,18 +181,57 @@ function useSystemDark(): boolean {
   }, systemDark)
 }
 
+// The server's per-run token, which every API request carries. It arrives in
+// the `#token=` fragment of the URL skepsis opens; kept in localStorage, which
+// is per origin (this host and port), so reloads and new tabs on the bare URL
+// still work. Dropped from the address bar so it isn't copied or bookmarked.
+const TOKEN_KEY = 'skepsis.token'
+const token = ((): string | null => {
+  const fromUrl = new URLSearchParams(window.location.hash.slice(1)).get('token')
+  if (fromUrl) {
+    try {
+      localStorage.setItem(TOKEN_KEY, fromUrl)
+    } catch {
+      // Blocked storage: this tab still has it.
+    }
+    const { pathname, search } = window.location
+    history.replaceState(history.state, '', pathname + search)
+    return fromUrl
+  }
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
+})()
+
+class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+  }
+}
+
+/** The server turned the request away for lacking the run's token. */
+const isTokenError = (error: unknown) => error instanceof ApiError && error.status === 401
+
 async function apiFetch<T = unknown>(
   url: string,
   opts: { method: string; body?: unknown } = { method: 'GET' },
 ): Promise<T> {
+  const headers: Record<string, string> = {}
+  if (token) headers[TOKEN_HEADER] = token
+  if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
   const res = await fetch(url, {
     method: opts.method,
-    headers: opts.body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    headers,
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   })
   if (!res.ok) {
     const err = (await res.json().catch(() => null)) as ErrorResponse | null
-    throw new Error(err?.error ?? `Request failed (${res.status})`)
+    throw new ApiError(err?.error ?? `Request failed (${res.status})`, res.status)
   }
   return res.json() as Promise<T>
 }
@@ -2702,6 +2749,17 @@ function DiffView() {
 
   // Error before loading: on a failed fetch react-query settles with `data`
   // undefined, so a loading-first guard would show "Loading..." forever.
+  if (isTokenError(error))
+    return (
+      <div className="error-panel" role="alert">
+        <h1>No valid access token</h1>
+        <p>
+          Open the URL skepsis printed at startup, with the <code>#token=</code> fragment.
+          Once a browser has opened it, the fragment can be left off for the rest of that
+          run.
+        </p>
+      </div>
+    )
   if (error && !data)
     return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
   if (isLoading || !data) return <div className="empty-diff">Loading...</div>

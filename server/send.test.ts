@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DiffArgs, ErrorResponse, SendRequest } from '../shared/types.ts'
+import { TOKEN_HEADER } from '../shared/types.ts'
 import { isolateVcsConfig } from './testUtil.ts'
 import { buildPayload, renderPrompt, runSend } from './send.ts'
 import type { SendPayload } from './send.ts'
@@ -153,10 +154,15 @@ describe('runSend', () => {
   })
 })
 
-const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
+const post = (
+  url: string,
+  token: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+) =>
   fetch(`${url}/api/send`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: { 'Content-Type': 'application/json', [TOKEN_HEADER]: token, ...headers },
     body: JSON.stringify(body),
   })
 
@@ -170,60 +176,64 @@ describe('/api/send', () => {
   })
 
   async function serve(send: string | null) {
-    const { port, close } = await startServer({ diffSource: jj, cwd: dir, send })
-    return { url: `http://localhost:${port}`, close }
+    const { port, token, close } = await startServer({ diffSource: jj, cwd: dir, send })
+    return { url: `http://localhost:${port}`, token, close }
   }
 
   it("doesn't exist without --send", async () => {
-    const { url, close } = await serve(null)
-    expect((await post(url, comment)).status).toBe(404)
-    const diff = (await (await fetch(`${url}/api/diff`)).json()) as { send: boolean }
+    const { url, token, close } = await serve(null)
+    expect((await post(url, token, comment)).status).toBe(404)
+    const diff = (await (
+      await fetch(`${url}/api/diff`, { headers: { [TOKEN_HEADER]: token } })
+    ).json()) as { send: boolean }
     expect(diff.send).toBe(false)
     close()
   })
 
   it("sends the server's blob for the side", async () => {
     const out = join(dir, 'route.json')
-    const { url, close } = await serve(`cat > ${out}`)
-    const res = await post(url, comment)
+    const { url, token, close } = await serve(`cat > ${out}`)
+    const res = await post(url, token, comment)
     expect(res.status).toBe(200)
     const sent = JSON.parse(await readFile(out, 'utf8')) as SendPayload
     expect(sent.blob).toBe('fe0002')
     expect(sent.text).toBe('why two?')
-    await post(url, { ...comment, side: 'deletions' })
+    await post(url, token, { ...comment, side: 'deletions' })
     expect((JSON.parse(await readFile(out, 'utf8')) as SendPayload).blob).toBe('a1d0001')
     close()
   })
 
   it('reports a failed command as an error', async () => {
-    const { url, close } = await serve('echo "no agent" >&2; exit 1')
-    const res = await post(url, comment)
+    const { url, token, close } = await serve('echo "no agent" >&2; exit 1')
+    const res = await post(url, token, comment)
     expect(res.status).toBe(502)
     expect(((await res.json()) as ErrorResponse).error).toBe('no agent')
     close()
   })
 
   it('turns away other origins and hosts', async () => {
-    const { url, close } = await serve('true')
+    const { url, token, close } = await serve('true')
     const { port } = new URL(url)
-    expect((await post(url, comment, { Origin: 'http://localhost:9999' })).status).toBe(403)
+    expect(
+      (await post(url, token, comment, { Origin: 'http://localhost:9999' })).status,
+    ).toBe(403)
     // undici won't let a request set Host, so check that one through the gate
     // test; same-origin requests from the page pass.
-    expect((await post(url, comment, { Origin: `http://localhost:${port}` })).status).toBe(
-      200,
-    )
+    expect(
+      (await post(url, token, comment, { Origin: `http://localhost:${port}` })).status,
+    ).toBe(200)
     close()
   })
 
   it('runs sends one at a time, in order', async () => {
     const log = join(dir, 'order.log')
     // The first send is the slow one, so without the queue it would finish last.
-    const { url, close } = await serve(
+    const { url, token, close } = await serve(
       `t=$(grep -o '"text":"[a-z]*"' | cut -d '"' -f 4); [ "$t" = one ] && sleep 0.3; echo "$t" >> ${log}`,
     )
-    const first = post(url, { ...comment, text: 'one' })
+    const first = post(url, token, { ...comment, text: 'one' })
     await new Promise((resolve) => setTimeout(resolve, 50))
-    const second = post(url, { ...comment, text: 'two' })
+    const second = post(url, token, { ...comment, text: 'two' })
     await Promise.all([first, second])
     expect(await readFile(log, 'utf8')).toBe('one\ntwo\n')
     close()

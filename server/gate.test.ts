@@ -7,7 +7,7 @@
  */
 
 import { expect, test } from 'vitest'
-import { sendGate } from './gate.ts'
+import { newToken, sendGate, tokenMatches } from './gate.ts'
 
 test('the page passes, other origins and hosts do not', () => {
   // The page, served directly or through Vite in --dev
@@ -23,4 +23,13 @@ test('the page passes, other origins and hosts do not', () => {
   // DNS rebinding: same-origin as far as the browser knows, but the wrong host
   expect(sendGate({ host: 'evil.test:5000', origin: 'http://evil.test:5000' })).toBe(false)
   expect(sendGate({ host: undefined, origin: undefined })).toBe(false)
+})
+
+test('only the run’s own token matches', () => {
+  const token = newToken()
+  expect(tokenMatches(token, token)).toBe(true)
+  expect(tokenMatches(undefined, token)).toBe(false)
+  expect(tokenMatches('', token)).toBe(false)
+  expect(tokenMatches(token.slice(1), token)).toBe(false)
+  expect(tokenMatches(newToken(), token)).toBe(false)
 })

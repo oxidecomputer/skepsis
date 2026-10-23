@@ -71,6 +71,11 @@ skepsis opens the page in a browser when it starts on localhost. Pass
 background: once the server is listening, it prints one line to stdout,
 `skepsis on <url> (<diff command>)`.
 
+The URL ends in `#token=…`, a secret made fresh on each run. The page needs it
+to talk to the server, so open that URL, not just the host and port. After that,
+reloads and new tabs on the same address work in that browser; a different
+browser needs the full URL again.
+
 To open it some other way, such as in a particular browser or a window of
 its own, pass `--open-cmd <command>` (or set `SKEPSIS_OPEN` in the
 environment). skepsis runs it with `sh -c`, with the URL appended as the last
@@ -156,9 +161,8 @@ button continues to write a `<review>` marker in the file as usual.
 
 The only way to set the command is `--send` or `SKEPSIS_SEND`. skepsis never
 reads it from the repo contents, so reviewing someone else's branch
-can't make it run a command they chose. Other websites open in your browser
-can't trigger a send, but other users on the same machine can (see Security
-below).
+can't make it run a command they chose. Only the page skepsis opened can
+trigger a send (see Security below).
 
 skepsis runs the command with `sh -c` in the directory it was started in. The
 command inherits skepsis's environment (which is how the agent samples find
@@ -223,32 +227,16 @@ time, in the order they were submitted.
 <summary>Notes on security</summary>
 
 A request to `/api/send` can't set the command, but it does pipe arbitrary text
-to it, and the command acts on that text: an agent takes it as a prompt, and
-the tmux sample types it into a pane, which runs it if the pane is a shell.
-Whoever can send comments can do whatever your command lets them do with that
-text. So skepsis tries to prevent
-other machines and other websites open in your browser from sending comments.
-In order of importance:
+to it, so lock down who is allowed to hit the endpoint by requiring a token. The
+token is generated per run of the server and passed to the page in the `#token=`
+fragment of the URL it opens. The page keeps it in `localStorage`, which only
+pages on that host and port can read. This keeps out other websites in the
+browser and anything coming in through a forwarded port. It doesn't keep out
+other users on the machine or other processes running as you.
 
-- **Loopback only.** `--send` refuses to start unless the server listens on a
-  loopback address, so other machines can't connect at all. Nothing else
-  stops them, since outside a browser every header below can be forged.
-- **`Host` check.** `/api/send` rejects a request unless its `Host` is
-  `localhost`, `127.0.0.1` or `[::1]`. This stops DNS rebinding, where a
-  website points its own domain at 127.0.0.1 so the browser treats requests to
-  skepsis as same-origin and the other checks pass.
-- **`Origin` check.** A request with an `Origin` must come from the skepsis
-  page itself. Browsers send `Origin` on every cross-site POST, so this is what
-  keeps out other websites, including other apps on localhost.
-- **JSON body.** A browser won't send JSON to another site without first
-  asking it for permission (a CORS preflight), which skepsis never gives. This
-  backs up the `Origin` check in old browsers that don't send it.
-
-None of this keeps out other users on the same machine: unlike the sockets the
-sample commands write to, a localhost port is open to every local user. On a
-single-user machine this doesn't matter, since your own processes can reach your
-agent directly anyway. For the same reason, don't forward the port (over SSH, a
-reverse proxy, or an editor's port forwarding) while `--send` is on.
+As a backup, `--send` also requires a loopback `--host`, and `/api/send` rejects
+requests whose `Host` isn't a loopback name or whose `Origin`
+isn't the page's own.
 
 </details>
 
