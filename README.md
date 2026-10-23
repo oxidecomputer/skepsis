@@ -7,7 +7,7 @@ A fast, fully local browser-based code review UI. Review your (or your agent's) 
 - Fast even with huge diffs
 - GitHub-style split or unified diff view with syntax highlighting
 - Mark files as viewed
-- Inline review comments are written directly into source files as code comments
+- Inline review comments are written directly into source files as code comments or piped to a specified command
 - Works with [jj](https://jj-vcs.dev/) and git (tries jj first, falls back to git)
 - Vim-style navigation shortcuts (press `?` to see the list)
 
@@ -117,11 +117,11 @@ The CLI starts a local HTTP server that shells out to `jj diff`
 or `git diff`, then serves the diff to a React frontend that uses
 [`@pierre/diffs`](https://diffs.com/) to render it with syntax highlighting.
 
-While the page is visible, it reruns the diff every few seconds, and when the
-diff has changed, shows a toast with a Refresh button (or press `r`). It
-lists which files changed and by how many lines. The diff doesn't change
-under you on its own, except when the window regains focus. Pass `--no-poll`
-to turn this off.
+While the page is visible, it reruns the diff every few seconds in the
+background, and again as soon as you come back to the tab. When the diff has
+changed, it shows a toast with a Refresh button and a list of which files
+changed and by how many lines. The displayed diff never changes under you on
+its own. Pass `--no-poll` to turn this off.
 
 The npm package ships compiled CLI/server JavaScript plus a prebuilt frontend
 bundle, so installing or running with `npx` does not build anything. In dev
@@ -137,22 +137,56 @@ a revset ending in `@` for jj, or an open-ended range ending at the working
 tree for git), since that's where the inserted lines land. The default diff
 in both modes ends at the working copy, so comments are enabled by default.
 
+### Marking files viewed
+
+Viewed state is stored per file in `~/.local/share/skepsis/` using the file's
+content hash (the git object ID from the diff header). If the file changes, the
+hash no longer matches and it automatically shows as unviewed again.
+
 ### Sending comments to another program
 
-`--send <command>` (or `SKEPSIS_SEND` in the environment) adds a Send to agent
-button to the comment box, which hands the comment to a shell command instead of
-writing it into the file. Use it to pass review comments straight to a coding
-agent, a terminal, or a log. The flag wins over the variable, and an empty
-value turns it off.
+`--send <command>` (or `SKEPSIS_SEND` in the environment) adds a **Send** button
+to the comment box, which pipes the comment to a shell command instead
+of writing it into the file. Use it to pass review comments straight to a coding
+agent, a tmux pane, or a log. There is not chat UI in skepsis (yet) so replies
+from the agent will appear in that session, wherever it is. Send works
+in some cases that inline comments can't (because there is no file to write): on
+removed lines, and on diffs that don't end at the working copy. The **Comment**
+button continues to write a `<review>` marker in the file as usual.
 
-With send on, the comment box has two buttons: **Send to agent** (⌘⏎, or
-Ctrl+Enter off macOS) and **Comment** (⌥⌘⏎ or Ctrl+Alt+Enter), which writes a
-`<review>` marker as usual. Sending also works where inline comments can't: on
-removed lines, and on diffs that don't end at the working copy.
+The only way to set the command is `--send` or `SKEPSIS_SEND`. skepsis never
+reads it from the repo contents, so reviewing someone else's branch
+can't make it run a command they chose. Other websites open in your browser
+can't trigger a send, but other users on the same machine can (see Security
+below).
 
-skepsis runs `sh -c <command>` in the directory it was started in, with
-`SKEPSIS_URL` and `SKEPSIS_ROOT` set, and writes the comment to its stdin as
-one line of JSON:
+skepsis runs the command with `sh -c` in the directory it was started in. The
+command inherits skepsis's environment (which is how the agent samples find
+their session), plus `SKEPSIS_URL`, the page's address, and `SKEPSIS_ROOT`, the
+directory skepsis was started in. It gets the comment on stdin as one line of
+JSON whose `prompt` field is the whole comment as a message. Some sample
+commands to start from:
+
+```sh
+# Claude Code. CLAUDE_CODE_MESSAGING_SOCKET is only set in commands the session
+# runs; from any other shell, use the session's socket path instead
+# (/tmp/cc-socks/<pid of claude>.sock)
+SKEPSIS_SEND='jq -c "{type:\"user\",message:{role:\"user\",content:.prompt}}" | nc -U "$CLAUDE_CODE_MESSAGING_SOCKET"'
+
+# Codex. CODEX_THREAD_ID is likewise only set inside the session
+SKEPSIS_SEND='codex queue --thread "$CODEX_THREAD_ID" --message "$(jq -r .prompt)"'
+
+# a tmux pane named review, pasted so newlines don't submit early
+SKEPSIS_SEND='jq -r .prompt | tmux load-buffer -b skepsis - && tmux paste-buffer -p -d -b skepsis -t review && tmux send-keys -t review Enter'
+
+# a log file
+SKEPSIS_SEND='jq -c . >> ~/review-comments.jsonl'
+```
+
+<details>
+<summary>JSON format and exit status</summary>
+
+The JSON sent to stdin looks like this:
 
 ````json
 {
@@ -177,38 +211,46 @@ null where the diff has none, as for an added file's old side or a pure
 rename. `prompt` is all of it as plain text, for consumers that only want a
 message.
 
-Exit 0 means the comment was delivered, and the page keeps it in the diff,
-under the line it was on, until you dismiss it or reload. skepsis ignores
-stdout. Any other exit, or running past 10 seconds, is a failure: the page
-shows stderr (or the exit status) and keeps the comment in the box.
-Sends run one at a time, in the order they were submitted.
+Exit 0 means the comment was delivered, and the page keeps the comment in the
+diff, under the line it was on, until you dismiss it or reload. skepsis ignores
+stdout. Any other exit, or running past 10 seconds, is a failure: the page shows
+stderr (or the exit status) and keeps the comment in the box. Sends run one at a
+time, in the order they were submitted.
 
-Some commands to start from:
+</details>
 
-```sh
-# Claude Code, when skepsis was started from inside the session
-SKEPSIS_SEND='jq -c --arg t "$CLAUDE_CODE_MESSAGING_TOKEN" "{type:\"auth\",token:\$t}, {type:\"user\",message:{role:\"user\",content:.prompt}}" | nc -U "$CLAUDE_CODE_MESSAGING_SOCKET"'
-# Codex, likewise
-SKEPSIS_SEND='codex queue --thread "$CODEX_THREAD_ID" --message "$(jq -r .prompt)"'
-# a tmux pane named review, pasted so newlines don't submit early
-SKEPSIS_SEND='jq -r .prompt | tmux load-buffer -b skepsis - && tmux paste-buffer -p -d -b skepsis -t review && tmux send-keys -t review Enter'
-# a file, for later
-SKEPSIS_SEND='jq -c . >> ~/review-comments.jsonl'
-```
+<details>
+<summary>Notes on security</summary>
 
-The agent recipes deliver the comment as a message to the session; its answer
-appears in that session's terminal, not in skepsis.
+A request to `/api/send` can't set the command, but it does pipe arbitrary text
+to it, and the command acts on that text: an agent takes it as a prompt, and
+the tmux sample types it into a pane, which runs it if the pane is a shell.
+Whoever can send comments can do whatever your command lets them do with that
+text. So skepsis tries to prevent
+other machines and other websites open in your browser from sending comments.
+In order of importance:
 
-The command only ever comes from your flag or environment. skepsis never reads
-it from the repo under review. Because the page can run it, `/api/send` only
-accepts same-origin requests to a loopback host, and `--send` refuses to start
-with a non-loopback `--host`.
+- **Loopback only.** `--send` refuses to start unless the server listens on a
+  loopback address, so other machines can't connect at all. Nothing else
+  stops them, since outside a browser every header below can be forged.
+- **`Host` check.** `/api/send` rejects a request unless its `Host` is
+  `localhost`, `127.0.0.1` or `[::1]`. This stops DNS rebinding, where a
+  website points its own domain at 127.0.0.1 so the browser treats requests to
+  skepsis as same-origin and the other checks pass.
+- **`Origin` check.** A request with an `Origin` must come from the skepsis
+  page itself. Browsers send `Origin` on every cross-site POST, so this is what
+  keeps out other websites, including other apps on localhost.
+- **JSON body.** A browser won't send JSON to another site without first
+  asking it for permission (a CORS preflight), which skepsis never gives. This
+  backs up the `Origin` check in old browsers that don't send it.
 
-### Marking files viewed
+None of this keeps out other users on the same machine: unlike the sockets the
+sample commands write to, a localhost port is open to every local user. On a
+single-user machine this doesn't matter, since your own processes can reach your
+agent directly anyway. For the same reason, don't forward the port (over SSH, a
+reverse proxy, or an editor's port forwarding) while `--send` is on.
 
-Viewed state is stored per file in `~/.local/share/skepsis/` using the file's
-content hash (the git object ID from the diff header). If the file changes, the
-hash no longer matches and it automatically shows as unviewed again.
+</details>
 
 ## Development
 
