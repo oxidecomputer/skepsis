@@ -6,7 +6,9 @@
  * Copyright Oxide Computer Company
  */
 
-import { rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DiffArgs, DiffHashResponse, ErrorResponse } from '../shared/types.ts'
 import { TOKEN_HEADER } from '../shared/types.ts'
@@ -39,14 +41,30 @@ const diffSource: DiffArgs = {
 
 const result = (patch: string) => ({ patch, fileHashes: {} })
 
-async function serve(poll: boolean) {
+async function serve(poll: boolean, cwd = process.cwd()) {
   getDiff.mockResolvedValueOnce(result('startup'))
-  const { port, token, close } = await startServer({ diffSource, cwd: process.cwd(), poll })
+  const { port, token, close } = await startServer({ diffSource, cwd, poll })
   const url = `http://localhost:${port}`
   const diffHash = () =>
     fetch(`${url}/api/diff-hash`, { headers: { [TOKEN_HEADER]: token } })
-  return { diffHash, close }
+  const comment = (body: unknown) =>
+    fetch(`${url}/api/comment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', [TOKEN_HEADER]: token },
+      body: JSON.stringify(body),
+    })
+  return { diffHash, comment, close }
 }
+
+/** A diff that runs until `finish` is called. */
+function heldDiff() {
+  let finish!: (value: ReturnType<typeof result>) => void
+  getDiff.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)))
+  return (patch: string) => finish(result(patch))
+}
+
+const hashOf = async (res: Promise<Response>) =>
+  ((await (await res).json()) as DiffHashResponse).hash
 
 beforeEach(() => {
   getDiff.mockReset()
@@ -87,6 +105,33 @@ describe('/api/diff-hash', () => {
     expect(((await res.json()) as DiffHashResponse).hash).toBe(patchHash('later'))
     expect(getDiff).toHaveBeenCalledTimes(3)
     close()
+  })
+
+  it("doesn't share a diff that started before a comment", async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'skepsis-diff-hash-'))
+    await writeFile(join(dir, 'a.ts'), 'x\n')
+    const { diffHash, comment, close } = await serve(true, dir)
+    const finishBefore = heldDiff()
+    const before = diffHash()
+    await vi.waitFor(() => expect(getDiff).toHaveBeenCalledTimes(2))
+
+    const res = await comment({ file: 'a.ts', afterLine: 1, lineText: 'x', text: 'hi' })
+    expect(res.status).toBe(200)
+    const finishAfter = heldDiff()
+    const after = diffHash()
+    await vi.waitFor(() => expect(getDiff).toHaveBeenCalledTimes(3))
+
+    // The old diff finishing doesn't drop the new one, which later polls share.
+    finishBefore('before')
+    expect(await hashOf(before)).toBe(patchHash('before'))
+    const later = diffHash()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    finishAfter('after')
+    expect(await hashOf(after)).toBe(patchHash('after'))
+    expect(await hashOf(later)).toBe(patchHash('after'))
+    expect(getDiff).toHaveBeenCalledTimes(3)
+    close()
+    await rm(dir, { recursive: true, force: true })
   })
 
   it('is a 404 with --no-poll', async () => {

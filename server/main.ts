@@ -104,16 +104,20 @@ export async function startServer(opts: {
   // while a diff is running share its result rather than starting another, so
   // several tabs, or a diff slower than the interval, never pile up. /api/diff
   // doesn't share: it follows the page's own edits (a comment), and a poll
-  // that started before the edit would hand back the old patch.
+  // that started before the edit would hand back the old patch. For the same
+  // reason, an edit stops later polls from sharing a diff already running.
   let hashInFlight: Promise<string> | null = null
   app.get('/api/diff-hash', async (c) => {
     if (!poll)
       return c.json({ error: 'polling is off (--no-poll)' } satisfies ErrorResponse, 404)
-    hashInFlight ??= getDiff(diffSource)
-      .then(({ patch }) => patchHash(patch))
-      .finally(() => {
-        hashInFlight = null
-      })
+    if (!hashInFlight) {
+      const run = getDiff(diffSource)
+        .then(({ patch }) => patchHash(patch))
+        .finally(() => {
+          if (hashInFlight === run) hashInFlight = null
+        })
+      hashInFlight = run
+    }
     return c.json({ hash: await hashInFlight } satisfies DiffHashResponse)
   })
 
@@ -144,6 +148,7 @@ export async function startServer(opts: {
   app.post('/api/comment', zValidator('json', commentRequestSchema), async (c) => {
     const { file, afterLine, lineText, text } = c.req.valid('json')
     await insertComment(cwd, file, afterLine, lineText, text)
+    hashInFlight = null
     return c.json({ ok: true } satisfies OkResponse)
   })
 
@@ -186,6 +191,7 @@ export async function startServer(opts: {
   app.delete('/api/comment', zValidator('json', commentDeleteSchema), async (c) => {
     const { file, line } = c.req.valid('json')
     await removeComment(cwd, file, line)
+    hashInFlight = null
     return c.json({ ok: true } satisfies OkResponse)
   })
 
