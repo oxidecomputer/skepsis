@@ -220,6 +220,33 @@ test('the gutter + follows the pointer with the line cursor in the file', async 
   await expect(lineNumber(1).locator('[data-gutter-utility-slot]')).toHaveCount(0)
 })
 
+test('the gutter + follows the pointer after a comment box is canceled', async ({
+  page,
+}) => {
+  const a = page.locator('diffs-container').first()
+  const lineNumber = (n: number) =>
+    a
+      .locator(
+        `[data-additions] [data-column-number="${n}"], [data-unified] [data-column-number="${n}"]`,
+      )
+      .first()
+  await expect(async () => {
+    await lineNumber(2).hover()
+    await lineNumber(2).locator('[data-gutter-utility-slot]').click({ timeout: 1000 })
+  }).toPass()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await expect(page.getByPlaceholder('Leave a review comment')).toBeHidden()
+
+  await expect(async () => {
+    await lineNumber(3).hover()
+    await lineNumber(4).hover()
+    await expect(lineNumber(4).locator('[data-gutter-utility-slot]')).toBeVisible({
+      timeout: 1000,
+    })
+  }).toPass()
+  await expect(lineNumber(2).locator('[data-gutter-utility-slot]')).toHaveCount(0)
+})
+
 test('resolving a comment removes it', async ({ page, repo }) => {
   await repo.write(
     'a.ts',

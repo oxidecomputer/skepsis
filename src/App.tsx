@@ -1752,6 +1752,12 @@ function DiffView() {
   const [showHelp, setShowHelp] = useState(false)
   const [showCommentsInfo, setShowCommentsInfo] = useState(false)
   const codeViewRef = useRef<CodeViewHandle<AnnotationMeta, undefined>>(null)
+  // Clicking the gutter "+" leaves a line selection behind, and the library
+  // pins the "+" to a selection. Clear it once the comment box closes, or the
+  // "+" stops following the pointer.
+  useEffect(() => {
+    if (!composingState) codeViewRef.current?.getInstance()?.setSelectedLines(null)
+  }, [composingState])
   // Latest scroll offset, tracked for file navigation (n/p). Kept in a ref so
   // scrolling doesn't trigger re-renders; the key handler reads it on demand.
   const scrollTopRef = useRef(0)
