@@ -13,7 +13,7 @@ import { zValidator } from '@hono/zod-validator'
 import { basename, join, relative } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
-import { extractBlobs, getDiff, patchHash } from './diff.ts'
+import { getDiff, patchHash } from './diff.ts'
 import { displayCommand } from './displayCommand.ts'
 import { getFileContents } from './fileContents.ts'
 import { loadViewed, markViewed, unmarkViewed, unmarkViewedAll } from './viewed.ts'
@@ -167,15 +167,10 @@ export async function startServer(opts: {
       },
       zValidator('json', sendRequestSchema),
       async (c) => {
-        const input = c.req.valid('json')
-        // From the server's own diff, not the page's, so a stale page can't
-        // send a wrong one.
-        const blobs =
-          input.file === null
-            ? null
-            : extractBlobs((await getDiff(diffSource)).patch)[input.file]
-        const blob = (input.side === 'deletions' ? blobs?.old : blobs?.new) ?? null
-        const payload = buildPayload(diffSource, cwd, input, blob)
+        // The blob comes from the page with the lines and excerpt, so all
+        // three describe the version on screen even if the file has changed
+        // since. Nothing here awaits, so sends join the queue as they arrive.
+        const payload = buildPayload(diffSource, cwd, c.req.valid('json'))
         const env = { SKEPSIS_URL: serverUrl, SKEPSIS_ROOT: cwd }
         const run = () =>
           runSend(send, payload, { cwd, env, timeoutMs: opts.sendTimeoutMs })

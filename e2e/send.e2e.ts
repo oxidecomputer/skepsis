@@ -6,6 +6,7 @@
  * Copyright Oxide Computer Company
  */
 
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
@@ -23,6 +24,12 @@ async function sent(dir: string): Promise<Record<string, unknown>[]> {
     .filter(Boolean)
     .map((line) => JSON.parse(line) as Record<string, unknown>)
 }
+
+/** The git blob ID of a file's contents. */
+const blobId = (contents: string) =>
+  createHash('sha1')
+    .update(`blob ${Buffer.byteLength(contents)}\0${contents}`)
+    .digest('hex')
 
 const textarea = (page: Page) => page.getByPlaceholder('Leave a review comment')
 
@@ -116,6 +123,22 @@ test.describe('with --send', () => {
     await expect(page.getByText('// marker please')).toBeVisible()
     expect(await repo.read('a.ts')).toContain('// marker please')
     expect(await sent(repo.dir)).toEqual([])
+  })
+
+  test('a send describes the version on screen, not a newer one on disk', async ({
+    page,
+    repo,
+  }) => {
+    await openBox(page)
+    await textarea(page).fill('looks wrong')
+    // No Refresh: the page still shows the old a.ts.
+    await repo.write('a.ts', 'const zero = 0\n' + WORKING['a.ts'])
+    await page.getByRole('button', { name: 'Send', exact: true }).click()
+
+    await expect(page.getByText('Sent', { exact: true })).toBeVisible()
+    const [payload] = await sent(repo.dir)
+    expect(payload).toMatchObject({ lines: [1, 1], code: { lines: [1, 3] } })
+    expect(blobId(WORKING['a.ts']!)).toMatch(new RegExp(`^${payload!['blob']}`))
   })
 
   test('a removed line can be sent, but not commented inline', async ({ page, repo }) => {

@@ -168,39 +168,3 @@ export function extractFileHashes(patch: string): FileHashes {
 
   return hashes
 }
-
-export interface FileBlobs {
-  old: string | null
-  new: string | null
-}
-
-/** git writes a missing side as all zeros */
-const blobOrNull = (id: string) => (/^0+$/.test(id) ? null : id)
-
-/**
- * Each file's blob IDs from the index lines, old and new. A side the diff
- * has no blob for is null: an added file's old side (all zeros), a deleted
- * file's new side, or both for a pure rename or mode change, which have no
- * index line.
- */
-export function extractBlobs(patch: string): Record<string, FileBlobs> {
-  const blobs: Record<string, FileBlobs> = {}
-  let currentFile: string | null = null
-  for (const line of patch.split('\n')) {
-    const diffMatch = line.match(/^diff --git a\/.+ b\/(.+)$/)
-    if (diffMatch) {
-      currentFile = diffMatch[1]!
-      blobs[currentFile] = { old: null, new: null }
-      continue
-    }
-    const indexMatch = currentFile && line.match(/^index ([0-9a-f]+)\.\.([0-9a-f]+)/)
-    if (indexMatch) {
-      blobs[currentFile!] = {
-        old: blobOrNull(indexMatch[1]!),
-        new: blobOrNull(indexMatch[2]!),
-      }
-      currentFile = null
-    }
-  }
-  return blobs
-}

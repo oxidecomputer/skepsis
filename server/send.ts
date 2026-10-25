@@ -31,9 +31,9 @@ export interface SendPayload {
   /** An excerpt of `side`: the lines commented on and a little around them,
    *  from line `lines[0]` to `lines[1]` */
   code: { lines: [number, number]; text: string } | null
-  /** The blob ID of `side`'s version of the file in the diff when the
-   *  comment was sent, the version `lines` number. Null where the diff has
-   *  none, such as an added file's old side or a pure rename. */
+  /** The blob ID of `side`'s version of the file as the page showed it, the
+   *  version `lines` number. Null where the diff has none, such as an added
+   *  file's old side or a pure rename. */
   blob: string | null
   text: string
   /** All of the above as plain text, for consumers that just want a message */
@@ -44,7 +44,6 @@ export function buildPayload(
   diffSource: DiffArgs,
   root: string,
   input: SendRequest,
-  blob: string | null,
 ): SendPayload {
   const base = {
     version: 1 as const,
@@ -57,7 +56,7 @@ export function buildPayload(
     side: input.side,
     lines: input.lines,
     code: input.code,
-    blob,
+    blob: input.blob,
     text: input.text,
   }
   return { ...base, prompt: renderPrompt(base) }

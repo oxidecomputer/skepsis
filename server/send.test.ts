@@ -47,11 +47,12 @@ const comment: SendRequest = {
   side: 'additions',
   lines: [42, 45],
   code: { lines: [41, 46], text: 'const a = 1\nconst b = 2' },
+  blob: 'abc123',
   text: 'why two?',
 }
 
 const payload = (input: Partial<SendRequest> = {}): SendPayload =>
-  buildPayload(jj, '/repo', { ...comment, ...input }, 'abc123')
+  buildPayload(jj, '/repo', { ...comment, ...input })
 
 describe('renderPrompt', () => {
   it('names the file, the lines, the side and the diff, then the code and text', () => {
@@ -190,16 +191,17 @@ describe('/api/send', () => {
     close()
   })
 
-  it("sends the server's blob for the side", async () => {
+  it("sends the page's blob, even once the file has changed", async () => {
+    // The server's diff has moved on to fe0002, but the lines and excerpt
+    // come from the version the page shows.
     const out = join(dir, 'route.json')
     const { url, token, close } = await serve(`cat > ${out}`)
     const res = await post(url, token, comment)
     expect(res.status).toBe(200)
     const sent = JSON.parse(await readFile(out, 'utf8')) as SendPayload
-    expect(sent.blob).toBe('fe0002')
+    expect(sent.blob).toBe('abc123')
     expect(sent.text).toBe('why two?')
-    await post(url, token, { ...comment, side: 'deletions' })
-    expect((JSON.parse(await readFile(out, 'utf8')) as SendPayload).blob).toBe('a1d0001')
+    expect((await post(url, token, { ...comment, blob: 'not a blob' })).status).toBe(400)
     close()
   })
 

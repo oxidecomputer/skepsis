@@ -643,6 +643,14 @@ function nearestLine(fileDiff: FileDiffMetadata, side: Side, line: number): numb
 
 const stripNewline = (line: string | undefined) => (line ?? '').replace(/\r?\n$/, '')
 
+/** The blob ID of a side of a file as the page shows it. git writes a side
+ *  with no blob (an added file's old side) as all zeros, and a pure rename
+ *  has no IDs at all. */
+function sideBlob(fileDiff: FileDiffMetadata, side: Side): string | null {
+  const id = side === 'deletions' ? fileDiff.prevObjectId : fileDiff.newObjectId
+  return id && !/^0+$/.test(id) ? id : null
+}
+
 /** The lines a sent comment covers, with a little context, and the excerpt's
  *  first and last line: for the far end to find the spot by once line numbers
  *  drift, and to tell the lines commented on from the context. */
@@ -2324,6 +2332,7 @@ function DiffView() {
                         item.type === 'diff'
                           ? lineContext(item.fileDiff, side, first, annotation.lineNumber)
                           : null,
+                      blob: item.type === 'diff' ? sideBlob(item.fileDiff, side) : null,
                       text,
                     })
                 : undefined

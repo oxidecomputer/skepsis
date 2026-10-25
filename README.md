@@ -212,7 +212,8 @@ that side's numbering. `code` is an excerpt of that side around the lines
 commented on, with its own first and last line. `blob` is the ID of the
 version of the file those line numbers refer to (old or new, by `side`), or
 null where the diff has none, as for an added file's old side or a pure
-rename. `prompt` is all of it as plain text, for consumers that only want a
+rename. It's the version on the page, which is older than the file on disk if
+the file changed since the page last refreshed. `prompt` is all of it as plain text, for consumers that only want a
 message.
 
 Exit 0 means the comment was delivered, and the page keeps the comment in the

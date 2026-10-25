@@ -47,6 +47,12 @@ export const sendRequestSchema = z.object({
       text: z.string(),
     })
     .nullable(),
+  /** The blob ID of `side`'s version of the file as the page shows it, the
+   *  version `lines` and `code` come from */
+  blob: z
+    .string()
+    .regex(/^[0-9a-f]+$/)
+    .nullable(),
   text: z.string().min(1),
 })
 
