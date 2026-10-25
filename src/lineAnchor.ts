@@ -27,7 +27,10 @@
  * edit to the line itself, a deletion, or a move outside that stretch.
  * Several candidates are told apart by how many neighbouring lines above and
  * below also match, ignoring whitespace, with the file's start and end
- * counting as matches. A tie is refused rather than guessed.
+ * counting as matches. A tie is refused rather than guessed, and the match
+ * has to hold both ways: the line found must pick `line` as its own best
+ * match back in `before`. Otherwise deleting a function would move a box on
+ * its `}` to the next function's `}`, the only one left in the stretch.
  */
 
 import type { FileDiffMetadata, Hunk } from '@pierre/diffs'
@@ -247,5 +250,14 @@ export function relocateLine(
   if (sameContent(before, after, side))
     return lineText(after, side, line) === text ? line : null
   if (!sameContent(before, after, otherSide(side))) return null
-  return bestMatch(before, after, side, line, mappedRange(before, after, side, line))
+  const found = bestMatch(before, after, side, line, mappedRange(before, after, side, line))
+  if (found === null) return null
+  const back = bestMatch(
+    after,
+    before,
+    side,
+    found,
+    mappedRange(after, before, side, found),
+  )
+  return back === line ? found : null
 }

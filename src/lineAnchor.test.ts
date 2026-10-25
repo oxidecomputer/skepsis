@@ -289,6 +289,14 @@ describe('relocateLine', () => {
     expect(relocate({ base: BASE, wc1, wc2 }, 21)).toEqual(all(null))
   })
 
+  it('refuses a line whose match belongs to another line', () => {
+    // In a new file, f1 is deleted: f2's `}` is the only one left, but it's
+    // f2's, not f1's.
+    const diffs = { base: [], wc1: fns(2), wc2: fns(2).slice(4) }
+    expect(relocate(diffs, 3)).toEqual(all(null))
+    expect(relocate(diffs, 7)).toEqual(all(3))
+  })
+
   it('handles a file that is one repeated line', () => {
     const diffs = { base: [], wc1: xs(14), wc2: xs(16) }
     // A line a few from the start is anchored by it.
