@@ -13,6 +13,7 @@ import {
   useQueries,
   useMutation,
   useQueryClient,
+  keepPreviousData,
 } from '@tanstack/react-query'
 import {
   useCallback,
@@ -1031,10 +1032,11 @@ function FileHeader({
           </button>
         </Tip>
       )}
-      <span className="file-header-stats">
-        {additions > 0 && <span className="stat-add">+{additions}</span>}
-        {deletions > 0 && <span className="stat-del">-{deletions}</span>}
-      </span>
+      <LineCounts
+        className="file-header-stats"
+        additions={additions}
+        deletions={deletions}
+      />
       <button
         type="button"
         className={
@@ -1434,9 +1436,10 @@ function DiffChangedToast({
   changes: FileChange[] | null
   onRefresh: () => void
 }) {
+  const list = changes?.length ? changes : null
   let additions = 0
   let deletions = 0
-  for (const c of changes ?? []) {
+  for (const c of list ?? []) {
     additions += c.additions
     deletions += c.deletions
   }
@@ -1445,10 +1448,10 @@ function DiffChangedToast({
       <div className="diff-changed-row">
         <span className="diff-changed-summary">
           The diff changed on disk
-          {changes && changes.length > 0 && (
+          {list && (
             <>
               <span className="diff-changed-count">
-                {changes.length} {changes.length === 1 ? 'file' : 'files'}
+                {list.length} {list.length === 1 ? 'file' : 'files'}
               </span>
               <LineCounts additions={additions} deletions={deletions} />
             </>
@@ -1458,9 +1461,9 @@ function DiffChangedToast({
           Refresh <kbd>r</kbd>
         </button>
       </div>
-      {changes && changes.length > 0 && (
+      {list && (
         <ul className="diff-changed-files">
-          {changes.map((c) => (
+          {list.map((c) => (
             <li key={c.name}>
               <span className="diff-changed-name">{c.name}</span>
               {c.status !== 'changed' && (
@@ -1475,10 +1478,18 @@ function DiffChangedToast({
   )
 }
 
-/** +/- line counts, as in the file header; zeros are left out. */
-function LineCounts({ additions, deletions }: { additions: number; deletions: number }) {
+/** +/- line counts; zeros are left out. */
+function LineCounts({
+  additions,
+  deletions,
+  className,
+}: {
+  additions: number
+  deletions: number
+  className?: string
+}) {
   return (
-    <span className="line-counts">
+    <span className={className ? `line-counts ${className}` : 'line-counts'}>
       {additions > 0 && <span className="stat-add">+{additions}</span>}
       {deletions > 0 && <span className="stat-del">-{deletions}</span>}
     </span>
@@ -1587,6 +1598,9 @@ function DiffView() {
     queryKey: ['diff-preview', hashData?.hash],
     queryFn: () => apiFetch<DiffResponse>('/api/diff'),
     enabled: diffChanged,
+    // Each new hash is a new key. Keep listing the last preview's files
+    // until the new one loads, rather than emptying the list in between.
+    placeholderData: keepPreviousData,
   })
 
   // A refetch that fails (Refresh, or the one after a comment) keeps the diff

@@ -519,11 +519,8 @@ body,
   transform: none;
 }
 
+/* With .line-counts, which sets the font and gap */
 .file-header-stats {
-  display: flex;
-  gap: 6px;
-  font-size: 12px;
-  font-family: var(--font-mono);
   flex-shrink: 0;
   /* Sits right after the copy button; auto margin reclaims the gap so stats
      stay anchored to the right edge while the button hugs the filename. */
@@ -1026,7 +1023,8 @@ body,
 /* Diff-changed toast: floats centered on the header bar, like .toast, until
    Refresh. The file list hangs below the summary row in the same card, so
    the card is placed by its row (top border + half the row's fixed height)
-   rather than centered as a whole, and the list grows it downward only. Below .toast, which can briefly cover it. */
+   rather than centered as a whole, and the list grows it downward only.
+   Below .toast, which can briefly cover it. */
 .diff-changed-toast {
   --row-height: 38px;
   position: absolute;
