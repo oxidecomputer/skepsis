@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 
-import { expect, test, WORKING } from './fixtures.ts'
+import { COMMITTED, expect, LONG_LINES, test, WORKING } from './fixtures.ts'
 
 // Appends each payload to a file in .git, out of the diff's way.
 const SEND = 'cat >> .git/sent.jsonl'
@@ -70,7 +70,7 @@ test.describe('with --send', () => {
       file: 'a.ts',
       side: 'additions',
       lines: [1, 1],
-      code: { lines: [1, 3], text: 'const one = 1\nconst two = 22\nconst three = 3' },
+      code: [{ lines: [1, 3], text: 'const one = 1\nconst two = 22\nconst three = 3' }],
       text: 'looks wrong',
     })
     expect(payload!['blob']).toMatch(/^[0-9a-f]{7,}$/)
@@ -137,7 +137,7 @@ test.describe('with --send', () => {
 
     await expect(page.getByText('Sent', { exact: true })).toBeVisible()
     const [payload] = await sent(repo.dir)
-    expect(payload).toMatchObject({ lines: [1, 1], code: { lines: [1, 3] } })
+    expect(payload).toMatchObject({ lines: [1, 1], code: [{ lines: [1, 3] }] })
     expect(blobId(WORKING['a.ts']!)).toMatch(new RegExp(`^${payload!['blob']}`))
   })
 
@@ -158,11 +158,50 @@ test.describe('with --send', () => {
       lines: [2, 2],
       text: 'why change this?',
     })
-    expect(payload!['code']).toEqual({
-      lines: [1, 3],
-      text: 'const one = 1\nconst two = 2\nconst three = 3',
-    })
+    expect(payload!['code']).toEqual([
+      { lines: [1, 3], text: 'const one = 1\nconst two = 2\nconst three = 3' },
+    ])
     expect(payload!['prompt']).toMatch(/line 2 \(old side of/)
+  })
+})
+
+test.describe('with --send and lines hidden between hunks', () => {
+  const working = LONG_LINES.with(9, '// line 10 changed').with(49, '// line 50 changed')
+  test.use({
+    cliArgs: ['--send', SEND],
+    repoFiles: { committed: COMMITTED, working: { 'long.ts': working.join('\n') + '\n' } },
+  })
+
+  test('a range across hidden lines sends each visible run', async ({ page, repo }) => {
+    const number = (n: number) =>
+      page
+        .locator('diffs-container')
+        .first()
+        .locator(`[data-additions] [data-column-number="${n}"]`)
+        .first()
+    // Drag the "+" from line 10 down to line 50, across the collapsed lines.
+    await expect(async () => {
+      await number(10).hover()
+      await expect(number(10).locator('[data-gutter-utility-slot]')).toBeVisible({
+        timeout: 1000,
+      })
+    }).toPass()
+    const start = (await number(10).locator('[data-gutter-utility-slot]').boundingBox())!
+    const end = (await number(50).boundingBox())!
+    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, { steps: 10 })
+    await page.mouse.up()
+    await textarea(page).fill('these two')
+    await page.getByRole('button', { name: 'Send', exact: true }).click()
+
+    await expect(page.getByText('Sent', { exact: true })).toBeVisible()
+    const [payload] = await sent(repo.dir)
+    const run = (first: number, last: number) => ({
+      lines: [first, last],
+      text: working.slice(first - 1, last).join('\n'),
+    })
+    expect(payload).toMatchObject({ lines: [10, 50], code: [run(8, 13), run(47, 52)] })
   })
 })
 

@@ -40,12 +40,16 @@ export const sendRequestSchema = z.object({
   file: z.string().nullable(),
   side: z.enum(['additions', 'deletions']).nullable(),
   lines: z.tuple([z.number().int().positive(), z.number().int().positive()]).nullable(),
-  /** An excerpt around the lines commented on, and its first and last line */
+  /** An excerpt around the lines commented on, as runs of consecutive lines
+   *  with each run's first and last line. Lines the diff hides split it. */
   code: z
-    .object({
-      lines: z.tuple([z.number().int().positive(), z.number().int().positive()]),
-      text: z.string(),
-    })
+    .array(
+      z.object({
+        lines: z.tuple([z.number().int().positive(), z.number().int().positive()]),
+        text: z.string(),
+      }),
+    )
+    .min(1)
     .nullable(),
   /** The blob ID of `side`'s version of the file as the page shows it, the
    *  version `lines` and `code` come from */

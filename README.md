@@ -200,7 +200,7 @@ The JSON sent to stdin looks like this:
   "file": "src/a.ts",
   "side": "additions",
   "lines": [42, 45],
-  "code": { "lines": [41, 46], "text": "const z = 0\nconst a = 1\n…" },
+  "code": [{ "lines": [41, 46], "text": "const z = 0\nconst a = 1\n…" }],
   "blob": "9daeafb",
   "text": "why two?",
   "prompt": "Review comment on src/a.ts, lines 42–45 (new side of `jj diff -r @-`), in lines 41–46:\n\n```\nconst z = 0\nconst a = 1\n…\n```\n\nwhy two?"
@@ -209,7 +209,9 @@ The JSON sent to stdin looks like this:
 
 `side` is `additions` or `deletions`, and `lines` (1-based, inclusive) are in
 that side's numbering. `code` is an excerpt of that side around the lines
-commented on, with its own first and last line. `blob` is the ID of the
+commented on, in runs of consecutive lines, each with its own first and last
+line. There's more than one run when the lines commented on span lines the
+diff doesn't show. `blob` is the ID of the
 version of the file those line numbers refer to (old or new, by `side`), or
 null where the diff has none, as for an added file's old side or a pure
 rename. It's the version on the page, which is older than the file on disk if

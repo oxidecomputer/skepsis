@@ -29,8 +29,9 @@ export interface SendPayload {
   /** 1-based and inclusive, in `side`'s numbering */
   lines: [number, number] | null
   /** An excerpt of `side`: the lines commented on and a little around them,
-   *  from line `lines[0]` to `lines[1]` */
-  code: { lines: [number, number]; text: string } | null
+   *  as runs of consecutive lines, each from line `lines[0]` to `lines[1]`.
+   *  More than one where the diff hid lines in between. */
+  code: { lines: [number, number]; text: string }[] | null
   /** The blob ID of `side`'s version of the file as the page showed it, the
    *  version `lines` number. Null where the diff has none, such as an added
    *  file's old side or a pure rename. */
@@ -79,10 +80,14 @@ export function renderPrompt(p: Omit<SendPayload, 'prompt'>): string {
   const side = p.side === 'deletions' ? 'old side' : 'new side'
   const head = `Review comment on ${p.file}${where} (${side} of ${command})`
   if (!p.code) return `${head}:\n\n${p.text}`
-  const [first, last] = p.code.lines
-  const excerpt = first === last ? `line ${first}` : `lines ${first}–${last}`
-  const f = fence(p.code.text)
-  return `${head}, in ${excerpt}:\n\n${f}\n${p.code.text}\n${f}\n\n${p.text}`
+  const ranges = p.code.map(({ lines: [first, last] }) =>
+    first === last ? `line ${first}` : `lines ${first}–${last}`,
+  )
+  const excerpts = p.code.map(({ text }) => {
+    const f = fence(text)
+    return `${f}\n${text}\n${f}`
+  })
+  return `${head}, in ${ranges.join(' and ')}:\n\n${excerpts.join('\n\n')}\n\n${p.text}`
 }
 
 export type SendResult = { ok: true; output: string } | { ok: false; error: string }

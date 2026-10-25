@@ -46,7 +46,7 @@ const comment: SendRequest = {
   file: 'src/a.ts',
   side: 'additions',
   lines: [42, 45],
-  code: { lines: [41, 46], text: 'const a = 1\nconst b = 2' },
+  code: [{ lines: [41, 46], text: 'const a = 1\nconst b = 2' }],
   blob: 'abc123',
   text: 'why two?',
 }
@@ -66,7 +66,7 @@ describe('renderPrompt', () => {
     const p = payload({
       side: 'deletions',
       lines: [7, 7],
-      code: { lines: [7, 7], text: 'x' },
+      code: [{ lines: [7, 7], text: 'x' }],
     })
     expect(p.prompt).toMatch(
       /^Review comment on src\/a\.ts, line 7 \(old side of `jj diff -r @-`\), in line 7:/,
@@ -74,8 +74,22 @@ describe('renderPrompt', () => {
   })
 
   it('fences code that has its own fences', () => {
-    const p = payload({ code: { lines: [1, 1], text: 'say ```hi```' } })
+    const p = payload({ code: [{ lines: [1, 1], text: 'say ```hi```' }] })
     expect(p.prompt).toContain('\n````\nsay ```hi```\n````\n')
+  })
+
+  it('shows each run of an excerpt with a gap between', () => {
+    const p = payload({
+      lines: [10, 50],
+      code: [
+        { lines: [8, 13], text: 'a' },
+        { lines: [47, 52], text: 'b' },
+      ],
+    })
+    expect(p.prompt).toBe(
+      'Review comment on src/a.ts, lines 10–50 (new side of `jj diff -r @-`), in lines 8–13 and lines 47–52:\n\n' +
+        '```\na\n```\n\n```\nb\n```\n\nwhy two?',
+    )
   })
 
   it('handles a comment with no anchor', () => {
@@ -99,7 +113,7 @@ describe('buildPayload', () => {
       file: 'src/a.ts',
       side: 'additions',
       lines: [42, 45],
-      code: { lines: [41, 46], text: 'const a = 1\nconst b = 2' },
+      code: [{ lines: [41, 46], text: 'const a = 1\nconst b = 2' }],
       blob: 'abc123',
       text: 'why two?',
     })

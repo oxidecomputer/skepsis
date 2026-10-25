@@ -653,7 +653,9 @@ function sideBlob(fileDiff: FileDiffMetadata, side: Side): string | null {
 
 /** The lines a sent comment covers, with a little context, and the excerpt's
  *  first and last line: for the far end to find the spot by once line numbers
- *  drift, and to tell the lines commented on from the context. */
+ *  drift, and to tell the lines commented on from the context. A partial diff
+ *  can hide lines in the middle, so the excerpt comes in runs of consecutive
+ *  lines. */
 function lineContext(
   fileDiff: FileDiffMetadata,
   side: Side,
@@ -681,7 +683,16 @@ function lineContext(
     }
   }
   if (!out.length) return null
-  return { lines: [out[0]![0], out.at(-1)![0]], text: out.map(([, l]) => l).join('\n') }
+  const runs: [number, string][][] = []
+  for (const entry of out) {
+    const run = runs.at(-1)
+    if (run && run.at(-1)![0] === entry[0] - 1) run.push(entry)
+    else runs.push([entry])
+  }
+  return runs.map((run) => ({
+    lines: [run[0]![0], run.at(-1)![0]],
+    text: run.map(([, l]) => l).join('\n'),
+  }))
 }
 
 // --- Comment form ---
