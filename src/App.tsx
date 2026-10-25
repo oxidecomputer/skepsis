@@ -1179,6 +1179,12 @@ function CommentsDisabledBanner({
   )
 }
 
+const CHANGE_LABELS = {
+  added: 'new in diff',
+  removed: 'gone from diff',
+  base: 'base changed',
+} as const
+
 /** Floats on the header bar while the diff on disk differs from the one on
  *  screen, listing the files that changed. `changes` is null until the newer
  *  diff has loaded. */
@@ -1219,9 +1225,7 @@ function DiffChangedToast({
             <li key={c.name}>
               <span className="diff-changed-name">{c.name}</span>
               {c.status !== 'changed' && (
-                <span className="diff-changed-status">
-                  {c.status === 'added' ? 'new in diff' : 'gone from diff'}
-                </span>
+                <span className="diff-changed-status">{CHANGE_LABELS[c.status]}</span>
               )}
               <LineCounts additions={c.additions} deletions={c.deletions} />
             </li>

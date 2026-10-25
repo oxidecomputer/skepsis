@@ -12,9 +12,13 @@ import type { FileDiffMetadata } from '@pierre/diffs'
 export interface FileChange {
   name: string
   /** added: newly in the diff. removed: left it (now matches the base).
-   *  changed: in both, with different content. */
-  status: 'added' | 'removed' | 'changed'
-  /** Lines the file's new side gained and lost since the diff on screen. */
+   *  changed: in both, with different content. base: in both, against a
+   *  different version of the file (a commit, a rebase, an edit to the
+   *  parent). */
+  status: 'added' | 'removed' | 'changed' | 'base'
+  /** Lines the file's new side gained and lost since the diff on screen. Zero
+   *  for removed and base, where the two diffs don't share a base to count
+   *  against: a removed file could be a revert or a commit of the change. */
   additions: number
   deletions: number
 }
@@ -45,9 +49,8 @@ function missing(a: Map<string, number>, b: Map<string, number>): number {
 }
 
 /**
- * The files whose diff changed between `before` and `after`, both parsed
- * patches against the same base. Unsorted: the caller orders them to match
- * its file list.
+ * The files whose diff changed between `before` and `after`, two parsed
+ * patches. Unsorted: the caller orders them to match its file list.
  *
  * The counts compare the two diffs' changed lines as multisets rather than
  * diffing the files, which the partial patches can't do. A newly added line
@@ -65,20 +68,27 @@ export function diffChanges(
   for (const name of new Set([...old.keys(), ...cur.keys()])) {
     const o = old.get(name)
     const c = cur.get(name)
+    if (!c) {
+      changes.push({ name, status: 'removed', additions: 0, deletions: 0 })
+      continue
+    }
+    if (o && o.prevObjectId !== c.prevObjectId) {
+      changes.push({ name, status: 'base', additions: 0, deletions: 0 })
+      continue
+    }
     const a = changeLines(o)
     const b = changeLines(c)
     const additions = missing(b.added, a.added) + missing(a.deleted, b.deleted)
     const deletions = missing(a.added, b.added) + missing(b.deleted, a.deleted)
-    const status = !o ? 'added' : !c ? 'removed' : 'changed'
     // A binary file or one whose lines only moved has no counts; its object
     // ID still tells whether it changed.
     const same =
-      status === 'changed' &&
+      o &&
       additions === 0 &&
       deletions === 0 &&
-      o!.newObjectId === c!.newObjectId &&
-      o!.mode === c!.mode
-    if (!same) changes.push({ name, status, additions, deletions })
+      o.newObjectId === c.newObjectId &&
+      o.mode === c.mode
+    if (!same) changes.push({ name, status: o ? 'changed' : 'added', additions, deletions })
   }
   return changes
 }

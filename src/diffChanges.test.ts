@@ -85,8 +85,61 @@ index 0000000..5555555
 +world
 `
     expect(diffChanges(parse(A_TWO), parse(b))).toEqual([
-      { name: 'a.ts', status: 'removed', additions: 1, deletions: 1 },
+      // No counts: the file could have been reverted or committed.
+      { name: 'a.ts', status: 'removed', additions: 0, deletions: 0 },
       { name: 'b.txt', status: 'added', additions: 2, deletions: 0 },
+    ])
+  })
+
+  it('reports a moved base without counts', () => {
+    // A commit or rebase moved the base under an otherwise unchanged edit.
+    const after = modified(
+      'a.ts',
+      '6666666..2222222',
+      `@@ -1,3 +1,3 @@
+ const one = 1
+-const two = 20
++const two = 22
+ const three = 3
+`,
+    )
+    expect(diffChanges(parse(A_TWO), parse(after))).toEqual([
+      { name: 'a.ts', status: 'base', additions: 0, deletions: 0 },
+    ])
+  })
+
+  it('counts repeated lines', () => {
+    const before = modified(
+      'a.ts',
+      '1111111..2222222',
+      `@@ -1,1 +1,2 @@
+ const one = 1
++}
++}
+`,
+    )
+    const after = modified(
+      'a.ts',
+      '1111111..3333333',
+      `@@ -1,1 +1,3 @@
+ const one = 1
++}
++}
++}
+`,
+    )
+    expect(diffChanges(parse(before), parse(after))).toEqual([
+      { name: 'a.ts', status: 'changed', additions: 1, deletions: 0 },
+    ])
+  })
+
+  it('reports a mode change with the same content', () => {
+    const after = A_TWO.replace(
+      'index 1111111..2222222 100644',
+      'old mode 100644\nnew mode 100755\nindex 1111111..2222222',
+    )
+    expect(diffChanges(parse(A_TWO), parse(after))).toEqual([
+      { name: 'a.ts', status: 'changed', additions: 0, deletions: 0 },
     ])
   })
 
