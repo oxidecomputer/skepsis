@@ -1,17 +1,20 @@
 # Publishes to npm via a trusted publisher (OIDC) configured on npmjs.com for
-# this repo + workflow filename — no token, and provenance attestations are
-# generated automatically (https://docs.npmjs.com/trusted-publishers).
+# this repo + workflow filename + the `release` environment — no token, and
+# provenance attestations are generated automatically
+# (https://docs.npmjs.com/trusted-publishers).
 #
 # Two modes:
 #   Release: bump the version in package.json and land it on main. The
-#     workflow publishes any version not yet on the registry and creates a
+#     workflow publishes any version not yet on the registry after a required
+#     reviewer approves the `release` environment deployment, then creates a
 #     matching v* GitHub release with generated notes (customizable via
 #     .github/release.yml config if we ever want categories). Full recipe in
 #     the README.
 #   Canary:  Actions tab → Release → Run workflow → enter a PR number.
 #     Publishes that PR's head as <version>-canary.<pr>.<sha> under the
 #     `canary` dist-tag and comments the version on the PR. Dispatching
-#     publishes the PR's code under @oxide — review the diff first.
+#     publishes the PR's code under @oxide after the same `release`
+#     environment approval — review the diff first. Fork PRs are rejected.
 
 name: Release
 
@@ -24,14 +27,33 @@ on:
         description: 'PR number to publish a canary for'
         required: true
 
+permissions:
+  contents: read
+
+# A newer run cancels an older one in the same group, including one paused
+# waiting for release-environment approval. So a stale unapproved release
+# can't be approved once a newer merge lands, and the newest run publishes
+# whatever version is on main. The cost: merging two version bumps before the
+# first is approved skips the first version. Canary runs are grouped per PR so
+# they don't cancel releases or each other's PRs.
+concurrency:
+  group: release-${{ inputs.pr-number || 'main' }}
+  cancel-in-progress: true
+
 jobs:
-  publish:
+  # Main-branch CI runs here (rather than on ci.yml's own push trigger) so
+  # publishing can depend on it.
+  ci:
     if: github.event_name == 'push'
-    timeout-minutes: 10
+    uses: ./.github/workflows/ci.yml
+
+  check:
+    if: github.event_name == 'push'
+    needs: ci
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # to create the release and its tag
-      id-token: write # required for OIDC trusted publishing
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      published: ${{ steps.check.outputs.published }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Check whether package.json version is already published
@@ -47,37 +69,51 @@ jobs:
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
           fi
+
+  publish:
+    if: needs.check.outputs.published == 'false'
+    needs: check
+    environment: release
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for OIDC trusted publishing
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        if: steps.check.outputs.published == 'false'
         with:
           node-version: 24 # npm >=11.5.1 required for trusted publishing
           registry-url: 'https://registry.npmjs.org'
           # npm recommends not restoring a dependency cache in release builds
           package-manager-cache: false
+      # --ignore-scripts: a dependency install script running in this job
+      # could mint a publish credential (id-token: write is job-scoped).
+      # Nothing needs install scripts (fsevents is macOS-only).
       - name: Install
-        if: steps.check.outputs.published == 'false'
-        run: npm ci
-      - name: Install jj # the tests need it
-        if: steps.check.outputs.published == 'false'
-        uses: ./.github/actions/install-jj
-      - name: Install Playwright browsers # npm run ci includes the e2e tests
-        if: steps.check.outputs.published == 'false'
-        run: npx playwright install --with-deps chromium firefox
-      - name: Check and build
-        if: steps.check.outputs.published == 'false'
-        run: npm run ci
-      - name: Publish
-        if: steps.check.outputs.published == 'false'
+        run: npm ci --ignore-scripts
+      - name: Publish # prepack runs the build
         run: npm publish
-      # Runs even when publish was skipped, so a rerun after a failed release
-      # step can still create the release. No-op when it already exists.
-      # `gh release create` also creates the tag; --generate-notes produces
-      # the same notes as the web UI's "Generate release notes" button, from
-      # PRs merged since the previous release.
+
+  # Runs even when publish was skipped because the version is already on the
+  # registry, so rerunning the whole workflow after this job fails can still
+  # create the release. No-op when it already exists. `gh release create`
+  # also creates the tag; --generate-notes produces the same notes as the web
+  # UI's "Generate release notes" button, from PRs merged since the previous
+  # release.
+  github-release:
+    if: >-
+      !cancelled() && needs.check.result == 'success' &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    needs: [check, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to create the release and its tag
+    steps:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.check.outputs.version }}
+          VERSION: ${{ needs.check.outputs.version }}
         run: |
           if gh release view "v${VERSION}" --repo ${{ github.repository }} > /dev/null 2>&1; then
             echo "Release v${VERSION} already exists"
@@ -88,6 +124,7 @@ jobs:
 
   canary:
     if: github.event_name == 'workflow_dispatch'
+    environment: release
     timeout-minutes: 10
     runs-on: ubuntu-latest
     permissions:
@@ -95,29 +132,38 @@ jobs:
       id-token: write # required for OIDC trusted publishing
       pull-requests: write # to comment the canary version on the PR
     steps:
+      # refs/pull/N/head resolves for fork PRs too, and this job's build
+      # scripts run with a publish credential, so only accept PRs from
+      # branches in this repo.
+      - name: Ensure PR is not from a fork
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CROSS_REPO=$(gh pr view ${{ inputs.pr-number }} --repo ${{ github.repository }} \
+            --json isCrossRepository --jq .isCrossRepository)
+          if [ "$CROSS_REPO" != "false" ]; then
+            echo "PR #${{ inputs.pr-number }} is from a fork; canaries can only be published for PRs from this repo" >&2
+            exit 1
+          fi
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          # works for fork PRs too; the workflow itself always runs from main
+          # The workflow definition comes from the ref the run is dispatched
+          # on, but the `release` environment only allows deployments from
+          # main, so in practice that's always main.
           ref: refs/pull/${{ inputs.pr-number }}/head
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
-      - name: Install
-        run: npm ci
-      - name: Install jj # the tests need it
-        uses: ./.github/actions/install-jj
-      - name: Install Playwright browsers # npm run ci includes the e2e tests
-        run: npx playwright install --with-deps chromium firefox
-      - name: Check and build
-        run: npm run ci
+      - name: Install # --ignore-scripts for the same reason as the publish job
+        run: npm ci --ignore-scripts
       - name: Set canary version
         run: |
           SHA=$(git rev-parse --short HEAD)
           BASE=$(node --print "require('./package.json').version")
           npm version "${BASE}-canary.${{ inputs.pr-number }}.${SHA}" --no-git-tag-version
-      - name: Publish canary
+      - name: Publish canary # prepack runs the build
         run: npm publish --tag canary
       - name: Comment version on PR
         env:

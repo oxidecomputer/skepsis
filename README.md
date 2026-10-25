@@ -291,7 +291,10 @@ jj commit -m 'v0.1.1'                    # land the bump on main via PR
 ```
 
 On every push to `main`, CI checks whether the `package.json` version is
-already on the registry. If not, it publishes and creates a matching [GitHub
+already on the registry. If not, the Release workflow pauses in a "waiting for
+review" state. A required reviewer must approve the `release` environment
+deployment from the workflow run before the publish proceeds. After
+publishing, it creates a matching [GitHub
 release](https://github.com/oxidecomputer/skepsis/releases) like `v0.1.1` with
 auto-generated notes listing the PRs merged since the previous release.
 
@@ -299,4 +302,6 @@ To publish a canary build of a PR, go to the [Release
 workflow](https://github.com/oxidecomputer/skepsis/actions/workflows/release.yml),
 click "Run workflow", and enter the PR number. It publishes the PR's head as
 `<version>-canary.<pr>.<sha>` under the `canary` dist-tag and comments the
-version on the PR.
+version on the PR. The dispatched workflow requires the same `release`
+environment approval before publishing, and only accepts PRs from branches in
+this repo, not forks.
