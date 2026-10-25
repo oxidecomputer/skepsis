@@ -41,6 +41,27 @@ test('a change on disk shows a banner listing it, and Refresh loads it', async (
   await expect(banner(page)).toBeHidden()
 })
 
+test('a failed Refresh keeps the diff on screen', async ({ page, repo }) => {
+  await repo.write('b.txt', 'hello\nworld\nagain\n')
+  await expect(banner(page)).toBeVisible()
+
+  await page.route('**/api/diff', (route) =>
+    route.fulfill({ status: 500, json: { error: 'index.lock exists' } }),
+  )
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  const toast = page.getByText("Couldn't reload the diff: index.lock exists")
+  await expect(toast).toBeVisible()
+  // toBeVisible ignores opacity, so check the fade lasts as long as the toast.
+  await expect(toast).toHaveCSS('animation-duration', '6s')
+  await expect(page.locator('.file-header').first()).toBeVisible()
+  await expect(banner(page)).toBeVisible()
+
+  // Refresh tries again.
+  await page.unroute('**/api/diff')
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  await expect(page.getByText('again')).toBeVisible()
+})
+
 test('r refreshes once the diff has changed', async ({ page, repo }) => {
   await repo.write('b.txt', 'hello\nworld\nagain\n')
   await expect(banner(page)).toBeVisible()

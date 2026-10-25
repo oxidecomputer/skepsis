@@ -961,6 +961,7 @@ body,
     sans-serif;
   z-index: 200;
   pointer-events: none;
+  /* The duration is set inline from showToast's */
   animation: toast-fade 1.4s ease-in forwards;
 }
 

@@ -203,15 +203,16 @@ function useIsWide(): boolean {
 function useToast(duration = 1400) {
   const [toast, setToast] = useState<{
     content: React.ReactNode
+    ms: number
     key: number
   } | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const key = useRef(0)
   const showToast = useCallback(
-    (content: React.ReactNode) => {
+    (content: React.ReactNode, ms = duration) => {
       clearTimeout(timer.current)
-      setToast({ content, key: ++key.current })
-      timer.current = setTimeout(() => setToast(null), duration)
+      setToast({ content, ms, key: ++key.current })
+      timer.current = setTimeout(() => setToast(null), ms)
     },
     [duration],
   )
@@ -1298,7 +1299,7 @@ function DiffView() {
   const draftRef = useRef({ key: '', text: '' })
   const seededFromInitialLoad = useRef(false)
   const qc = useQueryClient()
-  const { data, error, isLoading } = useQuery({
+  const { data, error, errorUpdatedAt, isLoading } = useQuery({
     queryKey: ['diff'],
     queryFn: async () => {
       const diff = await apiFetch<DiffResponse>('/api/diff')
@@ -1313,6 +1314,9 @@ function DiffView() {
     // Coming back to the tab refetches the hash below, which raises the
     // banner. Swapping the diff in place would change it under the reader.
     refetchOnWindowFocus: false,
+    // The server is local, so a failure is jj or git failing, which a retry
+    // rarely fixes. Retrying would only hold off the error for several seconds.
+    retry: false,
   })
 
   // Ask whether the diff changed while the page is visible (React Query skips
@@ -1334,6 +1338,16 @@ function DiffView() {
     queryFn: () => apiFetch<DiffResponse>('/api/diff'),
     enabled: diffChanged,
   })
+
+  // A refetch that fails (Refresh, or the one after a comment) keeps the diff
+  // already on screen, so say so in a toast instead of replacing the page.
+  // The banner stays up if the diff changed, and Refresh tries again.
+  const reportedErrorAt = useRef(0)
+  useEffect(() => {
+    if (!error || !data || errorUpdatedAt === reportedErrorAt.current) return
+    reportedErrorAt.current = errorUpdatedAt
+    showToast(`Couldn't reload the diff: ${error.message}`, 6000)
+  }, [error, data, errorUpdatedAt, showToast])
 
   useEffect(() => {
     if (data?.revset) document.title = `skepsis | ${data.revset}`
@@ -2360,7 +2374,8 @@ function DiffView() {
 
   // Error before loading: on a failed fetch react-query settles with `data`
   // undefined, so a loading-first guard would show "Loading..." forever.
-  if (error) return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
+  if (error && !data)
+    return <pre style={{ color: 'red', padding: 20 }}>{String(error)}</pre>
   if (isLoading || !data) return <div className="empty-diff">Loading...</div>
   if (data.error) return <pre style={{ color: 'red', padding: 20 }}>{data.error}</pre>
   if (!patch)
@@ -2414,7 +2429,11 @@ function DiffView() {
             }}
           />
           {toast && (
-            <div className="toast" key={toast.key}>
+            <div
+              className="toast"
+              key={toast.key}
+              style={{ animationDuration: `${toast.ms}ms` }}
+            >
               {toast.content}
             </div>
           )}
