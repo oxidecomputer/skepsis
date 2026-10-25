@@ -50,6 +50,7 @@ import type {
   SelectedLineRange,
 } from '@pierre/diffs'
 import { THEME_MODES, TOKEN_HEADER } from '../shared/types.ts'
+import { mergeDuplicateFiles } from './diffFiles.ts'
 import type {
   CommentRequest,
   DiffHashResponse,
@@ -1729,7 +1730,10 @@ function DiffView() {
 
   // Memoize patch parsing so it doesn't re-run on viewed state changes. These
   // are "partial" diffs (no full-file context), used for initial paint and as
-  // the fallback when full contents aren't available.
+  // the fallback when full contents aren't available. A file swapped for
+  // a symlink, or the reverse, parses as two entries sharing one name.
+  // CodeView needs one item per id, so the merge helper folds them into
+  // a single entry first.
   const patch = data?.patch
   // The last parse of each file. A refetch reuses it for a file whose content
   // hasn't changed, so the file keeps its identity: the open comment box stays
@@ -1740,9 +1744,9 @@ function DiffView() {
   const parsedFilesRef = useRef(new Map<string, FileDiffMetadata>())
   const { patchFiles, treePaths, treeStatus } = useMemo(() => {
     if (!patch) return { patchFiles: [], treePaths: [], treeStatus: [] }
-    const parsed = parsePatchFiles(patch)
-      .flatMap((p) => p.files)
-      .toSorted((a, b) => compareTreeOrder(a.name, b.name))
+    const parsed = mergeDuplicateFiles(
+      parsePatchFiles(patch).flatMap((p) => p.files),
+    ).toSorted((a, b) => compareTreeOrder(a.name, b.name))
     const status: GitStatusEntry[] = parsed.flatMap((f) => {
       const s = TREE_STATUS[f.type]
       return s ? [{ path: f.name, status: s }] : []
@@ -1762,7 +1766,8 @@ function DiffView() {
   const nextPatch = nextDiff?.patch
   const changes = useMemo(() => {
     if (nextPatch === undefined) return null
-    const parse = (p: string) => parsePatchFiles(p).flatMap((x) => x.files)
+    const parse = (p: string) =>
+      mergeDuplicateFiles(parsePatchFiles(p).flatMap((x) => x.files))
     return diffChanges(parse(patch ?? ''), parse(nextPatch)).toSorted((a, b) =>
       compareTreeOrder(a.name, b.name),
     )

@@ -7,7 +7,7 @@
  */
 
 import { join } from 'node:path'
-import { readFile, writeFile } from 'node:fs/promises'
+import { lstat, readFile, writeFile } from 'node:fs/promises'
 import { getCommentSyntax } from './commentSyntax.ts'
 import {
   BARE_COMMENT,
@@ -17,6 +17,18 @@ import {
   reviewTagRegex,
 } from '../shared/reviewComments.ts'
 
+/**
+ * Comments are inserted as lines into the file itself. Writing through a
+ * symlink would silently edit the link's target instead, so the server
+ * refuses. The client surfaces the error in the comment form.
+ */
+async function assertNotSymlink(cwd: string, file: string): Promise<void> {
+  const stat = await lstat(join(cwd, file)).catch(() => null)
+  if (stat?.isSymbolicLink()) {
+    throw new Error(`Cannot comment on symlink: ${file}`)
+  }
+}
+
 export async function insertComment(
   cwd: string,
   file: string,
@@ -24,6 +36,7 @@ export async function insertComment(
   lineText: string,
   text: string,
 ): Promise<void> {
+  await assertNotSymlink(cwd, file)
   const filePath = join(cwd, file)
   const content = await readFile(filePath, 'utf-8')
   const lines = content.split('\n')
@@ -60,6 +73,7 @@ export async function removeComment(
   file: string,
   line: number,
 ): Promise<void> {
+  await assertNotSymlink(cwd, file)
   const filePath = join(cwd, file)
   const content = await readFile(filePath, 'utf-8')
   const lines = content.split('\n')
