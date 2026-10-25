@@ -278,6 +278,21 @@ function normalizeFileType(f: FileDiffMetadata): FileDiffMetadata {
   return f
 }
 
+/** Whether two parses of a file's patch describe the same old and new
+ *  content, by object ID. Without IDs (some renames and mode changes), no. */
+function sameFileVersion(a: FileDiffMetadata, b: FileDiffMetadata): boolean {
+  return (
+    !!a.prevObjectId &&
+    !!a.newObjectId &&
+    a.prevObjectId === b.prevObjectId &&
+    a.newObjectId === b.newObjectId &&
+    a.prevName === b.prevName &&
+    a.type === b.type &&
+    a.mode === b.mode &&
+    a.prevMode === b.prevMode
+  )
+}
+
 // Hashes of the empty Git blob ("blob 0\0") in SHA-1 and SHA-256 repositories.
 // No hunks can also mean a binary, rename-only, or mode-only change, so the
 // content ID must confirm emptiness. Patch IDs may be abbreviated.
@@ -1461,6 +1476,13 @@ function DiffView() {
   // are "partial" diffs (no full-file context), used for initial paint and as
   // the fallback when full contents aren't available.
   const patch = data?.patch
+  // The last parse of each file. A refetch reuses it for a file whose content
+  // hasn't changed, so the file keeps its identity: the open comment box stays
+  // put (it can't relocate onto lines revealed by expansion, which a fresh
+  // partial parse lacks) and the library keeps the file's expanded hunks.
+  // Mutated during render, like versionsRef below: the same patch always
+  // yields the same reuse.
+  const parsedFilesRef = useRef(new Map<string, FileDiffMetadata>())
   const { patchFiles, treePaths, treeStatus } = useMemo(() => {
     if (!patch) return { patchFiles: [], treePaths: [], treeStatus: [] }
     const parsed = parsePatchFiles(patch)
@@ -1470,8 +1492,14 @@ function DiffView() {
       const s = TREE_STATUS[f.type]
       return s ? [{ path: f.name, status: s }] : []
     })
+    const files = parsed.map((f) => {
+      const file = normalizeFileType(f)
+      const prev = parsedFilesRef.current.get(file.name)
+      return prev && sameFileVersion(prev, file) ? prev : file
+    })
+    parsedFilesRef.current = new Map(files.map((f) => [f.name, f]))
     return {
-      patchFiles: parsed.map(normalizeFileType),
+      patchFiles: files,
       treePaths: parsed.map((f) => f.name),
       treeStatus: status,
     }
@@ -1533,15 +1561,18 @@ function DiffView() {
     }),
   })
 
-  // Map of loaded contents by file name. contentQueries is a fresh array each
-  // render, so this recomputes often, but it's just a small map build.
-  const contentsByFile = useMemo(() => {
+  // Map of loaded contents by file name, and the files whose contents are
+  // still loading. contentQueries is a fresh array each render, so this
+  // recomputes often, but it's just a small map build.
+  const { contentsByFile, loadingContents } = useMemo(() => {
     const map = new Map<string, FileContentsResponse>()
+    const loading = new Set<string>()
     patchFiles.forEach((f, i) => {
-      const d = contentQueries[i]?.data
-      if (d) map.set(f.name, d)
+      const q = contentQueries[i]
+      if (q?.data) map.set(f.name, q.data)
+      else if (q?.isFetching) loading.add(f.name)
     })
-    return map
+    return { contentsByFile: map, loadingContents: loading }
   }, [patchFiles, contentQueries])
 
   // Re-parse expand-all files at whole-file context; everything else keeps its
@@ -1555,8 +1586,12 @@ function DiffView() {
     return patchFiles.map((f) => {
       if (!(expandedFiles[f.name] ?? false)) return f
       const c = contentsByFile.get(f.name)
-      if (!c || (c.oldContents == null && c.newContents == null)) return f
       const cached = parsedCacheRef.current.get(f.name)
+      // Until an edited file's new contents load, keep showing the old version
+      // whole, rather than its partial patch: the comment box relocates from
+      // whole file to whole file, instead of losing a line the patch omits.
+      if (!c && cached && loadingContents.has(f.name)) return cached.diff
+      if (!c || (c.oldContents == null && c.newContents == null)) return f
       if (cached && cached.old === c.oldContents && cached.new === c.newContents) {
         return cached.diff
       }
@@ -1580,7 +1615,7 @@ function DiffView() {
       })
       return diff
     })
-  }, [patchFiles, contentsByFile, expandedFiles])
+  }, [patchFiles, contentsByFile, loadingContents, expandedFiles])
 
   // Navigable lines per file for the j/k cursor: addition-side line numbers
   // (context + additions; deletions are skipped), derived from hunk metadata

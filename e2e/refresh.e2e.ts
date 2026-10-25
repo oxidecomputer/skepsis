@@ -146,6 +146,78 @@ test('the comment box closes when its line leaves the diff', async ({ page, repo
   await expect(page.getByText('Split mode:')).toBeVisible()
 })
 
+const long = (page: Page) =>
+  page.locator('diffs-container').filter({
+    has: page.locator('.file-header-name').getByText('long.ts', { exact: true }),
+  })
+
+/** long.ts as written, with the draft as a comment under line 10. */
+const commentedUnder10 = (lines: string[]) =>
+  lines.toSpliced(10, 0, '// <review>', '// half a thought', '// </review>').join('\n') +
+  '\n'
+
+test.describe('with an expanded file', () => {
+  const working = LONG_LINES.with(29, '// line 30 changed')
+  test.use({
+    repoFiles: {
+      committed: COMMITTED,
+      working: { ...WORKING, 'long.ts': working.join('\n') + '\n' },
+    },
+  })
+
+  /** Open the comment box on line 10 of long.ts with the gutter "+". */
+  async function draftOnLine10(page: Page) {
+    const number = long(page).locator('[data-additions] [data-column-number="10"]').first()
+    await expect(async () => {
+      await number.hover()
+      await number.locator('[data-gutter-utility-slot]').click({ timeout: 1000 })
+    }).toPass({ timeout: 7000 })
+    const textarea = page.getByPlaceholder('Leave a review comment')
+    await textarea.fill('half a thought')
+    return textarea
+  }
+
+  test('the comment box stays on a revealed line when another file changes', async ({
+    page,
+    repo,
+  }) => {
+    await long(page).locator('[data-expand-button]:visible').first().click()
+    const textarea = await draftOnLine10(page)
+
+    await repo.write('b.txt', 'hello\nnew line\n')
+    await page.getByRole('button', { name: 'Refresh' }).click()
+    await expect(page.getByText('new line')).toBeVisible()
+    await expect(textarea).toHaveValue('half a thought')
+    await page.getByRole('button', { name: 'Comment', exact: true }).click()
+    await expect(textarea).toBeHidden()
+    expect(await repo.read('long.ts')).toBe(commentedUnder10(working))
+  })
+
+  test('with Expand all, the comment box follows its line while the file reloads', async ({
+    page,
+    repo,
+  }) => {
+    await long(page).getByRole('button', { name: 'Expand all lines', exact: true }).click()
+    const textarea = await draftOnLine10(page)
+
+    // Slow enough that the refetched diff arrives well before the contents.
+    await page.route('**/api/file-contents?*', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      await route.continue()
+    })
+    const edited = working.with(49, '// line 50 changed')
+    await repo.write('long.ts', edited.join('\n') + '\n')
+    const contents = page.waitForResponse('**/api/file-contents?*')
+    await page.getByRole('button', { name: 'Refresh' }).click()
+    await contents
+    await expect(banner(page)).toBeHidden()
+    await expect(textarea).toHaveValue('half a thought')
+    await page.getByRole('button', { name: 'Comment', exact: true }).click()
+    await expect(textarea).toBeHidden()
+    expect(await repo.read('long.ts')).toBe(commentedUnder10(edited))
+  })
+})
+
 test.describe('with --no-poll', () => {
   test.use({ cliArgs: ['--no-poll'] })
 
