@@ -21,6 +21,7 @@ export async function insertComment(
   cwd: string,
   file: string,
   afterLine: number,
+  lineText: string,
   text: string,
 ): Promise<void> {
   const filePath = join(cwd, file)
@@ -31,8 +32,12 @@ export async function insertComment(
     throw new Error(`Line ${afterLine} out of range (file has ${lines.length} lines)`)
   }
 
-  // Match indentation of the target line
   const targetLine = lines[afterLine - 1]!
+  if (targetLine.replace(/\r$/, '') !== lineText.replace(/\r?\n$/, '')) {
+    throw new Error(`Line ${afterLine} changed on disk. Refresh and try again.`)
+  }
+
+  // Match indentation of the target line
   const indent = targetLine.match(/^(\s*)/)?.[1] ?? ''
   const syntax: CommentSyntax = getCommentSyntax(file, lines[0] ?? '') ?? BARE_COMMENT
   const { prefix, suffix } = syntax

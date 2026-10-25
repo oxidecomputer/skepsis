@@ -51,6 +51,7 @@ import type {
 } from '@pierre/diffs'
 import { THEME_MODES } from '../shared/types.ts'
 import type {
+  CommentRequest,
   DiffHashResponse,
   DiffResponse,
   ErrorResponse,
@@ -68,6 +69,7 @@ import {
   REVIEW_OPEN_PATTERN,
 } from '../shared/reviewComments.ts'
 import { diffChanges, type FileChange } from './diffChanges.ts'
+import { lineText as diffLineText, relocateLine } from './lineAnchor.ts'
 
 const queryClient = new QueryClient()
 
@@ -1292,15 +1294,17 @@ function DiffView() {
   // Files the user expanded via the header's expand-all-lines button: these are
   // re-parsed with whole-file context so every collapsed region is revealed.
   const [expandedFiles, setExpandedFiles] = useState<Record<string, boolean>>({})
-  // The comment box the user opened. What's shown is `composing`, below,
-  // which drops it while its line is missing from the diff.
+  // The comment box the user opened, with the file's diff it was placed in.
+  // What's shown is `composing`, below, which follows the line into a
+  // refetched diff.
   const [composingState, setComposing] = useState<{
     file: string
     line: number
+    diff: FileDiffMetadata
   } | null>(null)
-  // The open comment box's text, keyed by its file and line. A refetched diff
-  // remounts the box, and it starts again from this.
-  const draftRef = useRef({ key: '', text: '' })
+  // The open comment box's text. A refetched diff remounts the box, and it
+  // starts again from this.
+  const draftRef = useRef('')
   const seededFromInitialLoad = useRef(false)
   const qc = useQueryClient()
   const { data, error, errorUpdatedAt, isLoading } = useQuery({
@@ -1438,19 +1442,8 @@ function DiffView() {
   })
 
   const commentMutation = useMutation({
-    mutationFn: ({
-      file,
-      afterLine,
-      text,
-    }: {
-      file: string
-      afterLine: number
-      text: string
-    }) =>
-      apiFetch('/api/comment', {
-        method: 'POST',
-        body: { file, afterLine, text },
-      }),
+    mutationFn: (body: CommentRequest) =>
+      apiFetch('/api/comment', { method: 'POST', body }),
     onSuccess: () => setComposing(null),
     onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
   })
@@ -1568,13 +1561,18 @@ function DiffView() {
         return cached.diff
       }
       // Whole-file context so the entire file renders as one hunk.
-      const diff = normalizeFileType(
-        parseDiffFromFile(
-          { name: f.prevName ?? f.name, contents: c.oldContents ?? '' },
-          { name: f.name, contents: c.newContents ?? '' },
-          { context: Number.MAX_SAFE_INTEGER },
+      const diff = {
+        ...normalizeFileType(
+          parseDiffFromFile(
+            { name: f.prevName ?? f.name, contents: c.oldContents ?? '' },
+            { name: f.name, contents: c.newContents ?? '' },
+            { context: Number.MAX_SAFE_INTEGER },
+          ),
         ),
-      )
+        // parseDiffFromFile has no object IDs to give; relocateLine compares them.
+        prevObjectId: f.prevObjectId,
+        newObjectId: f.newObjectId,
+      }
       parsedCacheRef.current.set(f.name, {
         old: c.oldContents,
         new: c.newContents,
@@ -1599,31 +1597,55 @@ function DiffView() {
     return map
   }, [files])
 
-  // A refetched diff can drop the open comment box's line, or its whole
-  // file. Hide the box then: an open box blocks most shortcuts, and there's
-  // nowhere left to show it. If the line comes back, so does the box and its
-  // draft. A partial diff only knows the lines in its hunks; a whole-file one
-  // (needed for hunk expansion, which lets the box open on an expanded line)
-  // knows them all.
+  const openComposer = useCallback(
+    (file: string, line: number) => {
+      const diff = files.find((f) => f.name === file)
+      if (!diff) return
+      commentMutation.reset()
+      draftRef.current = ''
+      setComposing({ file, line, diff })
+    },
+    [files, commentMutation],
+  )
+  // A refetched diff can move the open comment box's line, or drop it. The
+  // box follows the line, and closes when it can't be placed: an open box
+  // blocks most shortcuts, and a box on the wrong line would write its
+  // comment there.
   const composing = useMemo(() => {
     if (!composingState) return null
-    const { file, line } = composingState
+    const { file, line, diff } = composingState
     const fileDiff = files.find((f) => f.name === file)
     if (!fileDiff) return null
-    const exists = fileDiff.isPartial
-      ? fileLines.get(file)?.includes(line)
-      : line <= fileDiff.additionLines.length
-    return exists ? composingState : null
-  }, [composingState, files, fileLines])
-  const composingHidden = composingState !== null && composing === null
+    if (fileDiff === diff) return composingState
+    const moved = relocateLine(diff, fileDiff, 'additions', line)
+    return moved === null ? null : { file, line: moved, diff: fileDiff }
+  }, [composingState, files])
+  // Commit the move or the close in the same render, so the box never shows
+  // in its old place. A closed box's draft goes in a toast, since the box
+  // can't come back.
+  const [closedDraft, setClosedDraft] = useState<{ text: string } | null>(null)
+  if (composingState && composing !== composingState) {
+    setComposing(composing)
+    if (!composing && draftRef.current.trim()) setClosedDraft({ text: draftRef.current })
+  }
   useEffect(() => {
-    if (composingHidden && draftRef.current.text.trim())
-      showToast('Comment box hidden: its line left the diff')
-  }, [composingHidden, showToast])
+    if (!closedDraft) return
+    showToast(
+      <>
+        Comment box closed: its line changed or left the diff
+        <Button onClick={() => void navigator.clipboard.writeText(closedDraft.text)}>
+          Copy draft
+        </Button>
+      </>,
+      15_000,
+    )
+  }, [closedDraft, showToast])
   // Cancel and submit clear the draft, so reopening the same line starts empty.
   useEffect(() => {
-    if (!composingState) draftRef.current = { key: '', text: '' }
+    if (!composingState) draftRef.current = ''
   }, [composingState])
+  const composingRef = useRef(composing)
+  composingRef.current = composing
 
   // j/k line cursor: a (file, line) position on the additions side. Rendered
   // through CodeView's native line selection (see effect below) so cursor
@@ -1974,20 +1996,23 @@ function DiffView() {
         )
       }
       if (meta.type === 'composing') {
-        const draftKey = `${file}:${annotation.lineNumber}`
         return (
           <CommentForm
-            initialText={draftRef.current.key === draftKey ? draftRef.current.text : ''}
+            initialText={draftRef.current}
             onTextChange={(text) => {
-              draftRef.current = { key: draftKey, text }
+              draftRef.current = text
             }}
-            onSubmit={(text) =>
+            onSubmit={(text) => {
+              const diff = composingRef.current?.diff
+              const line = diff && diffLineText(diff, 'additions', annotation.lineNumber)
+              if (line === undefined) return
               commentMutation.mutate({
                 file,
                 afterLine: annotation.lineNumber,
+                lineText: line,
                 text,
               })
-            }
+            }}
             onCancel={() => setComposing(null)}
             submitting={
               commentMutation.isPending && commentMutation.variables?.file === file
@@ -2021,8 +2046,7 @@ function DiffView() {
         range.start <= a.metadata.endLine,
     )
     if (insideReview) return
-    commentMutation.reset()
-    setComposing({ file: item.id, line: range.start })
+    openComposer(item.id, range.start)
   }
 
   const options = useMemo<CodeViewOptions<AnnotationMeta, undefined>>(
@@ -2252,8 +2276,7 @@ function DiffView() {
               cur.line <= a.metadata.endLine,
           )
           if (insideReview) break
-          commentMutation.reset()
-          setComposing({ file: cur.file, line: cur.line })
+          openComposer(cur.file, cur.line)
           break
         }
         case 'e': {
@@ -2365,7 +2388,7 @@ function DiffView() {
     anchorIfTopFile,
     fileLines,
     commentsEnabled,
-    commentMutation,
+    openComposer,
     setFocused,
     markProgrammaticScroll,
     scrollItemToStart,

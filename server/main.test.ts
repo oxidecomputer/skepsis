@@ -168,6 +168,7 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     let res = await api('POST', '/api/comment', {
       file: 'g.txt',
       afterLine: 2,
+      lineText: 'two',
       text: 'needs work',
     })
     expect(await res.json()).toEqual({ ok: true })
@@ -185,6 +186,19 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     expect(await readFile(join(dir, 'g.txt'), 'utf-8')).toBe(before)
   })
 
+  it('refuses a comment when its line changed on disk', async () => {
+    const before = await readFile(join(dir, 'g.txt'), 'utf-8')
+    const res = await api('POST', '/api/comment', {
+      file: 'g.txt',
+      afterLine: 2,
+      lineText: 'one',
+      text: 'needs work',
+    })
+    expect(res.ok).toBe(false)
+    expect(await res.text()).toContain('Line 2 changed on disk')
+    expect(await readFile(join(dir, 'g.txt'), 'utf-8')).toBe(before)
+  })
+
   it("wraps review comments in the file's comment syntax", async () => {
     const diff = await getDiffResponse()
     expect(diff.commentSyntaxes['c.ts']).toEqual({ prefix: '//' })
@@ -192,6 +206,7 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     let res = await api('POST', '/api/comment', {
       file: 'c.ts',
       afterLine: 1,
+      lineText: 'const one = 1',
       text: 'why one?',
     })
     expect(await res.json()).toEqual({ ok: true })

@@ -28,6 +28,9 @@ export const viewedDeleteAllSchema = z.object({
 export const commentRequestSchema = z.object({
   file: z.string(),
   afterLine: z.number(),
+  /** What the page shows at afterLine, so a file that changed since the diff
+   *  loaded can't take the comment on the wrong line. */
+  lineText: z.string(),
   text: z.string(),
 })
 

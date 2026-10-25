@@ -965,6 +965,13 @@ body,
   animation: toast-fade 1.4s ease-in forwards;
 }
 
+/* The toast lets clicks through to the header bar under it, except on its
+   own buttons. */
+.toast button {
+  pointer-events: auto;
+  margin-left: 10px;
+}
+
 @keyframes toast-fade {
   0%,
   86% {

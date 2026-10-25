@@ -109,7 +109,26 @@ test('a comment draft survives a refresh', async ({ page, repo }) => {
   await expect(textarea).toHaveValue('half a thought')
 })
 
-test('the comment box hides when its file leaves the diff', async ({ page, repo }) => {
+test('the comment box follows its line when lines are added above', async ({
+  page,
+  repo,
+}) => {
+  await page.keyboard.press('j')
+  await page.keyboard.press('c')
+  await page.getByPlaceholder('Leave a review comment').fill('looks wrong')
+
+  await repo.write('a.ts', 'const zero = 0\n' + WORKING['a.ts'])
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  await expect(page.getByText('const zero = 0')).toBeVisible()
+  await page.getByRole('button', { name: 'Comment' }).click()
+  await expect(page.getByText('// looks wrong')).toBeVisible()
+  // Under const one = 1, which is now line 2, not under line 1.
+  expect(await repo.read('a.ts')).toBe(
+    'const zero = 0\nconst one = 1\n// <review>\n// looks wrong\n// </review>\nconst two = 22\nconst three = 3\nconst four = 4\n',
+  )
+})
+
+test('the comment box closes when its line leaves the diff', async ({ page, repo }) => {
   await page.keyboard.press('j')
   await page.keyboard.press('c')
   const textarea = page.getByPlaceholder('Leave a review comment')
@@ -117,9 +136,12 @@ test('the comment box hides when its file leaves the diff', async ({ page, repo 
 
   await repo.write('a.ts', COMMITTED['a.ts']!)
   await page.getByRole('button', { name: 'Refresh' }).click()
-  await expect(page.getByText('Comment box hidden: its line left the diff')).toBeVisible()
+  await expect(
+    page.getByText('Comment box closed: its line changed or left the diff'),
+  ).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Copy draft' })).toBeVisible()
   await expect(textarea).toBeHidden()
-  // An open box blocks the shortcuts; a hidden one doesn't.
+  // An open box blocks the shortcuts; a closed one doesn't.
   await page.keyboard.press('s')
   await expect(page.getByText('Split mode:')).toBeVisible()
 })
