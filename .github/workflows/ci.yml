@@ -1,8 +1,9 @@
 name: CI
 
+# On pushes to main this runs as part of the Release workflow (via
+# workflow_call), which gates publishing on it.
 on:
-  push:
-    branches: [main]
+  workflow_call:
   pull_request:
 
 concurrency:
