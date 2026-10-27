@@ -915,10 +915,16 @@ body,
 /* Review comment annotation row */
 .review-annotation {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   padding: 4px 12px;
   background: var(--bg-panel);
   border-top: 1px solid var(--border);
+}
+
+.review-annotation-lines {
+  color: var(--fg-muted);
+  font-size: 12px;
 }
 
 /* Help modal */

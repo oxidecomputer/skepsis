@@ -193,6 +193,45 @@ test('comment appears in the diff without a reload', async ({ page, repo }) => {
   )
 })
 
+test('a comment on several lines counts them, and the page marks them', async ({
+  page,
+  repo,
+}) => {
+  const a = page.locator('diffs-container').first()
+  const number = (n: number) => a.locator(`[data-additions] [data-column-number="${n}"]`)
+  // Drag from the "+" on line 1 down to line 3
+  await expect(async () => {
+    await number(1).hover()
+    await expect(number(1).locator('[data-gutter-utility-slot]')).toBeVisible({
+      timeout: 1000,
+    })
+  }).toPass()
+  const start = (await number(1).locator('[data-gutter-utility-slot]').boundingBox())!
+  const end = (await number(3).boundingBox())!
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, { steps: 10 })
+  await page.mouse.up()
+  await page.getByPlaceholder('Leave a review comment').fill('these three')
+  await page.getByRole('button', { name: 'Comment' }).click()
+
+  await expect(page.getByText('// these three')).toBeVisible()
+  expect(await repo.read('a.ts')).toBe(
+    'const one = 1\nconst two = 22\nconst three = 3\n// <review covers="3 lines above">\n// these three\n// </review>\nconst four = 4\n',
+  )
+  // The marking comes from the file, so it survives a reload
+  await page.reload()
+  await expect(a.getByText('Lines 1–3')).toBeVisible()
+  await expect(
+    a.locator('[data-additions] [data-review-target][data-column-number]'),
+  ).toHaveText(['1', '2', '3'])
+  await expect(number(7)).not.toHaveAttribute('data-review-target')
+  // The rail joins them to the comment, down through its Resolve row
+  await expect(
+    a.locator('[data-gutter-buffer="annotation"][data-review-rail]'),
+  ).toHaveCount(1)
+})
+
 // The line cursor must not pin the gutter "+" to its line: hovering another
 // line in the same file moves the "+" there.
 test('the gutter + follows the pointer with the line cursor in the file', async ({

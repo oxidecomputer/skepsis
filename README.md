@@ -142,6 +142,18 @@ a revset ending in `@` for jj, or an open-ended range ending at the working
 tree for git), since that's where the inserted lines land. The default diff
 in both modes ends at the working copy, so comments are enabled by default.
 
+A comment goes in right after the line it's on. A comment on several lines goes
+after the last of them, and its open tag says how many it covers, counting up
+from the tag:
+
+```ts
+const start = Number(match[1])
+const end = Number(match[2])
+// <review covers="2 lines above">
+// What about NaN?
+// </review>
+```
+
 ### Marking files viewed
 
 Viewed state is stored per file in `~/.local/share/skepsis/` using the file's

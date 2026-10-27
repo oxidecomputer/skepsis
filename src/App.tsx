@@ -63,6 +63,7 @@ import {
   type CommentSyntax,
   REVIEW_CLOSE_PATTERN,
   REVIEW_OPEN_PATTERN,
+  reviewOpenTagLines,
 } from '../shared/reviewComments.ts'
 import { diffChanges, type FileChange } from './diffChanges.ts'
 import { lineText as diffLineText, relocateLine } from './lineAnchor.ts'
@@ -228,7 +229,14 @@ function useToast(duration = 1400) {
 // --- Review comment types and detection ---
 
 type AnnotationMeta =
-  | { type: 'review'; startLine: number; endLine: number; file: string }
+  | {
+      type: 'review'
+      startLine: number
+      endLine: number
+      file: string
+      /** The lines the comment is on: the ones its open tag counts above it. */
+      target: { start: number; end: number }
+    }
   | { type: 'composing'; file: string }
   | { type: 'notice'; message: string }
   | { type: 'sent'; sent: SentComment }
@@ -257,12 +265,14 @@ function detectReviewComments(
   const annotations: DiffLineAnnotation<AnnotationMeta>[] = []
   for (const hunk of fileDiff.hunks) {
     let openLine: number | null = null
+    let lineCount = 1
     for (let i = 0; i < hunk.additionCount; i++) {
       const lineText = fileDiff.additionLines[hunk.additionLineIndex + i]
       if (!lineText) continue
       const absLine = hunk.additionStart + i
       if (openPattern.test(lineText)) {
         openLine = absLine
+        lineCount = reviewOpenTagLines(lineText)
       } else if (closePattern.test(lineText) && openLine !== null) {
         annotations.push({
           side: 'additions',
@@ -272,6 +282,7 @@ function detectReviewComments(
             startLine: openLine,
             endLine: absLine,
             file: fileName,
+            target: { start: Math.max(1, openLine - lineCount), end: openLine - 1 },
           },
         })
         openLine = null
@@ -453,6 +464,17 @@ const DIFF_CSS = `
     color: var(--diffs-fg) !important;
   }
   [data-review-comment] [data-gutter-utility-slot] { display: none !important; }
+  /* The lines a review comment is on get blue numbers, and a bar down the
+     gutter joins them to the comment (see railReviewLines). */
+  [data-review-target][data-column-number] {
+    color: rgba(56, 139, 253, 0.85) !important;
+    font-weight: 600;
+  }
+  /* Not a ::before like the library's indicator bars: on a buffer row the
+     ::before sets the gutter's width. */
+  [data-gutter] > [data-review-rail] {
+    box-shadow: inset 4px 0 0 rgba(56, 139, 253, 0.85);
+  }
   /* The j/k cursor is the item's editor active line. Give it the look of a
      single selected line, which the library only computes for selections. */
   [data-line][data-editor-active-line] {
@@ -482,7 +504,9 @@ const ADDITIONS_ONLY_CSS = `
 `
 
 /**
- * Tag addition lines within review-block ranges with `data-review-comment` so
+ * Tag addition lines within review-block ranges with `data-review-comment`,
+ * new-side lines a review comment is on with `data-review-target`, and the
+ * gutter rows the bar joining them runs down with `data-review-rail`, so
  * DIFF_CSS can style them. `node` is the item's `diffs-container` element;
  * we re-derive tags from scratch each call so recycled (pooled) elements never
  * carry stale highlights from a previously-rendered file.
@@ -490,18 +514,24 @@ const ADDITIONS_ONLY_CSS = `
 function tagReviewLines(
   node: HTMLElement,
   ranges: Array<{ start: number; end: number }>,
+  targets: Array<{ start: number; end: number }>,
 ): void {
   const sr = node.shadowRoot
   if (!sr) return
   const pre = sr.querySelector('pre')
   if (!pre) return
 
-  for (const el of sr.querySelectorAll('[data-review-comment]')) {
+  for (const el of sr.querySelectorAll(
+    '[data-review-comment], [data-review-target], [data-review-rail]',
+  )) {
     el.removeAttribute('data-review-comment')
+    el.removeAttribute('data-review-target')
+    el.removeAttribute('data-review-rail')
   }
   if (ranges.length === 0) return
 
   const inRange = (n: number) => ranges.some((r) => n >= r.start && n <= r.end)
+  const inTarget = (n: number) => targets.some((r) => n >= r.start && n <= r.end)
 
   for (const col of Array.from(pre.children)) {
     if (!(col instanceof HTMLElement) || !col.hasAttribute('data-code')) continue
@@ -512,27 +542,73 @@ function tagReviewLines(
     for (let i = 0; i < gutter.children.length && i < content.children.length; i++) {
       const g = gutter.children[i] as HTMLElement
       const c = content.children[i] as HTMLElement
-      if (g.getAttribute('data-line-type') !== 'change-addition') continue
+      const type = g.getAttribute('data-line-type')
+      if (type !== 'change-addition' && type !== 'context' && type !== 'context-expanded')
+        continue
       const numAttr = g.getAttribute('data-column-number')
       if (!numAttr) continue
       const lineNum = parseInt(numAttr, 10)
-      if (inRange(lineNum)) {
-        g.setAttribute('data-review-comment', '')
-        c.setAttribute('data-review-comment', '')
+      const attr =
+        type === 'change-addition' && inRange(lineNum)
+          ? 'data-review-comment'
+          : inTarget(lineNum)
+            ? 'data-review-target'
+            : null
+      if (attr) {
+        g.setAttribute(attr, '')
+        c.setAttribute(attr, '')
       }
+    }
+    railReviewLines(Array.from(gutter.children) as HTMLElement[])
+  }
+}
+
+const isReviewTagged = (row: HTMLElement) =>
+  row.hasAttribute('data-review-target') || row.hasAttribute('data-review-comment')
+const isNewSideLine = (row: HTMLElement) =>
+  row.hasAttribute('data-column-number') &&
+  row.getAttribute('data-line-type') !== 'change-deletion'
+
+/** Run the rail down a column's gutter rows: through the lines a comment is
+ *  on, the comment itself, and its annotation row. It bridges rows with no
+ *  new-side line (deletions, spacers, collapsed-line separators) between
+ *  tagged rows, so the comment and its lines read as one block. */
+function railReviewLines(rows: HTMLElement[]): void {
+  let gap: HTMLElement[] | null = null // rows since the last tagged one
+  for (const [i, row] of rows.entries()) {
+    if (isReviewTagged(row)) {
+      for (const g of gap ?? []) g.setAttribute('data-review-rail', '')
+      row.setAttribute('data-review-rail', '')
+      gap = []
+    } else if (
+      row.getAttribute('data-gutter-buffer') === 'annotation' &&
+      rows[i - 1]?.hasAttribute('data-review-comment')
+    ) {
+      row.setAttribute('data-review-rail', '')
+      gap = []
+    } else if (isNewSideLine(row)) {
+      gap = null
+    } else {
+      gap?.push(row)
     }
   }
 }
 
-/** Review-block ranges for an item's annotations (used by tagReviewLines). */
+/** Review-block ranges for an item's annotations, and the lines they're on
+ *  (used by tagReviewLines). */
 function reviewRanges(
   annotations: ReadonlyArray<{ metadata?: AnnotationMeta }> | undefined,
-): Array<{ start: number; end: number }> {
-  return (annotations ?? []).flatMap((a) =>
-    a.metadata?.type === 'review'
-      ? [{ start: a.metadata.startLine, end: a.metadata.endLine }]
-      : [],
+): {
+  blocks: Array<{ start: number; end: number }>
+  targets: Array<{ start: number; end: number }>
+} {
+  const reviews = (annotations ?? []).flatMap((a) =>
+    a.metadata?.type === 'review' ? [a.metadata] : [],
   )
+  return {
+    blocks: reviews.map((r) => ({ start: r.startLine, end: r.endLine })),
+    targets: reviews.map((r) => r.target),
+  }
 }
 
 /** What the line cursor needs from a CodeView item's instance (FileDiff or File). */
@@ -2250,6 +2326,11 @@ function DiffView() {
       if (meta.type === 'review') {
         return (
           <div className="review-annotation">
+            <span className="review-annotation-lines">
+              {meta.target.start === meta.target.end
+                ? `Line ${meta.target.start}`
+                : `Lines ${meta.target.start}–${meta.target.end}`}
+            </span>
             <Button onClick={() => resolveMutation.mutate({ file, line: meta.startLine })}>
               Resolve comment
             </Button>
@@ -2294,6 +2375,7 @@ function DiffView() {
                 afterLine: annotation.lineNumber,
                 lineText: line,
                 text,
+                lineCount: annotation.lineNumber - first + 1,
               })
             }}
             onSend={
@@ -2441,7 +2523,8 @@ function DiffView() {
           'data-file-notice',
           context.item.type === 'diff' && fileNotice(context.item.fileDiff) != null,
         )
-        tagReviewLines(node, reviewRanges(context.item.annotations))
+        const { blocks, targets } = reviewRanges(context.item.annotations)
+        tagReviewLines(node, blocks, targets)
       },
     }),
     [theme, diffStyle, commentsEnabled, send, expandable],

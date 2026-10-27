@@ -204,6 +204,22 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     expect(await readFile(join(dir, 'g.txt'), 'utf-8')).toBe(before)
   })
 
+  it('counts the lines a multi-line comment covers in its open tag', async () => {
+    const before = await readFile(join(dir, 'g.txt'), 'utf-8')
+    await api('POST', '/api/comment', {
+      file: 'g.txt',
+      afterLine: 3,
+      lineText: 'three',
+      text: 'these',
+      lineCount: 2,
+    })
+    expect(await readFile(join(dir, 'g.txt'), 'utf-8')).toBe(
+      'one\ntwo\nthree\n<review covers="2 lines above">\nthese\n</review>\nfour\n',
+    )
+    await api('DELETE', '/api/comment', { file: 'g.txt', line: 4 })
+    expect(await readFile(join(dir, 'g.txt'), 'utf-8')).toBe(before)
+  })
+
   it('refuses a comment when its line changed on disk', async () => {
     const before = await readFile(join(dir, 'g.txt'), 'utf-8')
     const res = await api('POST', '/api/comment', {

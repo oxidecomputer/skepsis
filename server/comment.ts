@@ -14,6 +14,7 @@ import {
   type CommentSyntax,
   REVIEW_CLOSE_TAG,
   REVIEW_OPEN_TAG,
+  reviewOpenTag,
   reviewTagRegex,
 } from '../shared/reviewComments.ts'
 
@@ -35,6 +36,7 @@ export async function insertComment(
   afterLine: number,
   lineText: string,
   text: string,
+  lineCount = 1,
 ): Promise<void> {
   await assertNotSymlink(cwd, file)
   const filePath = join(cwd, file)
@@ -59,7 +61,8 @@ export async function insertComment(
   const wrap = (body: string) => indent + [prefix, body, suffix].filter(Boolean).join(' ')
 
   const commentLines = [
-    wrap(REVIEW_OPEN_TAG),
+    // The covered lines end at afterLine, so they can't start before line 1
+    wrap(reviewOpenTag(Math.min(lineCount, afterLine))),
     ...text.split('\n').map((line) => wrap(line)),
     wrap(REVIEW_CLOSE_TAG),
   ]
