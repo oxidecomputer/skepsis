@@ -26,13 +26,7 @@ import {
 } from 'react'
 import type { ReactElement } from 'react'
 import { Tooltip } from '@base-ui/react/tooltip'
-import {
-  canUseWASM,
-  parsePatchFiles,
-  parseDiffFromFile,
-  registerCustomTheme,
-} from '@pierre/diffs'
-import type { ThemeSyntaxSettings } from '@pierre/highlights'
+import { canUseWASM, parsePatchFiles, parseDiffFromFile } from '@pierre/diffs'
 import { CodeView, WorkerPoolContextProvider } from '@pierre/diffs/react'
 import type { CodeViewHandle } from '@pierre/diffs/react'
 import { FileTree, useFileTree } from '@pierre/trees/react'
@@ -88,54 +82,6 @@ const queryClient = new QueryClient({
 // toggle). Shared with the worker pool's highlighter, which is initialized
 // separately.
 const DIFF_THEME = { light: 'github-light-default', dark: 'github-dark-default' } as const
-
-// Highlights' port of the light theme disagrees with its dark one: types,
-// constructors, titles and enum variants take other hues. So for Highlights, build
-// the light theme's syntax colors from the dark theme's, each mapped to its
-// counterpart in GitHub's light palette. Font styles from either side are kept.
-// Registered under the same name as a Zed theme, it replaces the bundled one for
-// Highlights only; Shiki loads its own.
-const LIGHT_FOR_DARK: Record<string, string> = {
-  '#ffa657': '#953800', // orange
-  '#79c0ff': '#0550ae', // blue
-  '#7ee787': '#116329', // green
-  '#ff7b72': '#cf222e', // red
-  '#d2a8ff': '#8250df', // purple
-  '#a5d6ff': '#0a3069', // strings
-  '#e6edf3': '#1f2328', // text
-  '#8b949e': '#59636e', // comments
-  '#7d8590': '#59636e', // hints
-  '#ffa198': '#82071e', // diff.minus
-}
-
-const syntaxSettings = (
-  s: string | ThemeSyntaxSettings | undefined,
-): ThemeSyntaxSettings => (typeof s === 'string' ? { color: s } : (s ?? {}))
-
-registerCustomTheme(
-  DIFF_THEME.light,
-  async () => {
-    const [{ default: light }, { default: dark }] = await Promise.all([
-      import('@pierre/highlights/themes/github-light-default'),
-      import('@pierre/highlights/themes/github-dark-default'),
-    ])
-    const syntax: Record<string, ThemeSyntaxSettings> = {}
-    for (const key of new Set([
-      ...Object.keys(light.style.syntax ?? {}),
-      ...Object.keys(dark.style.syntax ?? {}),
-    ])) {
-      // A key only the light theme has loses its color, so it falls back to
-      // its parent scope the way it does in dark
-      const { color: _, ...lightFont } = syntaxSettings(light.style.syntax?.[key])
-      const { color, ...darkFont } = syntaxSettings(dark.style.syntax?.[key])
-      const mapped = color && LIGHT_FOR_DARK[color.toLowerCase()]
-      if (color && !mapped) console.warn(`No light color for ${color} (${key})`)
-      syntax[key] = { ...lightFont, ...darkFont, ...(mapped && { color: mapped }) }
-    }
-    return { ...light, style: { ...light.style, syntax } }
-  },
-  'zed',
-)
 
 // Highlights (WASM lexers, beta in @pierre/diffs 1.6) rather than the default
 // Shiki. It has fewer languages (about 80); the rest render as plain text, with
