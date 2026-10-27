@@ -89,9 +89,8 @@ const queryClient = new QueryClient({
 // separately.
 const DIFF_THEME = { light: 'github-light-default', dark: 'github-dark-default' } as const
 
-// Highlights' port of the light theme disagrees with its dark one: properties
-// (YAML keys, TOML tables, TSX object keys) come out in the plain text color,
-// and types, constructors and titles take other hues. So for Highlights, build
+// Highlights' port of the light theme disagrees with its dark one: types,
+// constructors, titles and enum variants take other hues. So for Highlights, build
 // the light theme's syntax colors from the dark theme's, each mapped to its
 // counterpart in GitHub's light palette. Font styles from either side are kept.
 // Registered under the same name as a Zed theme, it replaces the bundled one for
