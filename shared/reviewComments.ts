@@ -40,14 +40,49 @@ export const REVIEW_COMMENT_SYNTAXES = [
 export const REVIEW_OPEN_TAG = '<review>'
 export const REVIEW_CLOSE_TAG = '</review>'
 
+/** A comment on several lines goes after the last of them, and its open tag
+ *  says how many lines it covers, counting up from the tag:
+ *  `<review covers="6 lines above">`. A count rather than line numbers, so it
+ *  stays right when lines above it are added or removed, including by other
+ *  comments. The value is in words because agents read it: in testing,
+ *  Sonnet and Haiku sometimes took `above="6"` or `span="6"` to mean line 6,
+ *  and never misread this. A plain `<review>` covers the line just above. */
+export function reviewOpenTag(lines: number): string {
+  return lines > 1 ? `<review covers="${lines} lines above">` : REVIEW_OPEN_TAG
+}
+
+// Any attributes are allowed on the open tag, so a comment written with one
+// this version doesn't know still shows up as a comment.
+const OPEN_TAG_SOURCE = '<review(?:\\s+[\\w-]+="[^"]*")*\\s*>'
+const OPEN_TAG_RE = new RegExp(OPEN_TAG_SOURCE)
+
+/** The attributes on an open tag line. */
+export function reviewOpenTagAttributes(line: string): Record<string, string> {
+  const tag = line.match(OPEN_TAG_RE)?.[0] ?? ''
+  return Object.fromEntries(
+    Array.from(tag.matchAll(/([\w-]+)="([^"]*)"/g), (m) => [m[1], m[2]]),
+  )
+}
+
+/** How many lines above it an open tag line covers (see reviewOpenTag). */
+export function reviewOpenTagLines(line: string): number {
+  const n = reviewOpenTagAttributes(line)['covers']?.match(/^(\d+) lines above$/)?.[1]
+  return n ? Math.max(1, parseInt(n, 10)) : 1
+}
+
 function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// The open tag may carry attributes (see OPEN_TAG_SOURCE).
+function tagSource(tag: string): string {
+  return tag === REVIEW_OPEN_TAG ? OPEN_TAG_SOURCE : escapeRegex(tag)
 }
 
 function reviewTagSource(syntax: CommentSyntax, tag: string): string {
   const prefix = escapeRegex(syntax.prefix)
   const suffix = syntax.suffix ? `(?:\\s*${escapeRegex(syntax.suffix)})?` : ''
-  return `${prefix}\\s*${escapeRegex(tag)}${suffix}`
+  return `${prefix}\\s*${tagSource(tag)}${suffix}`
 }
 
 export function reviewTagRegex(syntax: CommentSyntax, tag: string): RegExp {

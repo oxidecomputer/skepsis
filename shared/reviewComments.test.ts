@@ -14,6 +14,8 @@ import {
   REVIEW_CLOSE_PATTERN,
   REVIEW_OPEN_PATTERN,
   XML_COMMENT,
+  reviewOpenTag,
+  reviewOpenTagLines,
   reviewTagRegex,
 } from './reviewComments.ts'
 
@@ -27,9 +29,20 @@ describe('REVIEW_OPEN_PATTERN', () => {
     '% <review>',
     '; <review>',
     '" <review>',
+    '// <review covers="6 lines above">',
+    '/* <review covers="2 lines above"> */',
+    '<!-- <review covers="12 lines above"> -->',
+    '# <review covers="2 lines above" by="someone">',
   ])('matches %j', (line) => {
     expect(REVIEW_OPEN_PATTERN.test(line)).toBe(true)
   })
+
+  it.each(['// <reviewer>', '// <review covers>', '// <review: 6 lines above>'])(
+    'does not match %j',
+    (line) => {
+      expect(REVIEW_OPEN_PATTERN.test(line)).toBe(false)
+    },
+  )
 
   it('tolerates omitted block suffixes', () => {
     expect(REVIEW_OPEN_PATTERN.test('/* <review>')).toBe(true)
@@ -79,5 +92,23 @@ describe('reviewTagRegex', () => {
   it('matches the emitted block-comment forms', () => {
     expect(reviewTagRegex(BLOCK_COMMENT, '<review>').test('/* <review> */')).toBe(true)
     expect(reviewTagRegex(XML_COMMENT, '</review>').test('<!-- </review> -->')).toBe(true)
+  })
+})
+
+describe('reviewOpenTag', () => {
+  it('leaves the count off a one-line comment', () => {
+    expect(reviewOpenTag(1)).toBe('<review>')
+  })
+
+  it.each([1, 2, 40])('round-trips %i lines', (n) => {
+    expect(reviewOpenTagLines(`  // ${reviewOpenTag(n)}`)).toBe(n)
+  })
+
+  it('reads a plain tag as the line above', () => {
+    expect(reviewOpenTagLines('# <review>')).toBe(1)
+  })
+
+  it('reads a covers value it does not understand as the line above', () => {
+    expect(reviewOpenTagLines('# <review covers="lines 2-7">')).toBe(1)
   })
 })

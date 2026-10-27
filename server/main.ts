@@ -146,8 +146,8 @@ export async function startServer(opts: {
   })
 
   app.post('/api/comment', zValidator('json', commentRequestSchema), async (c) => {
-    const { file, afterLine, lineText, text } = c.req.valid('json')
-    await insertComment(cwd, file, afterLine, lineText, text)
+    const { file, afterLine, lineText, text, lineCount } = c.req.valid('json')
+    await insertComment(cwd, file, afterLine, lineText, text, lineCount)
     hashInFlight = null
     return c.json({ ok: true } satisfies OkResponse)
   })

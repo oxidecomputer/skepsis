@@ -32,6 +32,8 @@ export const commentRequestSchema = z.object({
    *  loaded can't take the comment on the wrong line. */
   lineText: z.string(),
   text: z.string(),
+  /** How many lines the comment covers, ending at afterLine. */
+  lineCount: z.number().int().min(1).optional(),
 })
 
 /** A comment for the --send command. Only `text` is required by the
