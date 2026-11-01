@@ -19,12 +19,37 @@ export const DASH_COMMENT = { prefix: '--' } as const satisfies CommentSyntax
 export const PERCENT_COMMENT = { prefix: '%' } as const satisfies CommentSyntax
 export const SEMICOLON_COMMENT = { prefix: ';' } as const satisfies CommentSyntax
 export const QUOTE_COMMENT = { prefix: '"' } as const satisfies CommentSyntax
+export const JSX_COMMENT = { prefix: '{/*', suffix: '*/}' } as const satisfies CommentSyntax
 // Fallback for files where we can't determine a comment syntax (unknown or
 // ambiguous file types, or formats with no comment support at all, like CSV).
 // Review comments are transient working-copy annotations, so a bare tag that
 // isn't a syntactically valid comment is still more useful than refusing to
 // insert one.
 export const BARE_COMMENT = { prefix: '' } as const satisfies CommentSyntax
+
+/** A file that mixes languages, so the marker depends on where the comment
+ *  goes. Keyed by the name of each kind of place, which the comment form
+ *  shows. */
+export type Sections = { sections: Record<string, CommentSyntax> }
+
+// Vue, Svelte and Astro components and HTML pages
+export const SFC_SECTIONS = {
+  sections: { script: SLASH_COMMENT, style: BLOCK_COMMENT, markup: XML_COMMENT },
+} as const satisfies Sections
+
+// TSX and JSX, where `//` among JSX children would render as text
+export const JSX_SECTIONS = {
+  sections: { code: SLASH_COMMENT, JSX: JSX_COMMENT },
+} as const satisfies Sections
+
+// Vue, whose <script lang="tsx"> can hold JSX too
+export const VUE_SECTIONS = {
+  sections: { ...SFC_SECTIONS.sections, JSX: JSX_COMMENT },
+} as const satisfies Sections
+
+/** A file's comment syntax: one syntax, sections, or null for an
+ *  unrecognized file type (which gets bare tags). */
+export type FileCommentSyntax = CommentSyntax | Sections | null
 
 export const REVIEW_COMMENT_SYNTAXES = [
   HASH_COMMENT,
@@ -35,6 +60,7 @@ export const REVIEW_COMMENT_SYNTAXES = [
   PERCENT_COMMENT,
   SEMICOLON_COMMENT,
   QUOTE_COMMENT,
+  JSX_COMMENT,
 ] as const satisfies readonly CommentSyntax[]
 
 export const REVIEW_OPEN_TAG = '<review>'

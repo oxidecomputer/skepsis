@@ -8,10 +8,9 @@
 
 import { join } from 'node:path'
 import { lstat, readFile, writeFile } from 'node:fs/promises'
-import { getCommentSyntax } from './commentSyntax.ts'
+import { commentSyntaxAt, getCommentSyntax } from './commentSyntax.ts'
 import {
   BARE_COMMENT,
-  type CommentSyntax,
   REVIEW_CLOSE_TAG,
   REVIEW_OPEN_TAG,
   reviewOpenTag,
@@ -54,11 +53,16 @@ export async function insertComment(
 
   // Match indentation of the target line
   const indent = targetLine.match(/^(\s*)/)?.[1] ?? ''
-  const syntax: CommentSyntax = getCommentSyntax(file, lines[0] ?? '') ?? BARE_COMMENT
-  const { prefix, suffix } = syntax
+  const { prefix, suffix } = commentSyntaxAt(file, lines, afterLine)
+  // Text containing the comment's close delimiter would end the comment
+  // early, so break the delimiter up with a space. `{/* */}` ends at `*/`.
+  const close = suffix?.replace(/}$/, '')
+  const escape = (body: string) =>
+    close ? body.replaceAll(close, `${close.slice(0, -1)} ${close.slice(-1)}`) : body
   // prefix may be empty (bare fallback for unknown file types), so join only
   // the non-empty parts
-  const wrap = (body: string) => indent + [prefix, body, suffix].filter(Boolean).join(' ')
+  const wrap = (body: string) =>
+    indent + [prefix, escape(body), suffix].filter(Boolean).join(' ')
 
   const commentLines = [
     // The covered lines end at afterLine, so they can't start before line 1
@@ -85,13 +89,19 @@ export async function removeComment(
     throw new Error(`Line ${line} out of range`)
   }
 
-  const syntax = getCommentSyntax(file, lines[0] ?? '') ?? BARE_COMMENT
-  const openRe = reviewTagRegex(syntax, REVIEW_OPEN_TAG)
+  // Take the marker from the open tag rather than recomputing the section:
+  // a sectioned file's comment may predate an edit that moved it, or an
+  // older version that always used `//`.
+  const fileSyntax = getCommentSyntax(file, lines[0] ?? '')
+  const candidates =
+    fileSyntax && 'sections' in fileSyntax
+      ? Object.values(fileSyntax.sections)
+      : [fileSyntax ?? BARE_COMMENT]
+  const syntax = candidates.find((s) =>
+    reviewTagRegex(s, REVIEW_OPEN_TAG).test(lines[line - 1]!),
+  )
+  if (!syntax) throw new Error(`Line ${line} is not a <review> open tag`)
   const closeRe = reviewTagRegex(syntax, REVIEW_CLOSE_TAG)
-
-  if (!openRe.test(lines[line - 1]!)) {
-    throw new Error(`Line ${line} is not a <review> open tag`)
-  }
 
   let end = line
   while (end < lines.length && !closeRe.test(lines[end]!)) end++
