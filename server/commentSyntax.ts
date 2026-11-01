@@ -10,6 +10,7 @@ import { open } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import type { Language, LanguageName } from 'linguist-languages'
 import * as languages from 'linguist-languages'
+import { parser } from '@lezer/javascript'
 import {
   BARE_COMMENT,
   BLOCK_COMMENT,
@@ -20,8 +21,9 @@ import {
   HASH_COMMENT,
   PERCENT_COMMENT,
   QUOTE_COMMENT,
-  SECTION_SYNTAXES,
-  SECTIONED,
+  JSX_SECTIONS,
+  SFC_SECTIONS,
+  VUE_SECTIONS,
   SEMICOLON_COMMENT,
   SLASH_COMMENT,
   XML_COMMENT,
@@ -59,7 +61,6 @@ const SYNTAX_GROUPS: Array<[Exclude<FileCommentSyntax, null>, LanguageName[]]> =
     [
       'JavaScript',
       'TypeScript',
-      'TSX',
       'Go',
       'Rust',
       'Java',
@@ -79,7 +80,9 @@ const SYNTAX_GROUPS: Array<[Exclude<FileCommentSyntax, null>, LanguageName[]]> =
       'JSON',
     ],
   ],
-  [SECTIONED, ['Vue', 'Svelte', 'Astro', 'HTML']],
+  [SFC_SECTIONS, ['Svelte', 'Astro', 'HTML']],
+  [VUE_SECTIONS, ['Vue']],
+  [JSX_SECTIONS, ['TSX']],
   [XML_COMMENT, ['XML', 'SVG', 'Markdown']],
   // MDX 2 and later reject HTML comments
   [JSX_COMMENT, ['MDX']],
@@ -122,6 +125,8 @@ const EXTENSION_OVERRIDES: Partial<Record<string, LanguageName>> = {
 }
 
 const EXTENSION_SYNTAX_OVERRIDES: Partial<Record<string, FileCommentSyntax>> = {
+  // linguist calls these JavaScript, which also covers .js files with no JSX
+  '.jsx': JSX_SECTIONS,
   '.conf': HASH_COMMENT,
 }
 
@@ -198,34 +203,60 @@ export function getCommentSyntax(file: string, firstLine: string): FileCommentSy
   return COMMENT_SYNTAX.get(lang) ?? null
 }
 
-// What the scan in sectionAt consumes in markup: an HTML comment (to the
-// end of the text if it's unclosed) or a whole tag, including quoted
-// attributes, so a <style> or > inside an attribute can't start a section or
-// end the surrounding tag.
+// Consume whole tags, including quoted attributes, so a <style> or > inside
+// an attribute cannot start a section or end the surrounding tag.
 const MARKUP_TOKEN =
   /<!--[\s\S]*?(?:-->|$)|<\/?([a-zA-Z][\w:-]*)(?=[\s/>])(?:[^"'<>]|"[^"]*"|'[^']*')*>/g
 
-/** The section of a sectioned file that the end of `text` is in. Scans
- *  like an HTML parser: in markup it skips comments and ordinary tags, and
- *  the content of a <script> or <style> is raw text that only its complete
- *  close tag ends, so tags in JS strings or in other review comments don't
- *  count. HTML names ignore case; in components, <Style> and <script-editor>
- *  are ordinary elements. */
-function sectionAt(text: string, html: boolean): keyof typeof SECTION_SYNTAXES {
+/** The section containing `offset`, with the full script/style content range.
+ *  In markup, skip comments and ordinary tags. Script/style content is raw
+ *  text that only its complete close tag ends. HTML names ignore case; in
+ *  components, <Style> and <script-editor> are ordinary elements. */
+function sfcSectionAt(
+  text: string,
+  offset: number,
+  html: boolean,
+): {
+  section: keyof typeof SFC_SECTIONS.sections
+  openTag: string
+  contentStart: number
+  contentEnd: number
+} {
   let pos = 0
   for (;;) {
     MARKUP_TOKEN.lastIndex = pos
     const token = MARKUP_TOKEN.exec(text)
-    if (!token) return 'markup'
+    if (!token || MARKUP_TOKEN.lastIndex > offset) {
+      return { section: 'markup', openTag: '', contentStart: 0, contentEnd: 0 }
+    }
     pos = MARKUP_TOKEN.lastIndex
     const tag = html ? token[1]?.toLowerCase() : token[1]
     if (tag !== 'script' && tag !== 'style') continue
     if (token[0].startsWith('</') || token[0].endsWith('/>')) continue
     const closeTag = new RegExp(`</${tag}(?=[\\s/>])[^>]*>`, html ? 'gi' : 'g')
     closeTag.lastIndex = pos
-    if (!closeTag.exec(text)) return tag
+    const close = closeTag.exec(text)
+    if (!close || closeTag.lastIndex > offset) {
+      return {
+        section: tag,
+        openTag: token[0],
+        contentStart: pos,
+        contentEnd: close?.index ?? text.length,
+      }
+    }
     pos = closeTag.lastIndex
   }
+}
+
+function scriptUsesJsx(openTag: string): boolean {
+  // Consume each whole attribute so lang-like text inside another value is skipped.
+  const attributes = openTag.matchAll(
+    /\s+([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g,
+  )
+  for (const [, name, double, single, bare] of attributes) {
+    if (name === 'lang') return /^(jsx|tsx)$/.test(double ?? single ?? bare ?? '')
+  }
+  return false
 }
 
 /** The marker for a comment inserted after line `afterLine` of a file. */
@@ -235,19 +266,48 @@ export function commentSyntaxAt(
   afterLine: number,
 ): CommentSyntax {
   const syntax = getCommentSyntax(file, lines[0] ?? '')
-  if (syntax !== SECTIONED) return syntax ?? BARE_COMMENT
+  if (!syntax || !('sections' in syntax)) return syntax ?? BARE_COMMENT
+  if (syntax === JSX_SECTIONS) {
+    const offset = lines.slice(0, afterLine).join('\n').length + 1
+    return inJsxChildren(lines.join('\n'), offset) ? JSX_COMMENT : SLASH_COMMENT
+  }
+  const sections = SFC_SECTIONS.sections
   const language = detectLanguage(file, '')
   // An Astro component starts with its TypeScript between `---` fences.
   let markupStart = 0
   if (language === 'Astro' && lines[0]?.trim() === '---') {
     const fence = lines.findIndex((line, i) => i > 0 && line.trim() === '---')
     if (fence !== -1) {
-      if (afterLine >= 1 && afterLine <= fence) return SECTION_SYNTAXES.script
+      if (afterLine >= 1 && afterLine <= fence) return sections.script
       markupStart = fence + 1
     }
   }
-  const above = lines.slice(markupStart, afterLine).join('\n')
-  return SECTION_SYNTAXES[sectionAt(above, language === 'HTML')]
+  const text = lines.slice(markupStart).join('\n')
+  const offset = lines.slice(markupStart, afterLine).join('\n').length + 1
+  const { section, openTag, contentStart, contentEnd } = sfcSectionAt(
+    text,
+    offset,
+    language === 'HTML',
+  )
+  if (syntax === VUE_SECTIONS && section === 'script' && scriptUsesJsx(openTag)) {
+    const code = text.slice(contentStart, contentEnd)
+    if (inJsxChildren(code, offset - contentStart)) return JSX_COMMENT
+  }
+  return sections[section]
+}
+
+const tsxParser = parser.configure({ dialect: 'ts jsx' })
+
+/** Whether a line inserted at `offset` in `code` lands among JSX children,
+ *  where `//` would render as text and only `{/* *\/}` is a comment. Between
+ *  attributes in a tag and in JS inside `{}`, `//` works. Lezer recovers from
+ *  syntax errors so an unrelated edit doesn't hide the JSX context. */
+function inJsxChildren(code: string, offset: number): boolean {
+  // Side 0 enters only nodes covering the point on both sides: at the start
+  // of a child tag or expression, the comment still belongs to its parent.
+  const { name } = tsxParser.parse(code).resolveInner(offset, 0)
+  // Fragments are JSXElement nodes too.
+  return name === 'JSXElement' || name === 'JSXText'
 }
 
 // A shebang line is well under this, and the first line is only used for

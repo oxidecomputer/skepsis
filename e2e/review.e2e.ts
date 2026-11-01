@@ -193,6 +193,46 @@ test('comment appears in the diff without a reload', async ({ page, repo }) => {
   )
 })
 
+test.describe('JSX review comments', () => {
+  const lines = ['const v = (', '  <div>', '    <p>hello</p>', '  </div>', ')', '']
+  const original = lines.join('\n')
+  test.use({ repoFiles: { committed: {}, working: { 'View.tsx': original } } })
+
+  test('inserts, recognizes, and resolves a comment among JSX children', async ({
+    page,
+    repo,
+  }) => {
+    await page.keyboard.press('j')
+    await page.keyboard.press('j')
+    await page.keyboard.press('j')
+    await page.keyboard.press('c')
+    await expect(page.locator('.comment-form-note')).toHaveText(
+      'Comment marker: // in code, {/* */} in JSX',
+    )
+    await page.getByPlaceholder('Leave a review comment').fill('looks wrong')
+    await page.getByRole('button', { name: 'Comment' }).click()
+
+    await expect(page.getByText('{/* looks wrong */}')).toBeVisible()
+    const resolve = page.getByRole('button', { name: 'Resolve comment' })
+    await expect(resolve).toBeVisible()
+    expect(await repo.read('View.tsx')).toBe(
+      lines
+        .toSpliced(
+          3,
+          0,
+          '    {/* <review> */}',
+          '    {/* looks wrong */}',
+          '    {/* </review> */}',
+        )
+        .join('\n'),
+    )
+
+    await resolve.click()
+    await expect(resolve).toBeHidden()
+    expect(await repo.read('View.tsx')).toBe(original)
+  })
+})
+
 test('a comment on several lines counts them, and the page marks them', async ({
   page,
   repo,

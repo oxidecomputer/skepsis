@@ -148,7 +148,7 @@ export interface DiffResponse {
   /** Per-file comment syntax, shown in the comment form. An empty prefix
    *  means the format has no comment syntax (e.g. plain text); null means the
    *  file type wasn't recognized. Both get bare review tags on insert.
-   *  SECTIONED means it depends on the line. Always empty when comments are
+   *  Sections mean it depends on the line. Always empty when comments are
    *  disabled. */
   commentSyntaxes: Record<string, FileCommentSyntax>
   error?: string

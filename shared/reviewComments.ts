@@ -27,18 +27,29 @@ export const JSX_COMMENT = { prefix: '{/*', suffix: '*/}' } as const satisfies C
 // insert one.
 export const BARE_COMMENT = { prefix: '' } as const satisfies CommentSyntax
 
-// Vue, Svelte and Astro components and HTML pages mix languages, so the
-// marker depends on which section the comment goes in.
-export const SECTIONED = 'sectioned'
-export const SECTION_SYNTAXES = {
-  script: SLASH_COMMENT,
-  style: BLOCK_COMMENT,
-  markup: XML_COMMENT,
-} as const satisfies Record<string, CommentSyntax>
+/** A file that mixes languages, so the marker depends on where the comment
+ *  goes. Keyed by the name of each kind of place, which the comment form
+ *  shows. */
+export type Sections = { sections: Record<string, CommentSyntax> }
 
-/** A file's comment syntax: one syntax, SECTIONED, or null for an
+// Vue, Svelte and Astro components and HTML pages
+export const SFC_SECTIONS = {
+  sections: { script: SLASH_COMMENT, style: BLOCK_COMMENT, markup: XML_COMMENT },
+} as const satisfies Sections
+
+// TSX and JSX, where `//` among JSX children would render as text
+export const JSX_SECTIONS = {
+  sections: { code: SLASH_COMMENT, JSX: JSX_COMMENT },
+} as const satisfies Sections
+
+// Vue, whose <script lang="tsx"> can hold JSX too
+export const VUE_SECTIONS = {
+  sections: { ...SFC_SECTIONS.sections, JSX: JSX_COMMENT },
+} as const satisfies Sections
+
+/** A file's comment syntax: one syntax, sections, or null for an
  *  unrecognized file type (which gets bare tags). */
-export type FileCommentSyntax = CommentSyntax | typeof SECTIONED | null
+export type FileCommentSyntax = CommentSyntax | Sections | null
 
 export const REVIEW_COMMENT_SYNTAXES = [
   HASH_COMMENT,

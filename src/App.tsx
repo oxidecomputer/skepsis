@@ -16,6 +16,7 @@ import {
   keepPreviousData,
 } from '@tanstack/react-query'
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -65,8 +66,6 @@ import {
   REVIEW_CLOSE_PATTERN,
   REVIEW_OPEN_PATTERN,
   reviewOpenTagLines,
-  SECTION_SYNTAXES,
-  SECTIONED,
 } from '../shared/reviewComments.ts'
 import { diffChanges, type FileChange } from './diffChanges.ts'
 import { lineText as diffLineText, relocateLine } from './lineAnchor.ts'
@@ -801,11 +800,15 @@ function CommentForm({
             inlineUnavailable
           ) : syntax === null ? (
             <>Comment marker: none (file type not recognized)</>
-          ) : syntax === SECTIONED ? (
+          ) : 'sections' in syntax ? (
             <>
-              Comment marker: <code>{marker(SECTION_SYNTAXES.script)}</code> in script,{' '}
-              <code>{marker(SECTION_SYNTAXES.style)}</code> in style,{' '}
-              <code>{marker(SECTION_SYNTAXES.markup)}</code> elsewhere
+              Comment marker:{' '}
+              {Object.entries(syntax.sections).map(([where, s], i) => (
+                <Fragment key={where}>
+                  {i > 0 && ', '}
+                  <code>{marker(s)}</code> in {where}
+                </Fragment>
+              ))}
             </>
           ) : syntax.prefix === '' ? (
             <>Comment marker: none (plain text)</>
@@ -2108,7 +2111,7 @@ function DiffView() {
         ? detectReviewComments(
             fileDiff,
             name,
-            !syntax || (syntax !== SECTIONED && syntax.prefix === ''),
+            !syntax || (!('sections' in syntax) && syntax.prefix === ''),
           )
         : []
       const notice = fileNotice(fileDiff)

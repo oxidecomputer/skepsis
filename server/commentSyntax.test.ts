@@ -16,6 +16,7 @@ import {
   getCommentSyntax,
   getCommentSyntaxes,
 } from './commentSyntax.ts'
+import { JSX_SECTIONS, SFC_SECTIONS, VUE_SECTIONS } from '../shared/reviewComments.ts'
 
 describe('detectLanguage', () => {
   it.each([
@@ -93,7 +94,9 @@ describe('getCommentSyntax', () => {
     ['.gitconfig', '', { prefix: '#' }],
     ['.vimrc', '', { prefix: '"' }],
     ['foo.ts', '', { prefix: '//' }],
-    ['foo.tsx', '', { prefix: '//' }],
+    ['foo.tsx', '', JSX_SECTIONS],
+    ['foo.jsx', '', JSX_SECTIONS],
+    ['foo.js', '', { prefix: '//' }],
     ['foo.rs', '', { prefix: '//' }],
     ['foo.css', '', { prefix: '/*', suffix: '*/' }],
     ['README.md', '', { prefix: '<!--', suffix: '-->' }],
@@ -104,10 +107,10 @@ describe('getCommentSyntax', () => {
     ['foo.yaml', '', { prefix: '#' }],
     ['foo.yml', '', { prefix: '#' }],
     ['foo.conf', '', { prefix: '#' }],
-    ['foo.vue', '', 'sectioned'],
-    ['foo.svelte', '', 'sectioned'],
-    ['foo.astro', '', 'sectioned'],
-    ['index.html', '', 'sectioned'],
+    ['foo.vue', '', VUE_SECTIONS],
+    ['foo.svelte', '', SFC_SECTIONS],
+    ['foo.astro', '', SFC_SECTIONS],
+    ['index.html', '', SFC_SECTIONS],
     ['script.nu', '', { prefix: '#' }],
     ['Nukefile', '', { prefix: ';' }],
     ['somebin', '#!/bin/bash', { prefix: '#' }],
@@ -202,14 +205,14 @@ describe('commentSyntaxAt', () => {
     // components and custom elements aren't sections
     [['<script-editor>', '  <p>x</p>'], xml],
     [['<Style>', '  <p>x</p>'], xml],
+    // an unclosed HTML comment runs to the end
+    [['<!--', '<script>'], xml],
     // Tags inside attribute values do not open sections.
     [['<div title="<style>">', '<p>hi</p>'], xml],
     [["<div title='<script>'>", '<p>hi</p>'], xml],
     // A raw section ends only at its complete closing tag name.
     [['<script>', 'const tpl = "</script-editor>"', 'go()'], slash],
     [['<style>', 'p::after { content: "</stylesheet>"; }'], block],
-    // an unclosed HTML comment runs to the end
-    [['<!--', '<script>'], xml],
   ])('after %j → %j', (lines, expected) => {
     expect(commentSyntaxAt('App.svelte', lines, lines.length)).toEqual(expected)
   })
@@ -249,6 +252,150 @@ describe('commentSyntaxAt', () => {
 
   it('reads an Astro component without frontmatter as markup', () => {
     expect(commentSyntaxAt('Page.astro', ['<h1>hi</h1>'], 1)).toEqual(xml)
+  })
+
+  const tsx = [
+    'export function List<T,>({ items }: { items: T[] }) {', // 1
+    '  const n = items.length < 2 ? <b>few</b> : null', // 2
+    '  return (', // 3
+    '    <ul', // 4
+    '      className="list"', // 5
+    '    >', // 6
+    '      {items.map((item) => (', // 7
+    '        <li key={String(item)}>', // 8
+    '          {String(item)}', // 9
+    '        </li>', // 10
+    '      ))}', // 11
+    '      <>', // 12
+    '        text', // 13
+    '      </>', // 14
+    '    </ul>', // 15
+    '  )', // 16
+    '}', // 17
+  ]
+  const jsx = { prefix: '{/*', suffix: '*/}' }
+  it.each([
+    [1, slash],
+    [2, slash],
+    [3, slash],
+    // between attributes, // is a comment
+    [4, slash],
+    [5, slash],
+    [6, jsx],
+    // in JS inside {}
+    [7, slash],
+    [8, jsx],
+    [9, jsx],
+    [10, slash],
+    [11, jsx],
+    [12, jsx],
+    [13, jsx],
+    [14, jsx],
+    [15, slash],
+    [16, slash],
+    [17, slash],
+  ])('after line %i of a TSX file → %j', (afterLine, expected) => {
+    expect(commentSyntaxAt('List.tsx', tsx, afterLine)).toEqual(expected)
+    // No indentation puts the insertion exactly at tag and expression boundaries.
+    expect(
+      commentSyntaxAt(
+        'List.tsx',
+        tsx.map((line) => line.trimStart()),
+        afterLine,
+      ),
+    ).toEqual(expected)
+  })
+
+  it('switches between JS and JSX inside a prop expression', () => {
+    const lines = ['const v = <Panel title={', '<b>', 'title', '</b>', '} />']
+    expect(commentSyntaxAt('Panel.tsx', lines, 1)).toEqual(slash)
+    expect(commentSyntaxAt('Panel.tsx', lines, 2)).toEqual(jsx)
+    expect(commentSyntaxAt('Panel.tsx', lines, 4)).toEqual(slash)
+  })
+
+  it('ignores tag-like text in JavaScript literals', () => {
+    const lines = [
+      'const text = "<div>"',
+      'const pattern = /<span>/',
+      'const template = `<section>${text}`',
+      'const v = <p>',
+      '  {template}',
+      '</p>',
+    ]
+    expect(commentSyntaxAt('Literal.jsx', lines, 3)).toEqual(slash)
+    expect(commentSyntaxAt('Literal.jsx', lines, 4)).toEqual(jsx)
+  })
+
+  it.each([
+    [2, slash],
+    [4, jsx],
+    [5, slash],
+    // after </script>
+    [8, xml],
+  ])('after line %i of a Vue component with a TSX script → %j', (afterLine, expected) => {
+    const vue = [
+      '<script setup lang="tsx">', // 1
+      'const view = () => (', // 2
+      '  <div>', // 3
+      '    <p>hi</p>', // 4
+      '  </div>', // 5
+      ')', // 6
+      '</script>', // 7
+      '<template><view /></template>', // 8
+    ]
+    expect(commentSyntaxAt('App.vue', vue, afterLine)).toEqual(expected)
+    // A preceding script must not shift or truncate the TSX script's content range.
+    const prelude = ['<script>', 'export default {}', '</script>']
+    expect(
+      commentSyntaxAt('App.vue', [...prelude, ...vue], afterLine + prelude.length),
+    ).toEqual(expected)
+  })
+
+  it('leaves a plain TS script in Vue to //', () => {
+    const vue = ['<script setup lang="ts">', 'const a = 1 < 2', '</script>']
+    expect(commentSyntaxAt('App.vue', vue, 1)).toEqual(slash)
+  })
+
+  it.each([
+    '<script setup lang = "tsx">',
+    "<script lang = 'jsx'>",
+    '<script lang=tsx>',
+    '<script generic="T extends Record<string, unknown>" lang="tsx">',
+    '<script\n generic="T extends Record<string, unknown>"\n lang = "tsx">',
+  ])('reads JSX language attributes in %s', (openTag) => {
+    const vue = `${openTag}\nconst v = <div>\nhi\n</div>\n</script>`.split('\n')
+    expect(commentSyntaxAt('App.vue', vue, vue.indexOf('const v = <div>') + 1)).toEqual(jsx)
+  })
+
+  it('does not read lang from the value of another attribute', () => {
+    const vue = [
+      `<script data-example=' lang="tsx"' lang="ts">`,
+      'const value = <number>',
+      '1',
+      '</script>',
+    ]
+    expect(commentSyntaxAt('App.vue', vue, 2)).toEqual(slash)
+  })
+
+  it('does not truncate a Vue TSX script at a closing-tag prefix in a string', () => {
+    const vue = [
+      '<script lang="tsx">',
+      'const v = <div>',
+      '  {"</script-editor>"}',
+      '</div>',
+      '</script>',
+    ]
+    expect(commentSyntaxAt('App.vue', vue, 2)).toEqual(jsx)
+    expect(commentSyntaxAt('App.vue', vue, 3)).toEqual(jsx)
+  })
+
+  it.each([
+    ['const broken = ;\n', ''],
+    ['', '\nconst unfinished ='],
+  ])('recognizes JSX despite broken code elsewhere (%j, %j)', (before, after) => {
+    const lines = `${before}const v = <div>\n  hello\n</div>${after}`.split('\n')
+    const afterLine = lines.indexOf('const v = <div>') + 1
+    expect(commentSyntaxAt('Editing.tsx', lines, afterLine)).toEqual(jsx)
   })
 
   it('uses the file syntax for other files', () => {
