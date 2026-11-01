@@ -97,6 +97,7 @@ describe('getCommentSyntax', () => {
     ['foo.rs', '', { prefix: '//' }],
     ['foo.css', '', { prefix: '/*', suffix: '*/' }],
     ['README.md', '', { prefix: '<!--', suffix: '-->' }],
+    ['doc.mdx', '', { prefix: '{/*', suffix: '*/}' }],
     ['foo.sql', '', { prefix: '--' }],
     ['foo.lua', '', { prefix: '--' }],
     ['foo.ini', '', { prefix: ';' }],

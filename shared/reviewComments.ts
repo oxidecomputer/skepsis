@@ -19,6 +19,7 @@ export const DASH_COMMENT = { prefix: '--' } as const satisfies CommentSyntax
 export const PERCENT_COMMENT = { prefix: '%' } as const satisfies CommentSyntax
 export const SEMICOLON_COMMENT = { prefix: ';' } as const satisfies CommentSyntax
 export const QUOTE_COMMENT = { prefix: '"' } as const satisfies CommentSyntax
+export const JSX_COMMENT = { prefix: '{/*', suffix: '*/}' } as const satisfies CommentSyntax
 // Fallback for files where we can't determine a comment syntax (unknown or
 // ambiguous file types, or formats with no comment support at all, like CSV).
 // Review comments are transient working-copy annotations, so a bare tag that
@@ -48,6 +49,7 @@ export const REVIEW_COMMENT_SYNTAXES = [
   PERCENT_COMMENT,
   SEMICOLON_COMMENT,
   QUOTE_COMMENT,
+  JSX_COMMENT,
 ] as const satisfies readonly CommentSyntax[]
 
 export const REVIEW_OPEN_TAG = '<review>'

@@ -16,6 +16,7 @@ import {
   type CommentSyntax,
   DASH_COMMENT,
   type FileCommentSyntax,
+  JSX_COMMENT,
   HASH_COMMENT,
   PERCENT_COMMENT,
   QUOTE_COMMENT,
@@ -79,7 +80,9 @@ const SYNTAX_GROUPS: Array<[Exclude<FileCommentSyntax, null>, LanguageName[]]> =
     ],
   ],
   [SECTIONED, ['Vue', 'Svelte', 'Astro', 'HTML']],
-  [XML_COMMENT, ['XML', 'SVG', 'Markdown', 'MDX']],
+  [XML_COMMENT, ['XML', 'SVG', 'Markdown']],
+  // MDX 2 and later reject HTML comments
+  [JSX_COMMENT, ['MDX']],
   [BLOCK_COMMENT, ['CSS', 'SCSS', 'Less']],
   [DASH_COMMENT, ['SQL', 'Lua', 'Haskell']],
   [PERCENT_COMMENT, ['TeX', 'Erlang']],
