@@ -61,9 +61,12 @@ import {
   BARE_REVIEW_CLOSE_PATTERN,
   BARE_REVIEW_OPEN_PATTERN,
   type CommentSyntax,
+  type FileCommentSyntax,
   REVIEW_CLOSE_PATTERN,
   REVIEW_OPEN_PATTERN,
   reviewOpenTagLines,
+  SECTION_SYNTAXES,
+  SECTIONED,
 } from '../shared/reviewComments.ts'
 import { diffChanges, type FileChange } from './diffChanges.ts'
 import { lineText as diffLineText, relocateLine } from './lineAnchor.ts'
@@ -720,6 +723,9 @@ function lineContext(
 
 // --- Comment form ---
 
+const marker = ({ prefix, suffix }: CommentSyntax) =>
+  suffix ? `${prefix} ${suffix}` : prefix
+
 function CommentForm({
   initialText,
   onTextChange,
@@ -747,7 +753,7 @@ function CommentForm({
   error: string | null
   /** Comment syntax the inserted tags will use. Empty prefix: the format has
    *  no comment syntax; null: unrecognized file type. Both insert bare. */
-  syntax: CommentSyntax | null
+  syntax: FileCommentSyntax
 }) {
   const [text, setText] = useState(initialText)
   // useEffect instead of a function ref because the function ref didn't
@@ -795,14 +801,17 @@ function CommentForm({
             inlineUnavailable
           ) : syntax === null ? (
             <>Comment marker: none (file type not recognized)</>
+          ) : syntax === SECTIONED ? (
+            <>
+              Comment marker: <code>{marker(SECTION_SYNTAXES.script)}</code> in script,{' '}
+              <code>{marker(SECTION_SYNTAXES.style)}</code> in style,{' '}
+              <code>{marker(SECTION_SYNTAXES.markup)}</code> elsewhere
+            </>
           ) : syntax.prefix === '' ? (
             <>Comment marker: none (plain text)</>
           ) : (
             <>
-              Comment marker:{' '}
-              <code>
-                {syntax.suffix ? `${syntax.prefix} ${syntax.suffix}` : syntax.prefix}
-              </code>
+              Comment marker: <code>{marker(syntax)}</code>
             </>
           )}
         </div>
@@ -2096,7 +2105,11 @@ function DiffView() {
       fileDiff.cacheKey ??= `${name}|${hash}|${fileDiff === patchFiles[i] ? 'patch' : 'full'}`
       const syntax = data.commentSyntaxes[name]
       const annotations = commentsEnabled
-        ? detectReviewComments(fileDiff, name, !syntax || syntax.prefix === '')
+        ? detectReviewComments(
+            fileDiff,
+            name,
+            !syntax || (syntax !== SECTIONED && syntax.prefix === ''),
+          )
         : []
       const notice = fileNotice(fileDiff)
       if (notice) {

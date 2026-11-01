@@ -15,9 +15,12 @@ import {
   BLOCK_COMMENT,
   type CommentSyntax,
   DASH_COMMENT,
+  type FileCommentSyntax,
   HASH_COMMENT,
   PERCENT_COMMENT,
   QUOTE_COMMENT,
+  SECTION_SYNTAXES,
+  SECTIONED,
   SEMICOLON_COMMENT,
   SLASH_COMMENT,
   XML_COMMENT,
@@ -27,7 +30,7 @@ import {
 // grouped by syntax to make the source of truth compact. If a language
 // detected via linguist isn't listed here, we fall back to bare (uncommented)
 // review tags rather than guessing a syntax.
-const SYNTAX_GROUPS: Array<[CommentSyntax, LanguageName[]]> = [
+const SYNTAX_GROUPS: Array<[Exclude<FileCommentSyntax, null>, LanguageName[]]> = [
   [
     HASH_COMMENT,
     [
@@ -73,14 +76,10 @@ const SYNTAX_GROUPS: Array<[CommentSyntax, LanguageName[]]> = [
       // JSON doesn't support comments, but the user opted in; '//' produces
       // invalid JSON that most editors still highlight recognizably.
       'JSON',
-      // Vue single-file components may contain a mix of syntaxes (HTML,
-      // JS/TS, CSS, SCSS etc). Using slashes will work in JS/TS and HTML
-      // (though will not actually be a comment in HTML), and may work in
-      // *some* CSS syntaxes, so I chose it as a compromise.
-      'Vue',
     ],
   ],
-  [XML_COMMENT, ['HTML', 'XML', 'SVG', 'Markdown', 'MDX']],
+  [SECTIONED, ['Vue', 'Svelte', 'Astro', 'HTML']],
+  [XML_COMMENT, ['XML', 'SVG', 'Markdown', 'MDX']],
   [BLOCK_COMMENT, ['CSS', 'SCSS', 'Less']],
   [DASH_COMMENT, ['SQL', 'Lua', 'Haskell']],
   [PERCENT_COMMENT, ['TeX', 'Erlang']],
@@ -94,7 +93,7 @@ const SYNTAX_GROUPS: Array<[CommentSyntax, LanguageName[]]> = [
   [BARE_COMMENT, ['Text', 'CSV', 'TSV']],
 ]
 
-const COMMENT_SYNTAX = new Map<LanguageName, CommentSyntax>(
+const COMMENT_SYNTAX = new Map<LanguageName, Exclude<FileCommentSyntax, null>>(
   SYNTAX_GROUPS.flatMap(([syntax, langs]) => langs.map((l) => [l, syntax] as const)),
 )
 
@@ -102,6 +101,7 @@ const COMMENT_SYNTAX = new Map<LanguageName, CommentSyntax>(
 // disambiguation metadata exposed, so pin the common collisions by hand.
 const EXTENSION_OVERRIDES: Partial<Record<string, LanguageName>> = {
   '.md': 'Markdown',
+  '.html': 'HTML',
   '.tsx': 'TSX',
   '.yaml': 'YAML',
   '.yml': 'YAML',
@@ -118,7 +118,7 @@ const EXTENSION_OVERRIDES: Partial<Record<string, LanguageName>> = {
   '.txt': 'Text',
 }
 
-const EXTENSION_SYNTAX_OVERRIDES: Partial<Record<string, CommentSyntax>> = {
+const EXTENSION_SYNTAX_OVERRIDES: Partial<Record<string, FileCommentSyntax>> = {
   '.conf': HASH_COMMENT,
 }
 
@@ -184,7 +184,7 @@ export function detectLanguage(file: string, firstLine: string): LanguageName | 
 /** Null means the file type couldn't be determined (or has no table entry);
  *  callers that insert comments fall back to bare tags, and the UI can
  *  distinguish "unknown, so no marker" from a known-markerless format. */
-export function getCommentSyntax(file: string, firstLine: string): CommentSyntax | null {
+export function getCommentSyntax(file: string, firstLine: string): FileCommentSyntax {
   const base = basename(file).toLowerCase()
   const ext = extname(base)
   const syntaxOverride = EXTENSION_SYNTAX_OVERRIDES[ext]
@@ -193,6 +193,58 @@ export function getCommentSyntax(file: string, firstLine: string): CommentSyntax
   const lang = detectLanguage(file, firstLine)
   if (!lang) return null
   return COMMENT_SYNTAX.get(lang) ?? null
+}
+
+// What the scan in sectionAt consumes in markup: an HTML comment (to the
+// end of the text if it's unclosed) or a whole tag, including quoted
+// attributes, so a <style> or > inside an attribute can't start a section or
+// end the surrounding tag.
+const MARKUP_TOKEN =
+  /<!--[\s\S]*?(?:-->|$)|<\/?([a-zA-Z][\w:-]*)(?=[\s/>])(?:[^"'<>]|"[^"]*"|'[^']*')*>/g
+
+/** The section of a sectioned file that the end of `text` is in. Scans
+ *  like an HTML parser: in markup it skips comments and ordinary tags, and
+ *  the content of a <script> or <style> is raw text that only its complete
+ *  close tag ends, so tags in JS strings or in other review comments don't
+ *  count. HTML names ignore case; in components, <Style> and <script-editor>
+ *  are ordinary elements. */
+function sectionAt(text: string, html: boolean): keyof typeof SECTION_SYNTAXES {
+  let pos = 0
+  for (;;) {
+    MARKUP_TOKEN.lastIndex = pos
+    const token = MARKUP_TOKEN.exec(text)
+    if (!token) return 'markup'
+    pos = MARKUP_TOKEN.lastIndex
+    const tag = html ? token[1]?.toLowerCase() : token[1]
+    if (tag !== 'script' && tag !== 'style') continue
+    if (token[0].startsWith('</') || token[0].endsWith('/>')) continue
+    const closeTag = new RegExp(`</${tag}(?=[\\s/>])[^>]*>`, html ? 'gi' : 'g')
+    closeTag.lastIndex = pos
+    if (!closeTag.exec(text)) return tag
+    pos = closeTag.lastIndex
+  }
+}
+
+/** The marker for a comment inserted after line `afterLine` of a file. */
+export function commentSyntaxAt(
+  file: string,
+  lines: string[],
+  afterLine: number,
+): CommentSyntax {
+  const syntax = getCommentSyntax(file, lines[0] ?? '')
+  if (syntax !== SECTIONED) return syntax ?? BARE_COMMENT
+  const language = detectLanguage(file, '')
+  // An Astro component starts with its TypeScript between `---` fences.
+  let markupStart = 0
+  if (language === 'Astro' && lines[0]?.trim() === '---') {
+    const fence = lines.findIndex((line, i) => i > 0 && line.trim() === '---')
+    if (fence !== -1) {
+      if (afterLine >= 1 && afterLine <= fence) return SECTION_SYNTAXES.script
+      markupStart = fence + 1
+    }
+  }
+  const above = lines.slice(markupStart, afterLine).join('\n')
+  return SECTION_SYNTAXES[sectionAt(above, language === 'HTML')]
 }
 
 // A shebang line is well under this, and the first line is only used for
@@ -217,8 +269,8 @@ async function readFirstLine(path: string): Promise<string> {
 export async function getCommentSyntaxes(
   cwd: string,
   files: string[],
-): Promise<Record<string, CommentSyntax | null>> {
-  const result: Record<string, CommentSyntax | null> = {}
+): Promise<Record<string, FileCommentSyntax>> {
+  const result: Record<string, FileCommentSyntax> = {}
   await Promise.all(
     files.map(async (file) => {
       // Filename and extension detection don't need the first line; only read

@@ -26,6 +26,19 @@ export const QUOTE_COMMENT = { prefix: '"' } as const satisfies CommentSyntax
 // insert one.
 export const BARE_COMMENT = { prefix: '' } as const satisfies CommentSyntax
 
+// Vue, Svelte and Astro components and HTML pages mix languages, so the
+// marker depends on which section the comment goes in.
+export const SECTIONED = 'sectioned'
+export const SECTION_SYNTAXES = {
+  script: SLASH_COMMENT,
+  style: BLOCK_COMMENT,
+  markup: XML_COMMENT,
+} as const satisfies Record<string, CommentSyntax>
+
+/** A file's comment syntax: one syntax, SECTIONED, or null for an
+ *  unrecognized file type (which gets bare tags). */
+export type FileCommentSyntax = CommentSyntax | typeof SECTIONED | null
+
 export const REVIEW_COMMENT_SYNTAXES = [
   HASH_COMMENT,
   SLASH_COMMENT,

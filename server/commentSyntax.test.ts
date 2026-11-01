@@ -10,7 +10,12 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { detectLanguage, getCommentSyntax, getCommentSyntaxes } from './commentSyntax.ts'
+import {
+  commentSyntaxAt,
+  detectLanguage,
+  getCommentSyntax,
+  getCommentSyntaxes,
+} from './commentSyntax.ts'
 
 describe('detectLanguage', () => {
   it.each([
@@ -41,8 +46,10 @@ describe('detectLanguage', () => {
     ['foo.yaml', '', 'YAML'],
     ['foo.yml', '', 'YAML'],
     ['foo.vue', '', 'Vue'],
+    ['foo.svelte', '', 'Svelte'],
     // Ambiguous extensions pinned via override
     ['README.md', '', 'Markdown'],
+    ['index.html', '', 'HTML'],
     ['foo.h', '', 'C'],
     ['foo.r', '', 'R'],
     ['script.nu', '', 'Nushell'],
@@ -96,7 +103,10 @@ describe('getCommentSyntax', () => {
     ['foo.yaml', '', { prefix: '#' }],
     ['foo.yml', '', { prefix: '#' }],
     ['foo.conf', '', { prefix: '#' }],
-    ['foo.vue', '', { prefix: '//' }],
+    ['foo.vue', '', 'sectioned'],
+    ['foo.svelte', '', 'sectioned'],
+    ['foo.astro', '', 'sectioned'],
+    ['index.html', '', 'sectioned'],
     ['script.nu', '', { prefix: '#' }],
     ['Nukefile', '', { prefix: ';' }],
     ['somebin', '#!/bin/bash', { prefix: '#' }],
@@ -144,5 +154,104 @@ describe('getCommentSyntaxes', () => {
       // not on disk: resolves to unknown, which is inert (no addition lines)
       'deleted.zzz': null,
     })
+  })
+})
+
+describe('commentSyntaxAt', () => {
+  const svelte = [
+    '<script lang="ts" generics="T extends Record<string, unknown>">', // 1
+    '  let count = $state(0)', // 2
+    '</script>', // 3
+    '<!-- <style> -->', // 4
+    '<button>{count}</button>', // 5
+    '<script src="x.js" />', // 6
+    '<style>', // 7
+    '  button { color: red; }', // 8
+    '</style>', // 9
+  ]
+
+  it.each([
+    [0, { prefix: '<!--', suffix: '-->' }],
+    [1, { prefix: '//' }],
+    [2, { prefix: '//' }],
+    [3, { prefix: '<!--', suffix: '-->' }],
+    // a tag inside an HTML comment doesn't open a section
+    [4, { prefix: '<!--', suffix: '-->' }],
+    // nor does a self-closing one
+    [6, { prefix: '<!--', suffix: '-->' }],
+    [7, { prefix: '/*', suffix: '*/' }],
+    [8, { prefix: '/*', suffix: '*/' }],
+    [9, { prefix: '<!--', suffix: '-->' }],
+  ])('after line %i of a Svelte file → %j', (afterLine, expected) => {
+    expect(commentSyntaxAt('App.svelte', svelte, afterLine)).toEqual(expected)
+  })
+
+  const slash = { prefix: '//' }
+  const block = { prefix: '/*', suffix: '*/' }
+  const xml = { prefix: '<!--', suffix: '-->' }
+  it.each([
+    // tags in JS strings, in TS generics, and in review comments in script
+    // are raw text: only </script> ends it
+    [['<script>', "const tpl = '<style>.a{}</style>'"], slash],
+    [['<script>', 'const s = ref<Style>()', '// see <style scoped>'], slash],
+    // an unpaired <!-- in script doesn't open a comment
+    [['<script>', "html.indexOf('<!--')", '</script>', '<!-- main -->', '<p>x</p>'], xml],
+    // same for style
+    [['<style>', '/* compute this in <script> instead */', 'p {}'], block],
+    // components and custom elements aren't sections
+    [['<script-editor>', '  <p>x</p>'], xml],
+    [['<Style>', '  <p>x</p>'], xml],
+    // Tags inside attribute values do not open sections.
+    [['<div title="<style>">', '<p>hi</p>'], xml],
+    [["<div title='<script>'>", '<p>hi</p>'], xml],
+    // A raw section ends only at its complete closing tag name.
+    [['<script>', 'const tpl = "</script-editor>"', 'go()'], slash],
+    [['<style>', 'p::after { content: "</stylesheet>"; }'], block],
+    // an unclosed HTML comment runs to the end
+    [['<!--', '<script>'], xml],
+  ])('after %j → %j', (lines, expected) => {
+    expect(commentSyntaxAt('App.svelte', lines, lines.length)).toEqual(expected)
+  })
+
+  it('treats HTML pages like components', () => {
+    const page = ['<body>', '<script type="module">', 'go()', '</script>', '</body>']
+    expect(commentSyntaxAt('index.html', page, 1)).toEqual(xml)
+    expect(commentSyntaxAt('index.html', page, 2)).toEqual(slash)
+    expect(commentSyntaxAt('index.html', page, 4)).toEqual(xml)
+  })
+
+  it('matches HTML section tags case-insensitively', () => {
+    const page = ['<STYLE>', 'p {}', '</style>', '<script>', 'go()', '</SCRIPT>']
+    expect(commentSyntaxAt('index.html', page, 2)).toEqual(block)
+    expect(commentSyntaxAt('index.html', page, 3)).toEqual(xml)
+    expect(commentSyntaxAt('index.html', page, 5)).toEqual(slash)
+    expect(commentSyntaxAt('index.html', page, 6)).toEqual(xml)
+  })
+
+  it.each([
+    [1, slash],
+    [2, slash],
+    // after the closing fence
+    [3, xml],
+    [5, block],
+  ])('after line %i of an Astro component → %j', (afterLine, expected) => {
+    const astro = [
+      '---',
+      "const title = '<style>'",
+      '---',
+      '<h1>{title}</h1>',
+      '<style>',
+      '</style>',
+    ]
+    expect(commentSyntaxAt('Page.astro', astro, afterLine)).toEqual(expected)
+  })
+
+  it('reads an Astro component without frontmatter as markup', () => {
+    expect(commentSyntaxAt('Page.astro', ['<h1>hi</h1>'], 1)).toEqual(xml)
+  })
+
+  it('uses the file syntax for other files', () => {
+    expect(commentSyntaxAt('foo.ts', ['<style>'], 1)).toEqual({ prefix: '//' })
+    expect(commentSyntaxAt('data.zzz', ['x'], 1)).toEqual({ prefix: '' })
   })
 })
