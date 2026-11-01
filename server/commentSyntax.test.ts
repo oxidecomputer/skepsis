@@ -41,6 +41,7 @@ describe('detectLanguage', () => {
     ['foo.yaml', '', 'YAML'],
     ['foo.yml', '', 'YAML'],
     ['foo.vue', '', 'Vue'],
+    ['foo.svelte', '', 'Svelte'],
     // Ambiguous extensions pinned via override
     ['README.md', '', 'Markdown'],
     ['foo.h', '', 'C'],
@@ -97,6 +98,7 @@ describe('getCommentSyntax', () => {
     ['foo.yml', '', { prefix: '#' }],
     ['foo.conf', '', { prefix: '#' }],
     ['foo.vue', '', { prefix: '//' }],
+    ['foo.svelte', '', { prefix: '//' }],
     ['script.nu', '', { prefix: '#' }],
     ['Nukefile', '', { prefix: ';' }],
     ['somebin', '#!/bin/bash', { prefix: '#' }],

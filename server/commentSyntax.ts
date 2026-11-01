@@ -73,11 +73,12 @@ const SYNTAX_GROUPS: Array<[CommentSyntax, LanguageName[]]> = [
       // JSON doesn't support comments, but the user opted in; '//' produces
       // invalid JSON that most editors still highlight recognizably.
       'JSON',
-      // Vue single-file components may contain a mix of syntaxes (HTML,
+      // Vue and Svelte single-file components may contain a mix of syntaxes (HTML,
       // JS/TS, CSS, SCSS etc). Using slashes will work in JS/TS and HTML
       // (though will not actually be a comment in HTML), and may work in
       // *some* CSS syntaxes, so I chose it as a compromise.
       'Vue',
+      'Svelte',
     ],
   ],
   [XML_COMMENT, ['HTML', 'XML', 'SVG', 'Markdown', 'MDX']],
