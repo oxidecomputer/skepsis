@@ -393,13 +393,16 @@ const TREE_ICONS = {
 // Shadow-root CSS the --trees-* hooks can't express: the search box sits
 // flush against the top (the library only pads it horizontally, by
 // --trees-padding-inline = 16px, so 12px reads as even with the sides), and
-// the viewed check should read as done, not muted.
+// the viewed check should read as done, not muted. The library sizes the
+// decoration for truncatable text (flex-basis 0, shrinkable), so a long file
+// name squeezes the check to nothing; it must keep its width.
 const TREE_CSS = `
   [data-file-tree-search-container] {
     padding-top: 12px;
   }
   [data-item-section="decoration"] {
     color: var(--trees-git-added-color);
+    flex: 1 0 auto;
   }
 `
 

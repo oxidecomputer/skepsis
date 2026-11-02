@@ -362,6 +362,21 @@ test('file tree navigates and collapses', async ({ page }) => {
   await expect(page.locator('.file-tree')).toBeVisible()
 })
 
+test.describe('long file names', () => {
+  const name = 'a_file_name_long_enough_to_be_truncated_in_the_tree_sidebar.ts'
+  test.use({ repoFiles: { committed: {}, working: { [name]: 'hello\n' } } })
+
+  test('keep the viewed check visible in the tree', async ({ page }) => {
+    await page.locator('.viewed-button').click()
+    const row = page.locator('.file-tree').getByRole('treeitem', { name })
+    const check = row.locator('[data-item-section="decoration"]')
+    // The library lets the decoration shrink to nothing when the name overflows.
+    await expect
+      .poll(async () => (await check.boundingBox())?.width)
+      .toBeGreaterThanOrEqual(14)
+  })
+})
+
 test('cmd/ctrl+k focuses the file search, opening the tree if needed', async ({ page }) => {
   // Playwright pierces the tree's open shadow root, so the input is reachable.
   const search = page.locator('.file-tree input')
