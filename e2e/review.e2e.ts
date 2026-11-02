@@ -362,6 +362,32 @@ test('file tree navigates and collapses', async ({ page }) => {
   await expect(page.locator('.file-tree')).toBeVisible()
 })
 
+test.describe('generated files', () => {
+  test.use({
+    repoFiles: {
+      committed: { '.gitattributes': 'gen.ts linguist-generated=true\n' },
+      working: {
+        'gen.ts': 'export const x = 1\n',
+        'Cargo.lock': 'lock\n',
+        'src.ts': 'hi\n',
+      },
+    },
+  })
+
+  test('start collapsed and labeled', async ({ page }) => {
+    const names = (selector: string) => page.locator(`${selector} .file-header-name`)
+    await expect(names('.file-header')).toHaveText(['Cargo.lock', 'gen.ts', 'src.ts'])
+    await expect(names('.file-header:has(.collapse-chevron.collapsed)')).toHaveText([
+      'Cargo.lock',
+      'gen.ts',
+    ])
+    await expect(names('.file-header:has(.generated-label)')).toHaveText([
+      'Cargo.lock',
+      'gen.ts',
+    ])
+  })
+})
+
 test.describe('long file names', () => {
   const name = 'a_file_name_long_enough_to_be_truncated_in_the_tree_sidebar.ts'
   test.use({ repoFiles: { committed: {}, working: { [name]: 'hello\n' } } })

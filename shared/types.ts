@@ -151,6 +151,8 @@ export interface DiffResponse {
    *  Sections mean it depends on the line. Always empty when comments are
    *  disabled. */
   commentSyntaxes: Record<string, FileCommentSyntax>
+  /** Files the page starts collapsed (see server/generated.ts) */
+  generated: string[]
   error?: string
 }
 

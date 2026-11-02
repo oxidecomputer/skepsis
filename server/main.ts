@@ -16,6 +16,7 @@ import type { DiffArgs } from '../shared/types.ts'
 import { getDiff, patchHash } from './diff.ts'
 import { displayCommand } from './displayCommand.ts'
 import { getFileContents } from './fileContents.ts'
+import { getGeneratedFiles } from './generated.ts'
 import { loadViewed, markViewed, unmarkViewed, unmarkViewedAll } from './viewed.ts'
 import { insertComment, removeComment } from './comment.ts'
 import { getCommentSyntaxes } from './commentSyntax.ts'
@@ -80,10 +81,12 @@ export async function startServer(opts: {
 
   app.get('/api/diff', async (c) => {
     const { patch, fileHashes } = await getDiff(diffSource)
-    const viewed = await loadViewed(cwd, fileHashes)
-    const commentSyntaxes = diffSource.commentsEnabled
-      ? await getCommentSyntaxes(cwd, Object.keys(fileHashes))
-      : {}
+    const files = Object.keys(fileHashes)
+    const [viewed, generated, commentSyntaxes] = await Promise.all([
+      loadViewed(cwd, fileHashes),
+      getGeneratedFiles(cwd, files),
+      diffSource.commentsEnabled ? getCommentSyntaxes(cwd, files) : {},
+    ])
     return c.json({
       patch,
       revset: displayCommand(diffSource),
@@ -97,6 +100,7 @@ export async function startServer(opts: {
       send: !!send,
       viewed,
       commentSyntaxes,
+      generated,
     } satisfies DiffResponse)
   })
 
