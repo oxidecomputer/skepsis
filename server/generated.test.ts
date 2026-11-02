@@ -34,6 +34,8 @@ describe('getGeneratedFiles', () => {
       [
         'gen/** linguist-generated=true',
         'bare.ts linguist-generated',
+        // Any value but false counts, as in Linguist.
+        'one.ts linguist-generated=1',
         // An explicit opt-out beats the lockfile default.
         'Cargo.lock -linguist-generated',
         'yarn.lock linguist-generated=false',
@@ -50,6 +52,7 @@ describe('getGeneratedFiles', () => {
     const files = [
       'gen/a b.json',
       'bare.ts',
+      'one.ts',
       'sub/local.ts',
       'private.ts',
       'src/main.ts',
@@ -60,10 +63,23 @@ describe('getGeneratedFiles', () => {
     expect(await getGeneratedFiles(dir, files)).toEqual([
       'gen/a b.json',
       'bare.ts',
+      'one.ts',
       'sub/local.ts',
       'private.ts',
       'web/package-lock.json',
     ])
+  })
+
+  it('resolves root-relative paths when started in a subdirectory', async () => {
+    const dir = await tempDir()
+    await run('git', ['init', '-q'], dir)
+    await writeFile(
+      join(dir, '.gitattributes'),
+      'sub/gen/** linguist-generated\n/Cargo.lock -linguist-generated\n',
+    )
+    await mkdir(join(dir, 'sub'))
+    const files = ['sub/gen/a.ts', 'Cargo.lock', 'sub/main.ts']
+    expect(await getGeneratedFiles(join(dir, 'sub'), files)).toEqual(['sub/gen/a.ts'])
   })
 
   it('falls back to lockfile names outside a git repo', async () => {
