@@ -42,6 +42,12 @@ export const sendRequestSchema = z.object({
   file: z.string().nullable(),
   side: z.enum(['additions', 'deletions']).nullable(),
   lines: z.tuple([z.number().int().positive(), z.number().int().positive()]).nullable(),
+  /** For a comment on selected text rather than whole lines: where the text
+   *  starts in the first line and ends (exclusive) in the last, 0-based, in
+   *  UTF-16 code units. */
+  columns: z
+    .tuple([z.number().int().nonnegative(), z.number().int().nonnegative()])
+    .nullable(),
   /** An excerpt around the lines commented on, as runs of consecutive lines
    *  with each run's first and last line. Lines the diff hides split it. */
   code: z

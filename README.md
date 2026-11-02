@@ -171,6 +171,14 @@ in some cases that inline comments can't (because there is no file to write): on
 removed lines, and on diffs that don't end at the working copy. The **Comment**
 button continues to write a `<review>` marker in the file as usual.
 
+With `--send`, selecting text in the diff also opens the comment box, so a
+comment can be on a few words of a long line rather than the whole line. The
+box opens inside the line, under the screen row the selection ends on, the
+selected text stays highlighted while you write, and the comment says where
+it starts and ends. Selecting whole lines (a triple-click, say) is the same as a
+comment on those lines from the gutter. While the box is empty, clicking
+elsewhere in the code closes it, and ⌘C copies the selected text.
+
 The only way to set the command is `--send` or `SKEPSIS_SEND`. skepsis never
 reads it from the repo contents, so reviewing someone else's branch
 can't make it run a command they chose. Only the page skepsis opened can
@@ -212,6 +220,7 @@ The JSON sent to stdin looks like this:
   "file": "src/a.ts",
   "side": "additions",
   "lines": [42, 45],
+  "columns": null,
   "code": [{ "lines": [41, 46], "text": "const z = 0\nconst a = 1\n…" }],
   "blob": "9daeafb",
   "text": "why two?",
@@ -220,7 +229,10 @@ The JSON sent to stdin looks like this:
 ````
 
 `side` is `additions` or `deletions`, and `lines` (1-based, inclusive) are in
-that side's numbering. `code` is an excerpt of that side around the lines
+that side's numbering. `columns` is set when the comment is on selected text
+rather than whole lines: where the text starts in the first line and ends
+(exclusive) in the last, 0-based, in UTF-16 code units. The prompt then marks
+the text in the excerpt with `⟦` and `⟧`. `code` is an excerpt of that side around the lines
 commented on, in runs of consecutive lines, each with its own first and last
 line. There's more than one run when the lines commented on span lines the
 diff doesn't show. `blob` is the ID of the
