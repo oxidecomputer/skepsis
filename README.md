@@ -154,6 +154,9 @@ const end = Number(match[2])
 // </review>
 ```
 
+A comment on selected text in a line (see below) also says which text, cut in
+the middle when it's long: `<review on="Number(match[1])">`.
+
 ### Marking files viewed
 
 Viewed state is stored per file in `~/.local/share/skepsis/` using the file's
@@ -177,7 +180,8 @@ box opens inside the line, under the screen row the selection ends on, the
 selected text stays highlighted while you write, and the comment says where
 it starts and ends. Selecting whole lines (a triple-click, say) is the same as a
 comment on those lines from the gutter. While the box is empty, clicking
-elsewhere in the code closes it, and ⌘C copies the selected text.
+elsewhere in the code closes it, and ⌘C copies the selected text. **Comment**
+on selected text writes a marker after the line that quotes the text.
 
 The only way to set the command is `--send` or `SKEPSIS_SEND`. skepsis never
 reads it from the repo contents, so reviewing someone else's branch

@@ -72,9 +72,31 @@ export const REVIEW_CLOSE_TAG = '</review>'
  *  stays right when lines above it are added or removed, including by other
  *  comments. The value is in words because agents read it: in testing,
  *  Sonnet and Haiku sometimes took `above="6"` or `span="6"` to mean line 6,
- *  and never misread this. A plain `<review>` covers the line just above. */
-export function reviewOpenTag(lines: number): string {
-  return lines > 1 ? `<review covers="${lines} lines above">` : REVIEW_OPEN_TAG
+ *  and never misread this. A plain `<review>` covers the line just above.
+ *
+ *  A comment on some of the text in those lines says which with `on`:
+ *  `<review on="the quick … lazy dog">`. It's one line, and cut in the middle
+ *  past QUOTE_MAX characters, since the tag sits right under the text and the
+ *  two ends are enough to find it there. */
+export function reviewOpenTag(lines: number, quote?: string): string {
+  // A `"` would end the attribute
+  const on = quote && shortQuote(quote, QUOTE_MAX).replaceAll('"', '&quot;')
+  const attributes = [lines > 1 && `covers="${lines} lines above"`, on && `on="${on}"`]
+  const text = attributes.filter(Boolean).join(' ')
+  return text ? `<review ${text}>` : REVIEW_OPEN_TAG
+}
+
+const QUOTE_MAX = 80
+
+/** `quote` on one line, with the middle cut out if it's over `max`
+ *  characters. It cuts between code points, so it can't split an emoji. */
+export function shortQuote(quote: string, max: number): string {
+  const chars = [...quote.replace(/\s+/g, ' ').trim()]
+  if (chars.length <= max) return chars.join('')
+  const half = (max - 3) / 2
+  const head = chars.slice(0, Math.ceil(half)).join('').trimEnd()
+  const tail = chars.slice(-Math.floor(half)).join('').trimStart()
+  return `${head} … ${tail}`
 }
 
 // Any attributes are allowed on the open tag, so a comment written with one

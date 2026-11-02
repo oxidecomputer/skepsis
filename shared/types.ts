@@ -34,6 +34,8 @@ export const commentRequestSchema = z.object({
   text: z.string(),
   /** How many lines the comment covers, ending at afterLine. */
   lineCount: z.number().int().min(1).optional(),
+  /** The selected text, for a comment on part of those lines. */
+  quote: z.string().optional(),
 })
 
 /** A comment for the --send command. Only `text` is required by the

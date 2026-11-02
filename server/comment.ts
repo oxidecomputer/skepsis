@@ -36,6 +36,7 @@ export async function insertComment(
   lineText: string,
   text: string,
   lineCount = 1,
+  quote?: string,
 ): Promise<void> {
   await assertNotSymlink(cwd, file)
   const filePath = join(cwd, file)
@@ -66,7 +67,7 @@ export async function insertComment(
 
   const commentLines = [
     // The covered lines end at afterLine, so they can't start before line 1
-    wrap(reviewOpenTag(Math.min(lineCount, afterLine))),
+    wrap(reviewOpenTag(Math.min(lineCount, afterLine), quote)),
     ...text.split('\n').map((line) => wrap(line)),
     wrap(REVIEW_CLOSE_TAG),
   ]

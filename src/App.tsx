@@ -67,6 +67,7 @@ import {
   REVIEW_CLOSE_PATTERN,
   REVIEW_OPEN_PATTERN,
   reviewOpenTagLines,
+  shortQuote,
 } from '../shared/reviewComments.ts'
 import { diffChanges, type FileChange } from './diffChanges.ts'
 import { lineText as diffLineText, relocateLine } from './lineAnchor.ts'
@@ -263,7 +264,8 @@ type SentComment = {
  *  selection covers whole lines, which makes it a comment on those lines. */
 type SelectedText = {
   columns: [number, number] | null
-  /** The text on the lines between the columns, for the box to show */
+  /** The text on the lines between the columns, for the marker and the
+   *  header of a sent comment */
   quote: string
   /** The selection as the browser copies it, for ⌘C in an empty box */
   copy: string
@@ -285,13 +287,6 @@ function quoteText(
     lines.push(text.slice(n === first ? start : 0, n === last ? end : undefined))
   }
   return lines.join('\n')
-}
-
-/** A quote short enough for a comment box header: whitespace collapsed, and
- *  the middle of a long one elided. */
-function shortQuote(quote: string): string {
-  const flat = quote.replace(/\s+/g, ' ').trim()
-  return flat.length > 120 ? `${flat.slice(0, 60)} … ${flat.slice(-50)}` : flat
 }
 
 /** Walk the addition side of a diff and find <review>...</review> blocks.
@@ -2448,6 +2443,7 @@ function DiffView() {
               lineText,
               text,
               lineCount: line - first + 1,
+              quote: (columns && selected?.quote) || undefined,
             })
           }}
           onSend={
@@ -2521,7 +2517,7 @@ function DiffView() {
           <div className="sent-comment">
             <div className="sent-comment-head">
               <span className="sent-comment-label">Sent</span>
-              {quote && <span className="comment-quote">{shortQuote(quote)}</span>}
+              {quote && <span className="comment-quote">{shortQuote(quote, 120)}</span>}
               <button
                 type="button"
                 className="sent-comment-dismiss"

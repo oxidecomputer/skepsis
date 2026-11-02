@@ -15,8 +15,10 @@ import {
   REVIEW_OPEN_PATTERN,
   XML_COMMENT,
   reviewOpenTag,
+  reviewOpenTagAttributes,
   reviewOpenTagLines,
   reviewTagRegex,
+  shortQuote,
 } from './reviewComments.ts'
 
 describe('REVIEW_OPEN_PATTERN', () => {
@@ -106,6 +108,24 @@ describe('reviewOpenTag', () => {
 
   it('reads a plain tag as the line above', () => {
     expect(reviewOpenTagLines('# <review>')).toBe(1)
+  })
+
+  it('says which words a comment is on', () => {
+    expect(reviewOpenTag(1, 'some\n  "words"')).toBe('<review on="some &quot;words&quot;">')
+    expect(reviewOpenTag(2, 'a > b')).toBe('<review covers="2 lines above" on="a > b">')
+    expect(reviewOpenTag(1, ' \n')).toBe('<review>')
+    expect(REVIEW_OPEN_PATTERN.test(`// ${reviewOpenTag(1, 'x = "a>b"')}`)).toBe(true)
+    expect(reviewOpenTagLines(`# ${reviewOpenTag(3, 'a "b"')}`)).toBe(3)
+  })
+
+  it('cuts a long quote in the middle', () => {
+    const quote = `${'a'.repeat(50)} ${'b'.repeat(50)}`
+    const on = reviewOpenTagAttributes(`# ${reviewOpenTag(1, quote)}`)['on']!
+    expect(on).toBe(`${'a'.repeat(39)} … ${'b'.repeat(38)}`)
+  })
+
+  it('cuts a long quote between code points', () => {
+    expect(shortQuote(`${'😀'.repeat(10)}${'b'.repeat(10)}`, 9)).toBe('😀😀😀 … bbb')
   })
 
   it('reads a covers value it does not understand as the line above', () => {

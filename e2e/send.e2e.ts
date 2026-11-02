@@ -237,6 +237,16 @@ test.describe('with --send, selecting text', () => {
     expect(payload!['prompt']).toContain('\n⟦Lorem⟧ ipsum dolor')
   })
 
+  test('Comment on a word says the word in its marker', async ({ page, repo }) => {
+    await row(page, 'additions', 3).dblclick({ position: { x: 24, y: 4 } })
+    await textarea(page).fill('which word?')
+    await page.getByRole('button', { name: 'Comment', exact: true }).click()
+    await expect(textarea(page)).toBeHidden()
+    expect(await repo.read('doc.md')).toContain(
+      `${para}\n<!-- <review on="Lorem"> -->\n<!-- which word? -->\n`,
+    )
+  })
+
   test('a drag inside one line sends the part dragged over', async ({ page, repo }) => {
     const box = (await row(page, 'additions', 3).boundingBox())!
     await page.mouse.move(box.x + 60, box.y + 4)
