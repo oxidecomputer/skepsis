@@ -456,6 +456,30 @@ test.describe('with --send on a diff that ends at a commit', () => {
   })
 })
 
+test.describe('without --send, selecting text', () => {
+  const para = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(6).trim()
+  test.use({
+    repoFiles: {
+      committed: { 'doc.md': '# Title\n\nold text\n\nend\n' },
+      working: { 'doc.md': `# Title\n\n${para}\n\nend\n` },
+    },
+  })
+
+  test('comments inline on the selected words', async ({ page, repo }) => {
+    await row(page, 'deletions', 3).dblclick({ position: { x: 24, y: 4 } })
+    await expect(textarea(page)).toBeHidden()
+
+    await row(page, 'additions', 3).dblclick({ position: { x: 24, y: 4 } })
+    await expect(inLine(page, 3)).toHaveCount(1)
+    await textarea(page).fill('which word?')
+    await page.keyboard.press('ControlOrMeta+Enter')
+    await expect(textarea(page)).toBeHidden()
+    expect(await repo.read('doc.md')).toContain(
+      `${para}\n<!-- <review on="Lorem"> -->\n<!-- which word? -->\n`,
+    )
+  })
+})
+
 test('without --send, the box only comments inline', async ({ page }) => {
   await openBox(page)
   await expect(page.getByRole('button', { name: 'Comment', exact: true })).toBeVisible()

@@ -2544,11 +2544,12 @@ function DiffView() {
   const gutterClickRef = useRef<
     (range: SelectedLineRange, item: CodeViewItem<AnnotationMeta>) => void
   >(() => {})
+  // With --send either side can be sent; otherwise only an inline marker
+  // on the additions side is possible.
+  const canComment = (side: Side) => send || (commentsEnabled && side === 'additions')
   gutterClickRef.current = (range, item) => {
     const side = range.side ?? 'additions'
-    // With --send either side can be sent; otherwise only an inline marker
-    // on the additions side is possible.
-    if (!send && (!commentsEnabled || side !== 'additions')) return
+    if (!canComment(side)) return
     // A drag from one side to the other has no single numbering, so it
     // covers only the line it ended on. Otherwise the box opens under the
     // last line, as on GitHub.
@@ -2567,8 +2568,8 @@ function DiffView() {
       (h) => hostFiles.current.get(h) === file,
     )
 
-  // With --send, selecting text in the diff opens the comment box on it,
-  // unless the open box has a draft. A click in the code closes an empty box.
+  // Selecting text in the diff opens the comment box on it, unless the open
+  // box has a draft. A click in the code closes an empty box.
   const selectionUp = (e: MouseEvent) => {
     if (e.button !== 0) return
     const path = e.composedPath()
@@ -2587,6 +2588,7 @@ function DiffView() {
     const lastText = item && diffLineText(item.fileDiff, anchor.side, anchor.last)
     if (!file || !item || lastText === undefined) return
     const { side, first, last } = anchor
+    if (!canComment(side)) return
     const columns: [number, number] = [
       anchor.columns[0],
       Math.min(anchor.columns[1], lastText.length),
@@ -2629,7 +2631,7 @@ function DiffView() {
     }
   }
   useEffect(() => {
-    if (!send) return
+    if (!send && !commentsEnabled) return
     const onMouseDown = (e: MouseEvent) => selectionDownRef.current(e)
     const onMouseUp = (e: MouseEvent) => selectionUpRef.current(e)
     document.addEventListener('mousedown', onMouseDown, true)
@@ -2638,7 +2640,7 @@ function DiffView() {
       document.removeEventListener('mousedown', onMouseDown, true)
       document.removeEventListener('mouseup', onMouseUp)
     }
-  }, [send])
+  }, [send, commentsEnabled])
 
   // A box on part of a line shows inside the line, after the screen row the
   // text ends on: it's slotted into the item host, into a slot put in the

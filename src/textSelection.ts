@@ -6,7 +6,7 @@
  * Copyright Oxide Computer Company
  */
 
-// Text selections in the diff, for comments on part of a line (--send only).
+// Text selections in the diff, for comments on part of a line.
 // Each diff item renders in its own shadow root as rows of
 // `[data-line]` elements, one per line, holding the line's text. A row's
 // `data-line` is its number in its own side's numbering.

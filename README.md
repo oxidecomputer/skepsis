@@ -154,8 +154,13 @@ const end = Number(match[2])
 // </review>
 ```
 
-A comment on selected text in a line (see below) also says which text, cut in
-the middle when it's long: `<review on="Number(match[1])">`.
+Selecting text in the diff also opens the comment box, to comment on part of a
+line rather than the whole thing. The box opens directly under the selection,
+and the selected text stays highlighted while you write. Selecting whole lines
+(a triple-click, say) is the same as commenting from the gutter. While the box
+is empty, clicking elsewhere in the code closes it, and ⌘C copies the selected
+text. The open tag quotes the selection, eliding the middle if it's long:
+`<review on="Number(match[1])">`.
 
 ### Marking files viewed
 
@@ -172,16 +177,9 @@ agent, a tmux pane, or a log. There is not chat UI in skepsis (yet) so replies
 from the agent will appear in that session, wherever it is. Send works
 in some cases that inline comments can't (because there is no file to write): on
 removed lines, and on diffs that don't end at the working copy. The **Comment**
-button continues to write a `<review>` marker in the file as usual.
-
-With `--send`, selecting text in the diff also opens the comment box, so a
-comment can be on a few words of a long line rather than the whole line. The
-box opens inside the line, under the screen row the selection ends on, the
-selected text stays highlighted while you write, and the comment says where
-it starts and ends. Selecting whole lines (a triple-click, say) is the same as a
-comment on those lines from the gutter. While the box is empty, clicking
-elsewhere in the code closes it, and ⌘C copies the selected text. **Comment**
-on selected text writes a marker after the line that quotes the text.
+button continues to write a `<review>` marker in the file as usual. When you
+send a comment on selected text, the message includes where the selection
+starts and ends.
 
 The only way to set the command is `--send` or `SKEPSIS_SEND`. skepsis never
 reads it from the repo contents, so reviewing someone else's branch
