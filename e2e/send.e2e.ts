@@ -205,6 +205,221 @@ test.describe('with --send and lines hidden between hunks', () => {
   })
 })
 
+/** The rendered row of a line, in the first file. */
+const row = (page: Page, side: 'additions' | 'deletions', line: number) =>
+  page.locator(`diffs-container [data-${side}] [data-content] > [data-line="${line}"]`)
+
+/** The slot a box on part of a line shows in, in that line */
+const inLine = (page: Page, line: number) =>
+  row(page, 'additions', line).locator('slot[name="comment-inline"]')
+
+test.describe('with --send, selecting text', () => {
+  const para = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(6).trim()
+  test.use({
+    cliArgs: ['--send', SEND],
+    repoFiles: {
+      committed: { 'doc.md': '# Title\n\nold text\n\nend\n' },
+      working: { 'doc.md': `# Title\n\n${para}\n\nend\n` },
+    },
+  })
+
+  test('a word sends with its columns, marked in the prompt', async ({ page, repo }) => {
+    await row(page, 'additions', 3).dblclick({ position: { x: 24, y: 4 } })
+    await expect(textarea(page)).toBeFocused()
+    await expect(inLine(page, 3)).toHaveCount(1)
+    await textarea(page).fill('which word?')
+    await page.keyboard.press('ControlOrMeta+Enter')
+
+    await expect(page.locator('.sent-comment .comment-quote')).toHaveText('Lorem')
+    const [payload] = await sent(repo.dir)
+    expect(payload).toMatchObject({ side: 'additions', lines: [3, 3], columns: [0, 5] })
+    expect(payload!['prompt']).toContain('on the text between ⟦ and ⟧')
+    expect(payload!['prompt']).toContain('\n⟦Lorem⟧ ipsum dolor')
+  })
+
+  test('Comment on a word says the word in its marker', async ({ page, repo }) => {
+    await row(page, 'additions', 3).dblclick({ position: { x: 24, y: 4 } })
+    await textarea(page).fill('which word?')
+    await page.getByRole('button', { name: 'Comment', exact: true }).click()
+    await expect(textarea(page)).toBeHidden()
+    expect(await repo.read('doc.md')).toContain(
+      `${para}\n<!-- <review on="Lorem"> -->\n<!-- which word? -->\n`,
+    )
+  })
+
+  test('a drag inside one line sends the part dragged over', async ({ page, repo }) => {
+    const box = (await row(page, 'additions', 3).boundingBox())!
+    await page.mouse.move(box.x + 60, box.y + 4)
+    await page.mouse.down()
+    await page.mouse.move(box.x + 160, box.y + 4, { steps: 5 })
+    await page.mouse.up()
+    await textarea(page).fill('this part')
+    await page.keyboard.press('ControlOrMeta+Enter')
+
+    await expect(page.getByText('Sent', { exact: true })).toBeVisible()
+    const [payload] = await sent(repo.dir)
+    const [start, end] = payload!['columns'] as [number, number]
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBeGreaterThan(start)
+    expect(payload!['prompt']).toContain(
+      `${para.slice(0, start)}⟦${para.slice(start, end)}⟧${para.slice(end)}`,
+    )
+  })
+
+  test('a triple-click is a comment on the whole line', async ({ page, repo }) => {
+    await row(page, 'additions', 3).click({ clickCount: 3, position: { x: 24, y: 4 } })
+    await expect(textarea(page)).toBeFocused()
+    await expect(page.locator('.comment-inline')).toHaveCount(0)
+    await textarea(page).fill('whole thing')
+    await page.keyboard.press('ControlOrMeta+Enter')
+
+    await expect(page.getByText('Sent', { exact: true })).toBeVisible()
+    const [payload] = await sent(repo.dir)
+    expect(payload).toMatchObject({ lines: [3, 3], columns: null })
+  })
+
+  test('selecting part of a line after a whole line unmarks the whole line', async ({
+    page,
+  }) => {
+    // Lines 1–2, the title and the blank line under it
+    const title = (await row(page, 'additions', 1).boundingBox())!
+    const lorem = (await row(page, 'additions', 3).boundingBox())!
+    await page.mouse.move(title.x + 4, title.y + 4)
+    await page.mouse.down()
+    await page.mouse.move(lorem.x + 1, lorem.y + 4, { steps: 5 })
+    await page.mouse.up()
+    await expect(row(page, 'additions', 1)).toHaveAttribute('data-selected-line')
+    await page.mouse.move(lorem.x + 60, lorem.y + 4)
+    await page.mouse.down()
+    await page.mouse.move(lorem.x + 160, lorem.y + 4, { steps: 5 })
+    await page.mouse.up()
+    await expect(inLine(page, 3)).toHaveCount(1)
+    await expect(row(page, 'additions', 1)).not.toHaveAttribute('data-selected-line')
+  })
+
+  test('a drag from the end of a line starts on the next line with text', async ({
+    page,
+    repo,
+  }) => {
+    const title = (await row(page, 'additions', 1).boundingBox())!
+    const lorem = (await row(page, 'additions', 3).boundingBox())!
+    await page.mouse.move(title.x + title.width - 4, title.y + 4)
+    await page.mouse.down()
+    await page.mouse.move(lorem.x + 100, lorem.y + 4, { steps: 5 })
+    await page.mouse.up()
+    await textarea(page).fill('from the start')
+    await page.keyboard.press('ControlOrMeta+Enter')
+
+    await expect(page.getByText('Sent', { exact: true })).toBeVisible()
+    const [payload] = await sent(repo.dir)
+    expect(payload).toMatchObject({ lines: [3, 3] })
+    expect((payload!['columns'] as number[])[0]).toBe(0)
+  })
+
+  test('a drag across sides in unified mode stays on the side it started on', async ({
+    page,
+    repo,
+  }) => {
+    await page.keyboard.press('s')
+    const rows = page.locator('diffs-container [data-content] > [data-line]')
+    const from = (await rows.filter({ hasText: 'old text' }).boundingBox())!
+    const to = (await rows.filter({ hasText: 'Lorem' }).boundingBox())!
+    await page.mouse.move(from.x + 20, from.y + 4)
+    await page.mouse.down()
+    await page.mouse.move(to.x + 60, to.y + 4, { steps: 5 })
+    await page.mouse.up()
+    await textarea(page).fill('from the old side')
+    await page.keyboard.press('ControlOrMeta+Enter')
+
+    await expect(page.getByText('Sent', { exact: true })).toBeVisible()
+    const [payload] = await sent(repo.dir)
+    const [start, end] = payload!['columns'] as [number, number]
+    expect(payload).toMatchObject({ side: 'deletions', lines: [3, 3] })
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBe('old text'.length)
+  })
+
+  test('a drag across columns in split mode stays on the line it started on', async ({
+    page,
+    repo,
+  }) => {
+    const from = (await row(page, 'deletions', 3).boundingBox())!
+    const to = (await row(page, 'additions', 3).boundingBox())!
+    await page.mouse.move(from.x + 20, from.y + 4)
+    await page.mouse.down()
+    await page.mouse.move(to.x + 60, to.y + 4, { steps: 5 })
+    await page.mouse.up()
+    await textarea(page).fill('from the old side')
+    await page.keyboard.press('ControlOrMeta+Enter')
+
+    await expect(page.getByText('Sent', { exact: true })).toBeVisible()
+    const [payload] = await sent(repo.dir)
+    expect(payload).toMatchObject({ side: 'deletions', lines: [3, 3] })
+    expect((payload!['columns'] as number[])[1]).toBe('old text'.length)
+  })
+
+  test('selecting an empty line comments on the line', async ({ page, repo }) => {
+    // From the empty line to the start of the next, as a drag over it ends
+    await row(page, 'additions', 3).evaluate((lorem) => {
+      const empty = lorem.previousElementSibling!
+      window.getSelection()!.setBaseAndExtent(empty, 0, lorem.firstChild!, 0)
+      empty.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, composed: true }))
+    })
+    await textarea(page).fill('empty line')
+    await page.keyboard.press('ControlOrMeta+Enter')
+
+    await expect(page.getByText('Sent', { exact: true })).toBeVisible()
+    const [payload] = await sent(repo.dir)
+    expect(payload).toMatchObject({ lines: [2, 2], columns: null })
+  })
+
+  test('a triple-click outside the code leaves the box in its line', async ({ page }) => {
+    await row(page, 'additions', 3).dblclick({ position: { x: 24, y: 4 } })
+    await expect(inLine(page, 3)).toHaveCount(1)
+    await page.locator('code').filter({ hasText: 'git diff' }).click({ clickCount: 3 })
+    await expect(inLine(page, 3)).toHaveCount(1)
+    await expect(textarea(page)).toBeVisible()
+  })
+
+  test('an empty box closes on a click in the code; a draft stays', async ({ page }) => {
+    await row(page, 'additions', 3).dblclick({ position: { x: 24, y: 4 } })
+    await expect(textarea(page)).toBeFocused()
+    await row(page, 'additions', 5).click()
+    await expect(textarea(page)).toBeHidden()
+
+    await row(page, 'additions', 3).dblclick({ position: { x: 24, y: 4 } })
+    await textarea(page).fill('keep me')
+    await row(page, 'additions', 1).dblclick({ position: { x: 24, y: 4 } })
+    await row(page, 'additions', 5).click()
+    await expect(textarea(page)).toHaveValue('keep me')
+    await expect(inLine(page, 3)).toHaveCount(1)
+  })
+
+  test('⌘C copies the selection only while the box is empty', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async (t: string) => void ((window as { copied?: string }).copied = t),
+        },
+      })
+    })
+    await page.reload()
+    await row(page, 'additions', 3).dblclick({ position: { x: 24, y: 4 } })
+    await expect(textarea(page)).toBeFocused()
+    await page.keyboard.press('ControlOrMeta+c')
+    expect(await page.evaluate(() => (window as { copied?: string }).copied)).toBe('Lorem')
+
+    // With a draft, ⌘C and no text selected leaves the clipboard alone
+    await page.evaluate(() => delete (window as { copied?: string }).copied)
+    await textarea(page).fill('draft')
+    await textarea(page).press('End')
+    await page.keyboard.press('ControlOrMeta+c')
+    expect(
+      await page.evaluate(() => (window as { copied?: string }).copied),
+    ).toBeUndefined()
+  })
+})
+
 test.describe('with a failing --send', () => {
   test.use({ cliArgs: ['--send', 'echo "nobody home" >&2; exit 1'] })
 
@@ -238,6 +453,30 @@ test.describe('with --send on a diff that ends at a commit', () => {
     await expect(page.getByText('Sent', { exact: true })).toBeVisible()
     const [payload] = await sent(repo.dir)
     expect(payload).toMatchObject({ diff: { toWorkingCopy: false }, text: 'on a commit' })
+  })
+})
+
+test.describe('without --send, selecting text', () => {
+  const para = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(6).trim()
+  test.use({
+    repoFiles: {
+      committed: { 'doc.md': '# Title\n\nold text\n\nend\n' },
+      working: { 'doc.md': `# Title\n\n${para}\n\nend\n` },
+    },
+  })
+
+  test('comments inline on the selected words', async ({ page, repo }) => {
+    await row(page, 'deletions', 3).dblclick({ position: { x: 24, y: 4 } })
+    await expect(textarea(page)).toBeHidden()
+
+    await row(page, 'additions', 3).dblclick({ position: { x: 24, y: 4 } })
+    await expect(inLine(page, 3)).toHaveCount(1)
+    await textarea(page).fill('which word?')
+    await page.keyboard.press('ControlOrMeta+Enter')
+    await expect(textarea(page)).toBeHidden()
+    expect(await repo.read('doc.md')).toContain(
+      `${para}\n<!-- <review on="Lorem"> -->\n<!-- which word? -->\n`,
+    )
   })
 })
 

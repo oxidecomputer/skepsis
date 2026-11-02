@@ -26,6 +26,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 import type { ReactElement } from 'react'
+import { createPortal } from 'react-dom'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { canUseWASM, parsePatchFiles, parseDiffFromFile } from '@pierre/diffs'
 import { CodeView, WorkerPoolContextProvider } from '@pierre/diffs/react'
@@ -66,9 +67,11 @@ import {
   REVIEW_CLOSE_PATTERN,
   REVIEW_OPEN_PATTERN,
   reviewOpenTagLines,
+  shortQuote,
 } from '../shared/reviewComments.ts'
 import { diffChanges, type FileChange } from './diffChanges.ts'
 import { lineText as diffLineText, relocateLine } from './lineAnchor.ts'
+import { closeLine, openLineAt, selectionAnchor, textRange } from './textSelection.ts'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -91,6 +94,9 @@ const DIFF_THEME = { light: 'github-light-default', dark: 'github-dark-default' 
 // no fallback to Shiki, since one highlighter serves the whole page. Like the
 // theme, this has to reach both the CodeView options and the worker pool.
 // canUseWASM also requires SIMD, which every current browser has.
+/** The slot a comment box on part of a line shows in */
+const INLINE_SLOT = 'comment-inline'
+
 const HIGHLIGHTER: HighlighterTypes = canUseWASM() ? 'highlights' : 'shiki-js'
 
 // How often the page asks /api/diff-hash whether the diff changed on disk.
@@ -250,7 +256,37 @@ type SentComment = {
   file: string
   side: Side
   lines: [number, number]
+  quote: string | null
   text: string
+}
+
+/** A comment box opened by selecting text. `columns` is null when the
+ *  selection covers whole lines, which makes it a comment on those lines. */
+type SelectedText = {
+  columns: [number, number] | null
+  /** The text on the lines between the columns, for the marker and the
+   *  header of a sent comment */
+  quote: string
+  /** The selection as the browser copies it, for ⌘C in an empty box */
+  copy: string
+}
+
+/** The text of `side` from `columns[0]` of line `first` to `columns[1]` of
+ *  line `last`. Lines the diff hides are left out. */
+function quoteText(
+  fileDiff: FileDiffMetadata,
+  side: Side,
+  first: number,
+  last: number,
+  [start, end]: [number, number],
+): string {
+  const lines: string[] = []
+  for (let n = first; n <= last; n++) {
+    const text = diffLineText(fileDiff, side, n)
+    if (text === undefined) continue
+    lines.push(text.slice(n === first ? start : 0, n === last ? end : undefined))
+  }
+  return lines.join('\n')
 }
 
 /** Walk the addition side of a diff and find <review>...</review> blocks.
@@ -469,6 +505,13 @@ const DIFF_CSS = `
     color: var(--diffs-fg) !important;
   }
   [data-review-comment] [data-gutter-utility-slot] { display: none !important; }
+  /* A comment box on part of a line (see inlineBox) */
+  /* Out to the row's edges, past the line's padding, like an annotation */
+  slot[name="comment-inline"] { display: block; margin-inline: -2ch -1ch; }
+  /* The text an open comment box is on (see markQuoteRef) */
+  ::highlight(comment-quote) {
+    background-color: rgba(56, 139, 253, 0.35);
+  }
   /* The lines a review comment is on get blue numbers, and a bar down the
      gutter joins them to the comment (see railReviewLines). */
   [data-review-target][data-column-number] {
@@ -669,6 +712,22 @@ function nearestLine(fileDiff: FileDiffMetadata, side: Side, line: number): numb
   return best
 }
 
+/** Whether lines `first` to `line` of `side` overlap a review block, where a
+ *  comment would nest in it. */
+const insideReview = (
+  item: CodeViewItem<AnnotationMeta>,
+  side: Side,
+  first: number,
+  line: number,
+) =>
+  side === 'additions' &&
+  (item.annotations ?? []).some(
+    (a) =>
+      a.metadata?.type === 'review' &&
+      first <= a.metadata.endLine &&
+      line >= a.metadata.startLine,
+  )
+
 const stripNewline = (line: string | undefined) => (line ?? '').replace(/\r?\n$/, '')
 
 /** The blob ID of a side of a file as the page shows it. git writes a side
@@ -729,6 +788,7 @@ const marker = ({ prefix, suffix }: CommentSyntax) =>
   suffix ? `${prefix} ${suffix}` : prefix
 
 function CommentForm({
+  copy,
   initialText,
   onTextChange,
   onSubmit,
@@ -739,6 +799,9 @@ function CommentForm({
   error,
   syntax,
 }: {
+  /** The text ⌘C copies while the box is empty: the selection that opened
+   *  the box, which focusing the box took away */
+  copy: string | null
   /** The draft to start from. The form remounts when the diff refetches, so
    *  the parent keeps the text and hands it back. */
   initialText: string
@@ -783,6 +846,10 @@ function CommentForm({
           onTextChange(e.target.value)
         }}
         onKeyDown={(e) => {
+          if (copy && !text.trim() && e.key === 'c' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault()
+            void navigator.clipboard.writeText(copy)
+          }
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault()
             run(onSend ? (e.altKey ? inline : onSend) : onSubmit)
@@ -1585,13 +1652,17 @@ function DiffView() {
   // The comment box the user opened: the lines it covers, first to `line`,
   // and their side (deletions only with --send), with the file's diff it was
   // placed in. It opens under `line`. What's shown is `composing`, below,
-  // which follows the lines into a refetched diff.
+  // which follows the lines into a refetched diff. Opened from a text
+  // selection, it also has the selection.
   const [composingState, setComposing] = useState<{
     file: string
     side: Side
     first: number
     line: number
     diff: FileDiffMetadata
+    text?: SelectedText
+    /** Counts opens, so a box reopened in place starts over */
+    opened: number
   } | null>(null)
   const [sent, setSent] = useState<SentComment[]>([])
   const sentId = useRef(0)
@@ -1755,12 +1826,17 @@ function DiffView() {
   // --send. The box stays open with its draft and the error when a send
   // fails; when one goes through, the box gives way to the sent comment.
   const sendMutation = useMutation({
-    mutationFn: (body: SendRequest) => apiFetch('/api/send', { method: 'POST', body }),
-    onSuccess: (_, { file, side, lines, text }) => {
+    // `quote` is for the sent comment to show
+    mutationFn: ({ quote: _, ...body }: SendRequest & { quote: string | null }) =>
+      apiFetch('/api/send', { method: 'POST', body }),
+    onSuccess: (_, { file, side, lines, quote, text }) => {
       setComposing(null)
       // The page only sends from a line, so these are always set
       if (file && side && lines)
-        setSent((prev) => [...prev, { id: ++sentId.current, file, side, lines, text }])
+        setSent((prev) => [
+          ...prev,
+          { id: ++sentId.current, file, side, lines, quote, text },
+        ])
     },
   })
 
@@ -1938,13 +2014,21 @@ function DiffView() {
   }, [files])
 
   const openComposer = useCallback(
-    (file: string, side: Side, first: number, line: number) => {
+    (file: string, side: Side, first: number, line: number, text?: SelectedText) => {
       const diff = files.find((f) => f.name === file)
       if (!diff) return
       commentMutation.reset()
       sendMutation.reset()
       draftRef.current = ''
-      setComposing({ file, side, first, line, diff })
+      setComposing((prev) => ({
+        file,
+        side,
+        first,
+        line,
+        diff,
+        text,
+        opened: (prev?.opened ?? 0) + 1,
+      }))
     },
     [files, commentMutation, sendMutation],
   )
@@ -1961,7 +2045,9 @@ function DiffView() {
     const moved = relocateLine(diff, fileDiff, side, line)
     const movedFirst = first === line ? moved : relocateLine(diff, fileDiff, side, first)
     if (moved === null || movedFirst === null) return null
-    return { file, side, first: movedFirst, line: moved, diff: fileDiff }
+    // relocateLine only moves a line whose text is unchanged, so the
+    // selection's columns still hold
+    return { ...composingState, first: movedFirst, line: moved, diff: fileDiff }
   }, [composingState, files])
   // Commit the move or the close in the same render, so the box never shows
   // in its old place. A closed box's draft goes in a toast, since the box
@@ -2148,7 +2234,9 @@ function DiffView() {
         })
         sentHere.push(`${s.id}@${line}`)
       }
-      if (composing?.file === name) {
+      // A box on part of a line goes inside the line instead (see inlineBox)
+      const composingHere = composing?.file === name && !composing.text?.columns
+      if (composingHere) {
         annotations.push({
           side: composing.side,
           lineNumber: composing.line,
@@ -2156,8 +2244,7 @@ function DiffView() {
         })
       }
       const isCollapsed = collapsed[name] ?? false
-      const composingLine =
-        composing?.file === name ? `${composing.side}${composing.line}` : -1
+      const composingLine = composingHere ? `${composing.side}${composing.line}` : -1
       const key = `${data.fileHashes[name] ?? ''}|${composingLine}|${sentHere.join(',')}|${isCollapsed ? 1 : 0}`
       const prev = versionsRef.current.get(name)
       const changed = !prev || prev.key !== key || prev.fileDiff !== fileDiff
@@ -2340,6 +2427,74 @@ function DiffView() {
     ],
   )
 
+  // The open comment box, for the annotation under its last line or, on
+  // part of a line, inside the line (see inlineBox). `fileDiff` is the item's, which
+  // has any lines expanded since the box opened.
+  const renderComposer = useCallback(
+    (fileDiff: FileDiffMetadata | null) => {
+      if (!composing) return null
+      const { file, side, first, line, text: selected } = composing
+      const columns = selected?.columns ?? null
+      return (
+        <CommentForm
+          key={composing.opened}
+          copy={selected?.copy ?? null}
+          initialText={draftRef.current}
+          onTextChange={(text) => {
+            draftRef.current = text
+          }}
+          onSubmit={(text) => {
+            const diff = composingRef.current?.diff
+            const lineText = diff && diffLineText(diff, 'additions', line)
+            if (lineText === undefined) return
+            commentMutation.mutate({
+              file,
+              afterLine: line,
+              lineText,
+              text,
+              lineCount: line - first + 1,
+              quote: (columns && selected?.quote) || undefined,
+            })
+          }}
+          onSend={
+            data?.send
+              ? (text) =>
+                  sendMutation.mutate({
+                    file,
+                    side,
+                    lines: [first, line],
+                    columns,
+                    quote: columns && selected ? selected.quote : null,
+                    code: fileDiff && lineContext(fileDiff, side, first, line),
+                    blob: fileDiff && sideBlob(fileDiff, side),
+                    text,
+                  })
+              : undefined
+          }
+          inlineUnavailable={
+            !commentsEnabled
+              ? 'Inline comments need the diff to end at the working copy'
+              : side === 'deletions'
+                ? 'Inline comments go on the new side of the diff'
+                : null
+          }
+          onCancel={() => setComposing(null)}
+          submitting={
+            (commentMutation.isPending && commentMutation.variables?.file === file) ||
+            sendMutation.isPending
+          }
+          error={
+            commentMutation.variables?.file === file && commentMutation.error
+              ? commentMutation.error.message
+              : (sendMutation.error?.message ?? null)
+          }
+          syntax={data?.commentSyntaxes[file] ?? null}
+        />
+      )
+    },
+    [commentMutation, sendMutation, data, composing, commentsEnabled],
+  )
+
   const renderAnnotation = useCallback(
     (
       annotation: LineAnnotation<AnnotationMeta> | DiffLineAnnotation<AnnotationMeta>,
@@ -2367,11 +2522,12 @@ function DiffView() {
         )
       }
       if (meta.type === 'sent') {
-        const { id, text } = meta.sent
+        const { id, quote, text } = meta.sent
         return (
           <div className="sent-comment">
             <div className="sent-comment-head">
               <span className="sent-comment-label">Sent</span>
+              {quote && <span className="comment-quote">{shortQuote(quote, 120)}</span>}
               <button
                 type="button"
                 className="sent-comment-dismiss"
@@ -2386,67 +2542,11 @@ function DiffView() {
           </div>
         )
       }
-      if (meta.type === 'composing') {
-        const side = composing?.side ?? 'additions'
-        const first = composing?.first ?? annotation.lineNumber
-        return (
-          <CommentForm
-            initialText={draftRef.current}
-            onTextChange={(text) => {
-              draftRef.current = text
-            }}
-            onSubmit={(text) => {
-              const diff = composingRef.current?.diff
-              const line = diff && diffLineText(diff, 'additions', annotation.lineNumber)
-              if (line === undefined) return
-              commentMutation.mutate({
-                file,
-                afterLine: annotation.lineNumber,
-                lineText: line,
-                text,
-                lineCount: annotation.lineNumber - first + 1,
-              })
-            }}
-            onSend={
-              data?.send
-                ? (text) =>
-                    sendMutation.mutate({
-                      file,
-                      side,
-                      lines: [first, annotation.lineNumber],
-                      code:
-                        item.type === 'diff'
-                          ? lineContext(item.fileDiff, side, first, annotation.lineNumber)
-                          : null,
-                      blob: item.type === 'diff' ? sideBlob(item.fileDiff, side) : null,
-                      text,
-                    })
-                : undefined
-            }
-            inlineUnavailable={
-              !commentsEnabled
-                ? 'Inline comments need the diff to end at the working copy'
-                : side === 'deletions'
-                  ? 'Inline comments go on the new side of the diff'
-                  : null
-            }
-            onCancel={() => setComposing(null)}
-            submitting={
-              (commentMutation.isPending && commentMutation.variables?.file === file) ||
-              sendMutation.isPending
-            }
-            error={
-              commentMutation.variables?.file === file && commentMutation.error
-                ? commentMutation.error.message
-                : (sendMutation.error?.message ?? null)
-            }
-            syntax={data?.commentSyntaxes[file] ?? null}
-          />
-        )
-      }
+      if (meta.type === 'composing')
+        return renderComposer(item.type === 'diff' ? item.fileDiff : null)
       return null
     },
-    [resolveMutation, commentMutation, sendMutation, data, composing, commentsEnabled],
+    [resolveMutation, renderComposer],
   )
 
   // Gutter-utility click (start a comment). Routed through a ref so the
@@ -2454,11 +2554,12 @@ function DiffView() {
   const gutterClickRef = useRef<
     (range: SelectedLineRange, item: CodeViewItem<AnnotationMeta>) => void
   >(() => {})
+  // With --send either side can be sent; otherwise only an inline marker
+  // on the additions side is possible.
+  const canComment = (side: Side) => send || (commentsEnabled && side === 'additions')
   gutterClickRef.current = (range, item) => {
     const side = range.side ?? 'additions'
-    // With --send either side can be sent; otherwise only an inline marker
-    // on the additions side is possible.
-    if (!send && (!commentsEnabled || side !== 'additions')) return
+    if (!canComment(side)) return
     // A drag from one side to the other has no single numbering, so it
     // covers only the line it ended on. Otherwise the box opens under the
     // last line, as on GitHub.
@@ -2466,17 +2567,124 @@ function DiffView() {
     const first = crossSide ? range.end : Math.min(range.start, range.end)
     const line = crossSide ? range.end : Math.max(range.start, range.end)
     const lineSide = crossSide ? range.endSide! : side
-    // Block nesting: disallow starting a comment inside an existing review block.
-    const insideReview = (item.annotations ?? []).some(
-      (a) =>
-        lineSide === 'additions' &&
-        a.metadata?.type === 'review' &&
-        first <= a.metadata.endLine &&
-        line >= a.metadata.startLine,
-    )
-    if (insideReview) return
+    if (insideReview(item, lineSide, first, line)) return
     openComposer(item.id, lineSide, first, line)
   }
+
+  // Which item each rendered diff host shows, for text selections in it
+  const hostFiles = useRef(new WeakMap<Element, string>())
+  const hostOf = (file: string) =>
+    [...document.querySelectorAll('diffs-container')].find(
+      (h) => hostFiles.current.get(h) === file,
+    )
+
+  // Selecting text in the diff opens the comment box on it, unless the open
+  // box has a draft. A click in the code closes an empty box.
+  const selectionUp = (e: MouseEvent) => {
+    if (e.button !== 0) return
+    const path = e.composedPath()
+    const inPath = (selector: string) =>
+      path.some((n) => n instanceof Element && n.matches(selector))
+    if (inPath('.comment-form, [data-gutter]')) return
+    const empty = !draftRef.current.trim()
+    const anchor = selectionAnchor([...document.querySelectorAll('diffs-container')])
+    if (!anchor) {
+      if (composingRef.current && empty && inPath('[data-line]')) setComposing(null)
+      return
+    }
+    if (composingRef.current && !empty) return
+    const file = hostFiles.current.get(anchor.host)
+    const item = items.find((it) => it.id === file)
+    const lastText = item && diffLineText(item.fileDiff, anchor.side, anchor.last)
+    if (!file || !item || lastText === undefined) return
+    const { side, first, last } = anchor
+    if (!canComment(side)) return
+    const columns: [number, number] = [
+      anchor.columns[0],
+      Math.min(anchor.columns[1], lastText.length),
+    ]
+    const whole = columns[0] === 0 && columns[1] === lastText.length
+    if (!whole && first === last && columns[0] >= columns[1]) return
+    if (insideReview(item, side, first, last)) return
+    openComposer(file, side, first, last, {
+      columns: whole ? null : columns,
+      quote: quoteText(item.fileDiff, side, first, last, columns),
+      copy: window.getSelection()?.toString() ?? '',
+    })
+    // Whole lines look as they do from the gutter "+"; part of a line has its
+    // own highlight, so lines selected before are unmarked
+    codeViewRef.current
+      ?.getInstance()
+      ?.setSelectedLines(
+        whole ? { id: file, range: { start: first, end: last, side } } : null,
+      )
+  }
+  const selectionUpRef = useRef<(e: MouseEvent) => void>(() => {})
+  selectionUpRef.current = (e) => {
+    selectionUp(e)
+    // A triple-click took the box out of its line (selectionDownRef). If it
+    // didn't open another box, the box goes back.
+    if (composingRef.current?.text?.columns && !inlineBox.assignedSlot)
+      markQuoteRef.current()
+  }
+  // A triple-click selects a paragraph, which the box the double-click
+  // opened inside the line splits in two. With nothing written in it yet,
+  // the box goes before the browser picks the paragraph.
+  const selectionDownRef = useRef<(e: MouseEvent) => void>(() => {})
+  selectionDownRef.current = (e) => {
+    if (e.detail < 3 || !composingRef.current?.text?.columns || draftRef.current.trim())
+      return
+    if (e.composedPath().some((n) => n instanceof Element && n.matches('.comment-form')))
+      return
+    for (const h of document.querySelectorAll('diffs-container')) {
+      if (h.shadowRoot) closeLine(h.shadowRoot, INLINE_SLOT)
+    }
+  }
+  useEffect(() => {
+    if (!send && !commentsEnabled) return
+    const onMouseDown = (e: MouseEvent) => selectionDownRef.current(e)
+    const onMouseUp = (e: MouseEvent) => selectionUpRef.current(e)
+    document.addEventListener('mousedown', onMouseDown, true)
+    document.addEventListener('mouseup', onMouseUp)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown, true)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [send, commentsEnabled])
+
+  // A box on part of a line shows inside the line, after the screen row the
+  // text ends on: it's slotted into the item host, into a slot put in the
+  // line (openLineAt). The host and line change as items rerender, so this
+  // one element moves between them.
+  const [inlineBox] = useState(() => {
+    const div = document.createElement('div')
+    div.slot = INLINE_SLOT
+    div.className = 'comment-inline'
+    return div
+  })
+
+  // Focusing the box clears the browser's selection, so a highlight keeps the
+  // text it's on marked. Rerun when the box moves and when the host rerenders.
+  const markQuoteRef = useRef(() => {})
+  markQuoteRef.current = () => {
+    const c = composingRef.current
+    const columns = c?.text?.columns
+    const host = c && columns ? hostOf(c.file) : undefined
+    const range = (host && textRange(host, c!.side, c!.first, c!.line, columns!)) || null
+    for (const h of document.querySelectorAll('diffs-container')) {
+      if (h.shadowRoot && h !== host) closeLine(h.shadowRoot, INLINE_SLOT)
+    }
+    if (host?.shadowRoot && range) {
+      if (inlineBox.parentElement !== host) host.append(inlineBox)
+      openLineAt(host.shadowRoot, range, INLINE_SLOT)
+    } else inlineBox.remove()
+    if (!('highlights' in CSS)) return
+    if (range) CSS.highlights.set('comment-quote', new Highlight(range))
+    else CSS.highlights.delete('comment-quote')
+  }
+  // Before the box focuses its textarea (a passive effect), which it can only
+  // do once it's in the line
+  useLayoutEffect(() => markQuoteRef.current(), [composing])
 
   const options = useMemo<CodeViewOptions<AnnotationMeta, undefined>>(
     () => ({
@@ -2539,8 +2747,10 @@ function DiffView() {
         const instances = instancesRef.current
         if (phase === 'unmount') {
           if (instances.get(id) === instance) instances.delete(id)
+          hostFiles.current.delete(node)
           return
         }
+        hostFiles.current.set(node, id)
         // A pooled instance may still be listed under the file it drew before.
         for (const [file, other] of instances) {
           if (other === instance && file !== id) instances.delete(file)
@@ -2554,6 +2764,7 @@ function DiffView() {
         )
         const { blocks, targets } = reviewRanges(context.item.annotations)
         tagReviewLines(node, blocks, targets)
+        if (composingRef.current?.file === id) markQuoteRef.current()
       },
     }),
     [theme, diffStyle, commentsEnabled, send, expandable],
@@ -2711,13 +2922,7 @@ function DiffView() {
           if (!cur || (collapsed[cur.file] ?? false)) break
           // Same guard as gutter clicks: no comments inside an existing review block.
           const item = items.find((i) => i.id === cur.file)
-          const insideReview = (item?.annotations ?? []).some(
-            (a) =>
-              a.metadata?.type === 'review' &&
-              cur.line >= a.metadata.startLine &&
-              cur.line <= a.metadata.endLine,
-          )
-          if (insideReview) break
+          if (item && insideReview(item, 'additions', cur.line, cur.line)) break
           openComposer(cur.file, 'additions', cur.line, cur.line)
           break
         }
@@ -2958,6 +3163,13 @@ function DiffView() {
             renderCustomHeader={renderCustomHeader}
             renderAnnotation={renderAnnotation}
           />
+          {composing?.text?.columns &&
+            createPortal(
+              renderComposer(
+                items.find((it) => it.id === composing.file)?.fileDiff ?? null,
+              ),
+              inlineBox,
+            )}
         </div>
       </div>
     </>

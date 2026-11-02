@@ -28,6 +28,10 @@ export interface SendPayload {
   side: 'additions' | 'deletions' | null
   /** 1-based and inclusive, in `side`'s numbering */
   lines: [number, number] | null
+  /** Set when the comment is on selected text rather than whole lines: where
+   *  the text starts in line `lines[0]` and ends (exclusive) in `lines[1]`,
+   *  0-based, in UTF-16 code units */
+  columns: [number, number] | null
   /** An excerpt of `side`: the lines commented on and a little around them,
    *  as runs of consecutive lines, each from line `lines[0]` to `lines[1]`.
    *  More than one where the diff hid lines in between. */
@@ -56,6 +60,7 @@ export function buildPayload(
     file: input.file,
     side: input.side,
     lines: input.lines,
+    columns: input.columns,
     code: input.code,
     blob: input.blob,
     text: input.text,
@@ -67,6 +72,33 @@ export function buildPayload(
 function fence(code: string): string {
   const longest = Math.max(0, ...(code.match(/`+/g) ?? []).map((run) => run.length))
   return '`'.repeat(Math.max(3, longest + 1))
+}
+
+/** Where the selected text starts and ends, as start-of-text and end-of-text
+ *  marks put into the excerpt. */
+const MARKS = ['⟦', '⟧'] as const
+
+/** `code` with `columns` marked: the start in line `lines[0]` and the end in
+ *  `lines[1]`. Null when the excerpt doesn't hold both lines. */
+function markExcerpt(
+  code: NonNullable<SendPayload['code']>,
+  lines: [number, number],
+  columns: [number, number],
+): NonNullable<SendPayload['code']> | null {
+  const runs = code.map((run) => ({ ...run, rows: run.text.split('\n') }))
+  const points = [0, 1].map((i) => {
+    const run = runs.find((r) => lines[i]! >= r.lines[0] && lines[i]! <= r.lines[1])
+    return run && { run, row: lines[i]! - run.lines[0] }
+  })
+  if (!points[0] || !points[1]) return null
+  // The end first, so a start on the same row keeps its column
+  for (const i of [1, 0]) {
+    const { run, row } = points[i]!
+    const text = run.rows[row]!
+    const col = Math.min(columns[i]!, text.length)
+    run.rows[row] = text.slice(0, col) + MARKS[i] + text.slice(col)
+  }
+  return runs.map(({ lines: range, rows }) => ({ lines: range, text: rows.join('\n') }))
 }
 
 export function renderPrompt(p: Omit<SendPayload, 'prompt'>): string {
@@ -83,11 +115,13 @@ export function renderPrompt(p: Omit<SendPayload, 'prompt'>): string {
   const ranges = p.code.map(({ lines: [first, last] }) =>
     first === last ? `line ${first}` : `lines ${first}–${last}`,
   )
-  const excerpts = p.code.map(({ text }) => {
+  const marked = p.lines && p.columns && markExcerpt(p.code, p.lines, p.columns)
+  const on = marked ? `, on the text between ${MARKS[0]} and ${MARKS[1]}` : ''
+  const excerpts = (marked ?? p.code).map(({ text }) => {
     const f = fence(text)
     return `${f}\n${text}\n${f}`
   })
-  return `${head}, in ${ranges.join(' and ')}:\n\n${excerpts.join('\n\n')}\n\n${p.text}`
+  return `${head}${on}, in ${ranges.join(' and ')}:\n\n${excerpts.join('\n\n')}\n\n${p.text}`
 }
 
 export type SendResult = { ok: true; output: string } | { ok: false; error: string }

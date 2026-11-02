@@ -131,6 +131,22 @@ describe('section-aware comments', () => {
     expect(await read()).toBe(source)
   })
 
+  it('says which words a comment on part of a line is on', async () => {
+    const source = 'Some text --> with an arrow in it'
+    await writeFile(join(dir, 'notes.md'), source)
+    await insertComment(dir, 'notes.md', 1, source, 'why?', 1, 'text -->')
+    expect(await readFile(join(dir, 'notes.md'), 'utf-8')).toBe(
+      [
+        source,
+        '<!-- <review on="text -- >"> -->',
+        '<!-- why? -->',
+        '<!-- </review> -->',
+      ].join('\n'),
+    )
+    await removeComment(dir, 'notes.md', 2)
+    expect(await readFile(join(dir, 'notes.md'), 'utf-8')).toBe(source)
+  })
+
   it.each([
     ['style.css', 'p {}', 'no a*/b', '/* no a* /b */'],
     ['page.html', '<p>hi</p>', 'x --> y', '<!-- x -- > y -->'],

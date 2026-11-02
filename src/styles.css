@@ -758,6 +758,40 @@ body,
   border-top: 1px solid var(--border);
 }
 
+/* A comment box on part of a line, inside the line (see inlineBox in
+   App.tsx). It inherits from the line, so it undoes the code text styles. */
+.comment-inline {
+  font-family: var(--font-sans);
+  white-space: normal;
+  word-break: normal;
+  user-select: none;
+
+  /* Like the box under a line, plus a line under it where the line's text
+     goes on */
+  .comment-form {
+    border-bottom: 1px solid var(--border);
+  }
+
+  textarea {
+    user-select: text;
+  }
+}
+
+/* The selected text a sent comment is on */
+.comment-quote {
+  flex: 1;
+  /* Takes the width it's given: one line of it would widen the split column */
+  contain: inline-size;
+  overflow: hidden;
+  border-left: 3px solid var(--blue);
+  padding-left: 8px;
+  color: var(--fg-dim);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .comment-form textarea {
   width: 100%;
   min-height: 60px;
@@ -892,6 +926,7 @@ body,
 }
 
 .sent-comment-label {
+  flex: none;
   color: var(--fg-dim);
   font-weight: 600;
 }

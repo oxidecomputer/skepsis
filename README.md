@@ -154,6 +154,14 @@ const end = Number(match[2])
 // </review>
 ```
 
+Selecting text in the diff also opens the comment box, to comment on part of a
+line rather than the whole thing. The box opens directly under the selection,
+and the selected text stays highlighted while you write. Selecting whole lines
+(a triple-click, say) is the same as commenting from the gutter. While the box
+is empty, clicking elsewhere in the code closes it, and ⌘C copies the selected
+text. The open tag quotes the selection, eliding the middle if it's long:
+`<review on="Number(match[1])">`.
+
 ### Marking files viewed
 
 Viewed state is stored per file in `~/.local/share/skepsis/` using the file's
@@ -169,7 +177,9 @@ agent, a tmux pane, or a log. There is not chat UI in skepsis (yet) so replies
 from the agent will appear in that session, wherever it is. Send works
 in some cases that inline comments can't (because there is no file to write): on
 removed lines, and on diffs that don't end at the working copy. The **Comment**
-button continues to write a `<review>` marker in the file as usual.
+button continues to write a `<review>` marker in the file as usual. When you
+send a comment on selected text, the message includes where the selection
+starts and ends.
 
 The only way to set the command is `--send` or `SKEPSIS_SEND`. skepsis never
 reads it from the repo contents, so reviewing someone else's branch
@@ -212,6 +222,7 @@ The JSON sent to stdin looks like this:
   "file": "src/a.ts",
   "side": "additions",
   "lines": [42, 45],
+  "columns": null,
   "code": [{ "lines": [41, 46], "text": "const z = 0\nconst a = 1\n…" }],
   "blob": "9daeafb",
   "text": "why two?",
@@ -220,7 +231,10 @@ The JSON sent to stdin looks like this:
 ````
 
 `side` is `additions` or `deletions`, and `lines` (1-based, inclusive) are in
-that side's numbering. `code` is an excerpt of that side around the lines
+that side's numbering. `columns` is set when the comment is on selected text
+rather than whole lines: where the text starts in the first line and ends
+(exclusive) in the last, 0-based, in UTF-16 code units. The prompt then marks
+the text in the excerpt with `⟦` and `⟧`. `code` is an excerpt of that side around the lines
 commented on, in runs of consecutive lines, each with its own first and last
 line. There's more than one run when the lines commented on span lines the
 diff doesn't show. `blob` is the ID of the

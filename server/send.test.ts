@@ -46,6 +46,7 @@ const comment: SendRequest = {
   file: 'src/a.ts',
   side: 'additions',
   lines: [42, 45],
+  columns: null,
   code: [{ lines: [41, 46], text: 'const a = 1\nconst b = 2' }],
   blob: 'abc123',
   text: 'why two?',
@@ -92,6 +93,30 @@ describe('renderPrompt', () => {
     )
   })
 
+  it('marks the selected text in the excerpt', () => {
+    const p = payload({
+      lines: [2, 2],
+      columns: [6, 11],
+      code: [{ lines: [1, 3], text: 'one\nthe quick fox\nthree' }],
+    })
+    expect(p.prompt).toBe(
+      'Review comment on src/a.ts, line 2 (new side of `jj diff -r @-`), on the text between ⟦ and ⟧, in lines 1–3:\n\n' +
+        '```\none\nthe qu⟦ick f⟧ox\nthree\n```\n\nwhy two?',
+    )
+  })
+
+  it('marks a selection that spans lines and runs', () => {
+    const p = payload({
+      lines: [2, 9],
+      columns: [1, 2],
+      code: [
+        { lines: [1, 3], text: 'aa\nbb\ncc' },
+        { lines: [8, 10], text: 'dd\nee\nff' },
+      ],
+    })
+    expect(p.prompt).toContain('```\naa\nb⟦b\ncc\n```\n\n```\ndd\nee⟧\nff\n```')
+  })
+
   it('handles a comment with no anchor', () => {
     const p = payload({ file: null, side: null, lines: null, code: null })
     expect(p.prompt).toBe('Review comment on `jj diff -r @-`:\n\nwhy two?')
@@ -113,6 +138,7 @@ describe('buildPayload', () => {
       file: 'src/a.ts',
       side: 'additions',
       lines: [42, 45],
+      columns: null,
       code: [{ lines: [41, 46], text: 'const a = 1\nconst b = 2' }],
       blob: 'abc123',
       text: 'why two?',

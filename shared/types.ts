@@ -34,6 +34,8 @@ export const commentRequestSchema = z.object({
   text: z.string(),
   /** How many lines the comment covers, ending at afterLine. */
   lineCount: z.number().int().min(1).optional(),
+  /** The selected text, for a comment on part of those lines. */
+  quote: z.string().optional(),
 })
 
 /** A comment for the --send command. Only `text` is required by the
@@ -42,6 +44,12 @@ export const sendRequestSchema = z.object({
   file: z.string().nullable(),
   side: z.enum(['additions', 'deletions']).nullable(),
   lines: z.tuple([z.number().int().positive(), z.number().int().positive()]).nullable(),
+  /** For a comment on selected text rather than whole lines: where the text
+   *  starts in the first line and ends (exclusive) in the last, 0-based, in
+   *  UTF-16 code units. */
+  columns: z
+    .tuple([z.number().int().nonnegative(), z.number().int().nonnegative()])
+    .nullable(),
   /** An excerpt around the lines commented on, as runs of consecutive lines
    *  with each run's first and last line. Lines the diff hides split it. */
   code: z
