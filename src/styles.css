@@ -347,6 +347,15 @@ body,
   color: var(--fg);
 }
 
+.generated-label {
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--fg-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* Base UI tooltip (see Tip in App.tsx). The positioner is placed by the
    library; we only pin it above everything else. */
 .tooltip-positioner {

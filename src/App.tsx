@@ -970,6 +970,7 @@ function FileHeader({
   fileDiff,
   isViewed,
   isStale,
+  generated,
   collapsed,
   focused,
   showExpand,
@@ -982,6 +983,7 @@ function FileHeader({
   fileDiff: FileDiffMetadata
   isViewed: boolean
   isStale: boolean
+  generated: boolean
   collapsed: boolean
   focused: boolean
   showExpand: boolean
@@ -1043,6 +1045,7 @@ function FileHeader({
           </span>
         </button>
       </Tip>
+      {generated && <span className="generated-label">Generated</span>}
       {showExpand && (
         <Tip
           text={
@@ -1656,17 +1659,23 @@ function DiffView() {
     if (repo && revset) document.title = `skepsis | ${repo} | ${revset}`
   }, [repo, revset])
 
-  // Seed collapse state from the first successful fetch: viewed files start collapsed
+  // Seed collapse state. Viewed files start collapsed on the first fetch.
+  // Generated files start collapsed whenever they first appear, so one a
+  // later fetch brings in is collapsed too, but one the user opened stays open.
   useEffect(() => {
-    if (seededFromInitialLoad.current || !data?.fileHashes) return
+    if (!data) return
+    const firstLoad = !seededFromInitialLoad.current
     seededFromInitialLoad.current = true
-    const initial: Record<string, boolean> = {}
-    for (const [file, hash] of Object.entries(data.fileHashes)) {
-      if (data.viewed[file] === hash) {
-        initial[file] = true
-      }
-    }
-    setCollapsed(initial)
+    const generated = new Set(data.generated)
+    setCollapsed((prev) => {
+      const seeded = Object.entries(data.fileHashes).filter(
+        ([file, hash]) =>
+          !(file in prev) &&
+          (generated.has(file) || (firstLoad && data.viewed[file] === hash)),
+      )
+      if (seeded.length === 0) return prev
+      return { ...prev, ...Object.fromEntries(seeded.map(([file]) => [file, true])) }
+    })
   }, [data])
 
   // Server-persisted so the preference survives the per-run ephemeral port (a
@@ -2289,6 +2298,7 @@ function DiffView() {
           fileDiff={item.fileDiff}
           isViewed={isViewed}
           isStale={isStale}
+          generated={data?.generated.includes(name) ?? false}
           collapsed={isCollapsed}
           focused={name === effectiveFocused}
           showExpand={showExpand}
