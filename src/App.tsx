@@ -2772,7 +2772,8 @@ function DiffView() {
 
   // Keyboard shortcuts. File navigation (n/p) and the focused-file actions
   // (e/v) operate on the focused file (header highlight); the j/k line cursor
-  // moves within it and c comments on the cursor line.
+  // moves through it and on into the next expanded file, and c comments on
+  // the cursor line.
   useEffect(() => {
     // Index of the focused file (0 before any focus exists, matching the
     // effectiveFocused fallback).
@@ -2804,13 +2805,31 @@ function DiffView() {
       return absTop >= st + headerHeight() && absTop + pos.height <= st + inst.getHeight()
     }
 
-    // First navigable line of `file` at or below the viewport top, or null.
+    // Lines the j/k cursor can land on: none while the file is collapsed.
+    function cursorLines(file: string): number[] {
+      return (collapsed[file] ?? false) ? [] : (fileLines.get(file) ?? [])
+    }
+
+    // The cursor stop after (or before) `line` in items[i], in document order.
+    // Past either end of a file, or out of one with no stops, it continues
+    // into the nearest file that has some.
+    function step(start: number, line: number, down: boolean) {
+      for (let i = start; i >= 0 && i < items.length; i += down ? 1 : -1) {
+        const lines = cursorLines(items[i]!.id)
+        // Every line of the files after the first counts.
+        const from = i === start ? line : down ? -Infinity : Infinity
+        const next = down ? lines.find((l) => l > from) : lines.findLast((l) => l < from)
+        if (next != null) return { file: items[i]!.id, line: next }
+      }
+    }
+
+    // First cursor line of `file` at or below the viewport top, or null.
     function firstVisibleLine(file: string): number | null {
-      const lines = fileLines.get(file)
+      const lines = cursorLines(file)
       const inst = codeViewRef.current?.getInstance()
       const itemTop = inst?.getTopForItem(file)
       const ri = renderedInstance(file)
-      if (!lines?.length || inst == null || itemTop == null || ri == null) return null
+      if (!lines.length || inst == null || itemTop == null || ri == null) return null
       const viewTop = scrollTopRef.current + headerHeight() - itemTop
       // Lines are in layout order: binary search for the first one below viewTop.
       let lo = 0
@@ -2883,32 +2902,33 @@ function DiffView() {
         case 'k': {
           if (showHelp || composing || items.length === 0) break
           e.preventDefault()
-          const name = items[currentIndex()]!.id
-          if (collapsed[name] ?? false) break
-          const lines = fileLines.get(name)
-          if (!lines?.length) break
+          const down = e.key === 'j'
           const cur = cursorRef.current
-          let nextLine: number
-          if (cur && cur.file === name && isLineVisible(name, cur.line)) {
-            const idx = lines.indexOf(cur.line)
-            const moved = Math.max(
-              0,
-              Math.min(idx + (e.key === 'j' ? 1 : -1), lines.length - 1),
+          let next: { file: string; line: number } | undefined
+          if (cur && isLineVisible(cur.file, cur.line)) {
+            next = step(
+              items.findIndex((it) => it.id === cur.file),
+              cur.line,
+              down,
             )
-            nextLine = lines[moved]!
           } else {
-            // Cursor offscreen or in another file: snap to the first visible
-            // line instead of moving.
-            nextLine = firstVisibleLine(name) ?? lines[0]!
+            // Cursor offscreen or not placed yet: snap to the focused file's
+            // first visible line instead of moving. With none (collapsed, or
+            // scrolled past them), step out of the file.
+            const i = currentIndex()
+            const file = items[i]!.id
+            const line = firstVisibleLine(file)
+            next = line != null ? { file, line } : step(i, Infinity, down)
           }
-          if (cur?.file === name && cur.line === nextLine) break
-          setCursor({ file: name, line: nextLine })
+          if (!next) break
+          setFocused(next.file)
+          setCursor(next)
           anchorTargetRef.current = null // a line scroll supersedes a running re-anchor loop
           markProgrammaticScroll()
           codeViewRef.current?.scrollTo({
             type: 'line',
-            id: name,
-            lineNumber: nextLine,
+            id: next.file,
+            lineNumber: next.line,
             side: 'additions',
             align: 'nearest',
             behavior: 'instant',

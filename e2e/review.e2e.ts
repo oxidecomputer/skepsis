@@ -272,6 +272,46 @@ test('a comment on several lines counts them, and the page marks them', async ({
   ).toHaveCount(1)
 })
 
+const focusedName = (page: Page) => page.locator('.file-header.focused .file-header-name')
+const activeLine = (page: Page, i: number) =>
+  page.locator('diffs-container').nth(i).locator('[data-editor-active-line]').first()
+
+test.describe('j/k across files', () => {
+  test('continue past the end of a file into the next', async ({ page }) => {
+    // a.ts has lines 1-4 in the diff; j snaps to 1, then steps to 4.
+    await page.keyboard.press('j')
+    await page.keyboard.press('j')
+    await page.keyboard.press('j')
+    await page.keyboard.press('j')
+    await expect(activeLine(page, 0)).toHaveAttribute('data-column-number', '4')
+    await page.keyboard.press('j')
+    await expect(focusedName(page)).toHaveText('b.txt')
+    await expect(activeLine(page, 1)).toHaveAttribute('data-column-number', '1')
+    await page.keyboard.press('k')
+    await expect(focusedName(page)).toHaveText('a.ts')
+    await expect(activeLine(page, 0)).toHaveAttribute('data-column-number', '4')
+  })
+
+  test('j moves from a collapsed file to the next expanded one', async ({ page }) => {
+    // Marking a.ts viewed collapses it and leaves focus on it.
+    await page.keyboard.press('j')
+    await expect(activeLine(page, 0)).toBeVisible()
+    await page.keyboard.press('v')
+    await page.keyboard.press('j')
+    await expect(focusedName(page)).toHaveText('b.txt')
+    await expect(activeLine(page, 1)).toHaveAttribute('data-column-number', '1')
+  })
+
+  test('k moves from a collapsed file to the previous expanded one', async ({ page }) => {
+    await page.keyboard.press('n')
+    await expect(focusedName(page)).toHaveText('b.txt')
+    await page.keyboard.press('v')
+    await page.keyboard.press('k')
+    await expect(focusedName(page)).toHaveText('a.ts')
+    await expect(activeLine(page, 0)).toHaveAttribute('data-column-number', '4')
+  })
+})
+
 // The line cursor must not pin the gutter "+" to its line: hovering another
 // line in the same file moves the "+" there.
 test('the gutter + follows the pointer with the line cursor in the file', async ({
