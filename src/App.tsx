@@ -1462,7 +1462,29 @@ function HelpModal({ onClose, send }: { onClose: () => void; send: boolean }) {
   )
 }
 
-function CommentsModal({ onClose, vcs }: { onClose: () => void; vcs: 'jj' | 'git' }) {
+function CommentsModal({
+  onClose,
+  vcs,
+  interdiff,
+}: {
+  onClose: () => void
+  vcs: 'jj' | 'git'
+  interdiff: boolean
+}) {
+  if (interdiff)
+    return (
+      <Modal onClose={onClose}>
+        <p>
+          Comments work by inserting lines into files in <code>@</code>. An interdiff can
+          include a <code>JJ-COMMIT-DESCRIPTION</code> pseudo-file with no matching file on
+          disk, so comments are off for interdiffs, even ones that end at <code>@</code>.
+        </p>
+        <p>
+          To comment on an interdiff, use Send, which pipes comments to the command given
+          with <code>--send</code>.
+        </p>
+      </Modal>
+    )
   return (
     <Modal onClose={onClose}>
       <p>
@@ -1498,15 +1520,19 @@ function CommentsDisabledBanner({
   onLearnMore,
   vcs,
   send,
+  interdiff,
 }: {
   onLearnMore: () => void
   vcs: 'jj' | 'git'
   send: boolean
+  interdiff: boolean
 }) {
   return (
     <div className="comments-disabled-banner">
       {send ? (
         'Inline comments are off for this diff, but Send still works.'
+      ) : interdiff ? (
+        'Comments are disabled for interdiffs.'
       ) : vcs === 'jj' ? (
         <>
           Comments are disabled because the revset does not include <code>@</code>.
@@ -2379,7 +2405,9 @@ function DiffView() {
       const showExpand = item.fileDiff.hunks.length > 0
       const expandDisabledReason = expandable
         ? null
-        : "Line expansion isn't available for this diff range"
+        : data?.interdiff
+          ? "Line expansion isn't available for interdiffs"
+          : "Line expansion isn't available for this diff range"
       return (
         <FileHeader
           fileDiff={item.fileDiff}
@@ -3107,6 +3135,7 @@ function DiffView() {
         <CommentsDisabledBanner
           vcs={data.vcs}
           send={data.send}
+          interdiff={data.interdiff}
           onLearnMore={() => setShowCommentsInfo(true)}
         />
       )}
@@ -3149,7 +3178,11 @@ function DiffView() {
         </div>
         {showHelp && <HelpModal send={data.send} onClose={() => setShowHelp(false)} />}
         {showCommentsInfo && (
-          <CommentsModal vcs={data.vcs} onClose={() => setShowCommentsInfo(false)} />
+          <CommentsModal
+            vcs={data.vcs}
+            interdiff={data.interdiff}
+            onClose={() => setShowCommentsInfo(false)}
+          />
         )}
         <div
           className="diff-body"

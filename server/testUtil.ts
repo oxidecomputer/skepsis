@@ -6,13 +6,42 @@
  * Copyright Oxide Computer Company
  */
 
-import { execFile } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 export const exec = promisify(execFile)
+
+const CLI = join(import.meta.dirname, '..', 'cli.ts')
+
+/** Spawn the CLI in `dir` with --no-open and resolve with the URL it prints
+ *  on startup. `env` replaces the environment when given. */
+export function startCli(
+  dir: string,
+  args: string[],
+  env?: NodeJS.ProcessEnv,
+): Promise<{ proc: ChildProcess; url: string }> {
+  return new Promise((resolve, reject) => {
+    // No --port means an ephemeral one, so parallel tests can't collide.
+    const proc = spawn('node', [CLI, '--no-open', ...args], {
+      cwd: dir,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let out = ''
+    proc.stdout!.on('data', (chunk: Buffer) => {
+      out += chunk.toString()
+      const m = out.match(/skepsis on (http:\/\/[^\s]+)/)
+      if (m) resolve({ proc, url: m[1]! })
+    })
+    let err = ''
+    proc.stderr!.on('data', (chunk: Buffer) => (err += chunk.toString()))
+    proc.on('error', reject)
+    proc.on('exit', (code) => reject(new Error(`skepsis exited with ${code}: ${err}`)))
+  })
+}
 
 /** Run a command in a repo dir, rejecting on nonzero exit. */
 export const run = (cmd: string, args: string[], cwd: string) => exec(cmd, args, { cwd })

@@ -79,20 +79,26 @@ export async function startServer(opts: {
     )
   })
 
+  // An interdiff that ends at the working copy still can't take comments: a
+  // changed description shows as a file named JJ-COMMIT-DESCRIPTION, which a
+  // comment would create on disk.
+  const commentsEnabled = diffSource.toWorkingCopy && !diffSource.interdiff
+
   app.get('/api/diff', async (c) => {
     const { patch, fileHashes } = await getDiff(diffSource)
     const files = Object.keys(fileHashes)
     const [viewed, generated, commentSyntaxes] = await Promise.all([
       loadViewed(cwd, fileHashes),
       getGeneratedFiles(cwd, files),
-      diffSource.commentsEnabled ? getCommentSyntaxes(cwd, files) : {},
+      commentsEnabled ? getCommentSyntaxes(cwd, files) : {},
     ])
     return c.json({
       patch,
       revset: displayCommand(diffSource),
       repo: basename(cwd),
       vcs: diffSource.vcs,
-      commentsEnabled: diffSource.commentsEnabled,
+      interdiff: !!diffSource.interdiff,
+      commentsEnabled,
       expandable: diffSource.endpoints !== null,
       fileHashes,
       patchHash: patchHash(patch),

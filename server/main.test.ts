@@ -76,7 +76,7 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     origCwd = process.cwd()
     process.chdir(dir)
 
-    const base = { commentsEnabled: true, files: [] }
+    const base = { toWorkingCopy: true, files: [] }
     const diffSource: DiffArgs =
       vcs === 'git'
         ? {
@@ -338,11 +338,11 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
   it('startServer rejects when the diff command fails', async () => {
     const badSource: DiffArgs =
       vcs === 'git'
-        ? { vcs, args: ['not-a-ref'], commentsEnabled: true, files: [], endpoints: null }
+        ? { vcs, args: ['not-a-ref'], toWorkingCopy: true, files: [], endpoints: null }
         : {
             vcs,
             args: ['-r', 'no_such_rev'],
-            commentsEnabled: true,
+            toWorkingCopy: true,
             files: [],
             endpoints: null,
           }

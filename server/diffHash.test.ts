@@ -34,7 +34,7 @@ afterAll(async () => {
 const diffSource: DiffArgs = {
   vcs: 'git',
   args: ['HEAD'],
-  commentsEnabled: false,
+  toWorkingCopy: false,
   files: [],
   endpoints: null,
 }

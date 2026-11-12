@@ -98,7 +98,19 @@ skepsis                          # review branch vs trunk, GitHub PR style
 skepsis -r @                     # review working copy only
 skepsis -r 'mybranch..@'         # review a range
 skepsis -f main -t @             # diff between two revisions
+skepsis --interdiff -f mybranch@origin -t mybranch
+                                 # review changes to a commit since push
+                                 # (jj interdiff)
 ```
+
+In jj repos, `--interdiff` (used with `-f`, `-t`, or both) runs `jj interdiff`,
+rebasing the `--from` revision onto the `--to` revision's parents before
+diffing. After you amend and rebase a commit, `-f A -t B` includes upstream
+changes from the rebase, while `--interdiff` shows only what changed in the
+commit itself. A changed description shows as a file named
+`JJ-COMMIT-DESCRIPTION`. If rebasing `--from` conflicts, jj conflict markers
+appear as removed lines on the old side. Line expansion and inline comments are
+disabled for interdiffs (`--send` still works).
 
 ### git examples
 

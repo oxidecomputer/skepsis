@@ -37,7 +37,7 @@ afterAll(async () => {
 const jj: DiffArgs = {
   vcs: 'jj',
   args: ['-r', '@-'],
-  commentsEnabled: false,
+  toWorkingCopy: false,
   files: [],
   endpoints: null,
 }

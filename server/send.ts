@@ -55,7 +55,7 @@ export function buildPayload(
     root,
     diff: {
       command: displayCommand(diffSource),
-      toWorkingCopy: diffSource.commentsEnabled,
+      toWorkingCopy: diffSource.toWorkingCopy,
     },
     file: input.file,
     side: input.side,
