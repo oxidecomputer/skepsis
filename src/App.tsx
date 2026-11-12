@@ -954,7 +954,37 @@ function Tip({
 
 // --- File header (rendered into each CodeView item's custom-header slot) ---
 
-// GitHub-style copy/check glyphs for the filename copy button (16x16 octicons).
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    // closeOnClick={false} so the tooltip stays up and flips to "Copied!".
+    <Tip text={copied ? 'Copied!' : label} closeOnClick={false}>
+      <button
+        type="button"
+        className={'copy-name-button' + (copied ? ' copied' : '')}
+        aria-label={label}
+        onClick={(e) => {
+          e.stopPropagation()
+          void navigator.clipboard.writeText(text).then(() => {
+            setCopied(true)
+            // Hold the check long enough that attention moves on before it
+            // cross-fades back to the clipboard.
+            setTimeout(() => setCopied(false), 2000)
+          })
+        }}
+      >
+        {/* Both glyphs stay mounted and cross-fade so the swap back to the
+            clipboard isn't an abrupt cut. */}
+        <span className="copy-icon-stack">
+          <CopyIcon />
+          <CheckIcon />
+        </span>
+      </button>
+    </Tip>
+  )
+}
+
+// GitHub-style copy/check glyphs for CopyButton (16x16 octicons).
 function CopyIcon() {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -1062,7 +1092,6 @@ function FileHeader({
   onToggleExpand: () => void
 }) {
   const { additions, deletions } = getFileStats(fileDiff)
-  const [copied, setCopied] = useState(false)
   return (
     <div
       className={'file-header' + (focused ? ' focused' : '')}
@@ -1088,30 +1117,7 @@ function FileHeader({
         )}
         {fileDiff.name}
       </span>
-      {/* closeOnClick={false} so the tooltip stays up and flips to "Copied!". */}
-      <Tip text={copied ? 'Copied!' : 'Copy file name to clipboard'} closeOnClick={false}>
-        <button
-          type="button"
-          className={'copy-name-button' + (copied ? ' copied' : '')}
-          aria-label="Copy file name to clipboard"
-          onClick={(e) => {
-            e.stopPropagation()
-            void navigator.clipboard.writeText(fileDiff.name).then(() => {
-              setCopied(true)
-              // Hold the check long enough that attention moves on before it
-              // cross-fades back to the clipboard.
-              setTimeout(() => setCopied(false), 2000)
-            })
-          }}
-        >
-          {/* Both glyphs stay mounted and cross-fade so the swap back to the
-              clipboard isn't an abrupt cut. */}
-          <span className="copy-icon-stack">
-            <CopyIcon />
-            <CheckIcon />
-          </span>
-        </button>
-      </Tip>
+      <CopyButton text={fileDiff.name} label="Copy file name to clipboard" />
       {generated && <span className="generated-label">Generated</span>}
       {showExpand && (
         <Tip
@@ -1289,6 +1295,7 @@ function ProgressBar({
   treeOpen,
   onToggleTree,
   command,
+  cwd,
   fileHashes,
   viewed,
   onUnviewAll,
@@ -1299,6 +1306,7 @@ function ProgressBar({
   treeOpen: boolean
   onToggleTree: () => void
   command: string
+  cwd: string
   fileHashes: FileHashes
   viewed: ViewedMap
   onUnviewAll: () => void
@@ -1318,85 +1326,95 @@ function ProgressBar({
 
   return (
     <div className="progress-bar">
-      <Tip
-        text={
-          <>
-            {treeLabel} <kbd>b</kbd>
-          </>
-        }
-      >
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={treeLabel}
-          aria-expanded={treeOpen}
-          onClick={onToggleTree}
+      <div className="bar-start">
+        <Tip
+          text={
+            <>
+              {treeLabel} <kbd>b</kbd>
+            </>
+          }
         >
-          <SidebarIcon open={treeOpen} />
-        </button>
-      </Tip>
-      {/* title gives a native tooltip when the command is ellipsized */}
-      <code className="diff-command" title={command}>
-        {command}
-      </code>
-      <div className="progress-track">
-        <div
-          className="progress-fill"
-          style={{ width: `${(viewedCount / total) * 100}%` }}
-        />
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={treeLabel}
+            aria-expanded={treeOpen}
+            onClick={onToggleTree}
+          >
+            <SidebarIcon open={treeOpen} />
+          </button>
+        </Tip>
+        {/* title gives a native tooltip when the command is ellipsized */}
+        <code className="diff-command" title={command}>
+          {command}
+        </code>
       </div>
-      <span>
-        {viewedCount}/{total} files viewed
-      </span>
-      <Tip text="Mark all files unviewed">
-        <button
-          type="button"
-          className={'unview-all-button' + (viewedCount === 0 ? ' disabled' : '')}
-          aria-disabled={viewedCount === 0}
-          onClick={() => {
-            if (viewedCount > 0) onUnviewAll()
-          }}
+      <div className="bar-cwd">
+        <span className="cwd-path" title={cwd}>
+          <bdi>{cwd}</bdi>
+        </span>
+        <CopyButton text={cwd} label="Copy working directory" />
+      </div>
+      <div className="bar-end">
+        <div className="progress-track">
+          <div
+            className="progress-fill"
+            style={{ width: `${(viewedCount / total) * 100}%` }}
+          />
+        </div>
+        <span>
+          {viewedCount}/{total} files viewed
+        </span>
+        <Tip text="Mark all files unviewed">
+          <button
+            type="button"
+            className={'unview-all-button' + (viewedCount === 0 ? ' disabled' : '')}
+            aria-disabled={viewedCount === 0}
+            onClick={() => {
+              if (viewedCount > 0) onUnviewAll()
+            }}
+          >
+            Clear
+          </button>
+        </Tip>
+        {/* Two states in the UI over three in the model: the icon is the
+            appearance currently on screen and pressing it flips to the other
+            one. See toggleTheme for how that gets back to following the OS
+            without an explicit third state. */}
+        <Tip
+          text={
+            <>
+              Switch to {otherTheme} mode <kbd>t</kbd>
+            </>
+          }
         >
-          Clear
-        </button>
-      </Tip>
-      {/* Two states in the UI over three in the model: the icon is the
-          appearance currently on screen and pressing it flips to the other
-          one. See toggleTheme for how that gets back to following the OS
-          without an explicit third state. */}
-      <Tip
-        text={
-          <>
-            Switch to {otherTheme} mode <kbd>t</kbd>
-          </>
-        }
-      >
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={`Switch to ${otherTheme} mode`}
-          onClick={onToggleTheme}
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={`Switch to ${otherTheme} mode`}
+            onClick={onToggleTheme}
+          >
+            {resolvedTheme === 'light' ? <SunIcon /> : <MoonIcon />}
+          </button>
+        </Tip>
+        <Tip
+          text={
+            <>
+              Keyboard shortcuts <kbd>?</kbd>
+            </>
+          }
         >
-          {resolvedTheme === 'light' ? <SunIcon /> : <MoonIcon />}
-        </button>
-      </Tip>
-      <Tip
-        text={
-          <>
-            Keyboard shortcuts <kbd>?</kbd>
-          </>
-        }
-      >
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Keyboard shortcuts"
-          aria-haspopup="dialog"
-          onClick={onShowHelp}
-        >
-          <HelpIcon />
-        </button>
-      </Tip>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Keyboard shortcuts"
+            aria-haspopup="dialog"
+            onClick={onShowHelp}
+          >
+            <HelpIcon />
+          </button>
+        </Tip>
+      </div>
     </div>
   )
 }
@@ -3119,6 +3137,7 @@ function DiffView() {
             treeOpen={treeOpen}
             onToggleTree={toggleTree}
             command={data.revset}
+            cwd={data.cwd}
             fileHashes={fileHashes}
             viewed={viewed}
             resolvedTheme={resolvedTheme}

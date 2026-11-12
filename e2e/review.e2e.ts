@@ -6,6 +6,7 @@
  * Copyright Oxide Computer Company
  */
 
+import { realpath } from 'node:fs/promises'
 import type { Locator, Page } from '@playwright/test'
 
 import { expect, LONG_LINES, setPlatform, test, WORKING } from './fixtures.ts'
@@ -24,6 +25,22 @@ test('renders the diff', async ({ page }) => {
   await expect(page.locator('.file-header-name')).toHaveText(['a.ts', 'b.txt'])
   await expect(page.getByText('const four = 4')).toBeVisible()
   await expect(page.getByText('world')).toBeVisible()
+})
+
+test('the header shows the working directory and copies it', async ({ page, repo }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async (t: string) => void ((window as { copied?: string }).copied = t),
+      },
+    })
+  })
+  await page.reload()
+  // The CLI's cwd is the resolved path (macOS's tmpdir is under a symlink).
+  const dir = await realpath(repo.dir)
+  await expect(page.locator('.cwd-path')).toHaveText(dir)
+  await page.getByRole('button', { name: 'Copy working directory' }).click()
+  expect(await page.evaluate(() => (window as { copied?: string }).copied)).toBe(dir)
 })
 
 test('empty files and pure renames explain their contents and collapse normally', async ({
