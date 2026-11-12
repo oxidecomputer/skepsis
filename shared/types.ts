@@ -140,6 +140,8 @@ export interface DiffResponse {
   revset: string
   /** The name of the directory skepsis runs in, for the page title */
   repo: string
+  /** The full path of that directory, with `~` for the home directory */
+  cwd: string
   vcs: 'jj' | 'git'
   commentsEnabled: boolean
   /** Whether diff endpoints resolved, so /api/file-contents can serve full

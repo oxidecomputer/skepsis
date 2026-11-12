@@ -616,13 +616,38 @@ body,
 /* Progress counter. Horizontal padding matches .codeview-root's so it stays
    aligned with the file content now that .diff-container has no side padding. */
 .progress-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr minmax(0, auto) 1fr;
   align-items: center;
   gap: 10px;
   padding: 2px 12px;
   font-size: 13px;
   line-height: 1;
   color: var(--fg-muted);
+}
+
+.bar-start,
+.bar-end {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bar-cwd {
+  display: flex;
+  align-items: center;
+  max-width: 30vw;
+  min-width: 0;
+}
+
+/* Truncates from the left, keeping the end of the path */
+.cwd-path {
+  font-family: var(--font-mono);
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
 }
 
 /* The diff command behind the current view, so the range being reviewed is
@@ -639,10 +664,12 @@ body,
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
+  width: 0;
+  flex-grow: 1;
+  max-width: max-content;
 }
 
-.progress-bar > span {
+.bar-end > span {
   flex-shrink: 0;
   white-space: nowrap;
   color: var(--fg-dim);
@@ -653,6 +680,8 @@ body,
    the whole progress group to the right end of the row. */
 .progress-track {
   flex: 0 0 96px;
+  /* Firefox leaves flex-basis out of the column's min-content width */
+  width: 96px;
   margin-left: auto;
   height: 4px;
   background: var(--bg-muted);
