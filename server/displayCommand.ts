@@ -7,6 +7,7 @@
  */
 
 import type { DiffArgs } from '../shared/types.ts'
+import { subcommand } from './diff.ts'
 
 /** Quote an arg so the displayed command is copy-paste runnable in a shell
  *  (revsets like `fork_point(trunk() | @)` contain metacharacters). */
@@ -20,5 +21,5 @@ export function displayCommand(diffSource: DiffArgs): string {
   const args = (diffSource.displayArgs ?? diffSource.args).map(shellQuote)
   const files = diffSource.files.map(shellQuote)
   const fileSuffix = files.length > 0 ? ` -- ${files.join(' ')}` : ''
-  return `${diffSource.vcs} diff ${args.join(' ')}${fileSuffix}`
+  return `${diffSource.vcs} ${subcommand(diffSource)} ${args.join(' ')}${fileSuffix}`
 }

@@ -52,12 +52,17 @@ const GIT_PREFIX_OVERRIDE = [
 ]
 const JJ_PREFIX_OVERRIDE = ['--config', 'diff.git.show-path-prefix=true']
 
+/** `interdiff` or `diff`, the subcommand that produces the patch */
+export function subcommand(src: DiffArgs): string {
+  return src.interdiff ? 'interdiff' : 'diff'
+}
+
 export function diffCommand(src: DiffArgs): { cmd: string; args: string[] } {
   const fileArgs = src.files.length > 0 ? ['--', ...src.files] : []
   if (src.vcs === 'jj') {
     return {
       cmd: 'jj',
-      args: [...JJ_PREFIX_OVERRIDE, 'diff', ...src.args, '--git', ...fileArgs],
+      args: [...JJ_PREFIX_OVERRIDE, subcommand(src), ...src.args, '--git', ...fileArgs],
     }
   } else {
     return {
@@ -108,10 +113,10 @@ export async function getDiff(
   const { cmd, args } = diffCommand(src)
   const { stdout, stderr, code } = await run(cmd, args)
   if (code !== 0) {
-    throw new Error(`${cmd} diff failed (exit ${code}): ${stderr}`)
+    throw new Error(`${cmd} ${subcommand(src)} failed (exit ${code}): ${stderr}`)
   }
   const patch = src.vcs === 'jj' ? normalizeJjRenames(stdout) : stdout
-  return { patch, fileHashes: extractFileHashes(patch) }
+  return { patch, fileHashes: extractFileHashes(patch, src.interdiff) }
 }
 
 /** A short content hash of the whole patch, so the page can ask whether the
@@ -131,16 +136,20 @@ export function patchHash(patch: string): string {
  * of their extended header lines instead. That changes when the rename or
  * mode does, and a content change adds an index line, so viewed state still
  * resets whenever there is something new to look at.
+ *
+ * An interdiff hashes each file's whole block instead. It shows only how the
+ * change to a file changed, so keying on the new blob would mark the file
+ * viewed in the commit's own diff too, where most of it is unseen.
  */
-export function extractFileHashes(patch: string): FileHashes {
+export function extractFileHashes(patch: string, interdiff = false): FileHashes {
   const hashes: FileHashes = {}
   let currentFile: string | null = null
-  let header: string[] = []
+  let block: string[] = []
 
-  const finishHeaderOnly = () => {
+  const hashBlock = () => {
     if (currentFile == null) return
     hashes[currentFile] = createHash('sha1')
-      .update(header.join('\n'))
+      .update(block.join('\n'))
       .digest('hex')
       .slice(0, 12)
   }
@@ -148,23 +157,23 @@ export function extractFileHashes(patch: string): FileHashes {
   for (const line of patch.split('\n')) {
     const diffMatch = line.match(/^diff --git a\/.+ b\/(.+)$/)
     if (diffMatch) {
-      finishHeaderOnly()
+      hashBlock()
       currentFile = diffMatch[1]!
-      header = [line]
+      block = [line]
       continue
     }
     if (currentFile == null) continue
-    if (line.startsWith('index ')) {
+    if (line.startsWith('index ') && !interdiff) {
       const indexMatch = line.match(/^index [0-9a-f]+\.\.([0-9a-f]+)/)
       if (indexMatch) {
         hashes[currentFile] = indexMatch[1]!
       }
       currentFile = null
     } else {
-      header.push(line)
+      block.push(line)
     }
   }
-  finishHeaderOnly()
+  hashBlock()
 
   return hashes
 }

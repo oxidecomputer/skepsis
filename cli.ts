@@ -30,6 +30,10 @@ const program = new Command()
   .option('-r, --revisions <revsets>', 'Show changes in these revisions')
   .option('-f, --from <rev>', 'Show changes from this revision')
   .option('-t, --to <rev>', 'Show changes to this revision')
+  .option(
+    '--interdiff',
+    'Show how the change in --to differs from the change in --from (jj only)',
+  )
   .option('--git', 'force git mode (skip jj detection)')
   .option('--dev', 'run with Vite dev server for development')
   .option('--host <address>', 'address to bind the HTTP server to', 'localhost')
@@ -60,6 +64,12 @@ const program = new Command()
   .parse()
 
 const opts = program.opts()
+
+function fail(message: string): never {
+  console.error(message)
+  process.exit(1)
+}
+
 const files = program.processedArgs[0] ?? []
 const hostname = opts.host
 // The flag wins over the environment, and an empty value means the system
@@ -68,11 +78,10 @@ const openCmd = (opts.openCmd ?? process.env['SKEPSIS_OPEN']) || null
 // The flag wins over the environment, and an empty value turns sending off.
 const send = (opts.send ?? process.env['SKEPSIS_SEND']) || null
 if (send && !LOOPBACK.has(hostname === '::1' ? '[::1]' : hostname)) {
-  console.error(
+  fail(
     `--send runs a command on request from the page, so it needs a loopback\n` +
       `--host (localhost, 127.0.0.1 or ::1), not ${hostname}.`,
   )
-  process.exit(1)
 }
 
 function detectVcs(): 'jj' | 'git' {
@@ -90,6 +99,13 @@ function detectVcs(): 'jj' | 'git' {
 }
 
 const vcs = opts.git ? 'git' : detectVcs()
+
+if (opts.interdiff) {
+  if (vcs !== 'jj') fail('--interdiff needs jj')
+  if (opts.revisions) fail("--interdiff can't be combined with -r")
+  // Without this, jj's own usage error shows up as "jj interdiff failed"
+  if (!opts.from && !opts.to) fail('--interdiff needs -f, -t, or both')
+}
 
 /* Base rev candidates for the default git diff. A remote's default branch
  * (origin/HEAD) is optional — "Having a default branch for a remote is not
@@ -122,16 +138,14 @@ function resolveGitBase(): { base: string; mergeBase: string } {
       // found" that suggests -r/-f flags that would also fail.
       const { code, stderr } = error as { code?: string; stderr?: string }
       if (code === 'ENOENT' || stderr?.includes('not a git repository')) {
-        console.error(stderr?.trim() || (error as Error).message)
-        process.exit(1)
+        fail(stderr?.trim() || (error as Error).message)
       }
     }
   }
-  console.error(
+  fail(
     `No base revision found for the default diff (tried ${GIT_BASE_CANDIDATES.join(', ')}).\n` +
       'Specify a range explicitly with -r or -f/-t.',
   )
-  process.exit(1)
 }
 
 /** Split an `A..B` range into its two revs. Returns null for anything that
@@ -148,7 +162,7 @@ function parseRange(rev: string): { left: string; right: string } | null {
 function buildDiffSource(): DiffArgs {
   if (vcs === 'jj') {
     const args: string[] = []
-    let commentsEnabled: boolean
+    let toWorkingCopy: boolean
     let endpoints: DiffEndpoints
     if (opts.from || opts.to || !opts.revisions) {
       // With no range flags at all, --from defaults to a GitHub-PR-style diff
@@ -160,15 +174,19 @@ function buildDiffSource(): DiffArgs {
       const from = opts.from ?? (opts.to ? undefined : 'fork_point(trunk() | @)')
       if (from) args.push('--from', from)
       if (opts.to) args.push('--to', opts.to)
-      // Comments enabled if --to is @ or omitted (jj defaults --to to @)
-      commentsEnabled = !opts.to || opts.to === '@'
       // jj defaults both --from and --to to @
-      endpoints = { left: from ?? '@', right: { rev: opts.to ?? '@' } }
+      toWorkingCopy = !opts.to || opts.to === '@'
+      // An interdiff's left side is --from rebased onto --to's parents, which
+      // isn't a revision `jj file show` can read, so there's no hunk
+      // expansion. Rebuilding the left file by applying the file's patch in
+      // reverse to the right one would make it work.
+      endpoints = opts.interdiff
+        ? null
+        : { left: from ?? '@', right: { rev: opts.to ?? '@' } }
     } else {
       const rev = opts.revisions
       args.push('-r', rev)
-      // Comments enabled if the revset's "to" side is @
-      commentsEnabled = rev === '@' || rev.endsWith('..@')
+      toWorkingCopy = rev === '@' || rev.endsWith('..@')
       const range = parseRange(rev)
       if (range) {
         endpoints = { left: range.left, right: { rev: range.right } }
@@ -179,22 +197,22 @@ function buildDiffSource(): DiffArgs {
         endpoints = null
       }
     }
-    return { vcs: 'jj', args, commentsEnabled, files, endpoints }
+    return { vcs: 'jj', interdiff: opts.interdiff, args, toWorkingCopy, files, endpoints }
   } else {
     let args: string[]
-    let commentsEnabled: boolean
+    let toWorkingCopy: boolean
     let endpoints: DiffEndpoints
     let displayArgs: string[] | undefined
     if (opts.from || opts.to) {
       if (opts.to) {
         // Explicit --to: commit-to-commit diff, no working copy
         args = [opts.from ?? 'HEAD', opts.to]
-        commentsEnabled = false
+        toWorkingCopy = false
         endpoints = { left: opts.from ?? 'HEAD', right: { rev: opts.to } }
       } else {
         // --from only: git diff <from> includes working tree
         args = [opts.from!]
-        commentsEnabled = true
+        toWorkingCopy = true
         endpoints = { left: opts.from!, right: 'workingCopy' }
       }
     } else if (!opts.revisions) {
@@ -212,12 +230,12 @@ function buildDiffSource(): DiffArgs {
       const { base, mergeBase } = resolveGitBase()
       args = [mergeBase]
       displayArgs = ['--merge-base', base]
-      commentsEnabled = true
+      toWorkingCopy = true
       endpoints = { left: mergeBase, right: 'workingCopy' }
     } else {
       const rev = opts.revisions
       // No .. means single ref, which diffs against working tree
-      commentsEnabled = !rev.includes('..')
+      toWorkingCopy = !rev.includes('..')
       args = [rev]
       const range = parseRange(rev)
       if (range) {
@@ -228,7 +246,7 @@ function buildDiffSource(): DiffArgs {
         endpoints = null
       }
     }
-    return { vcs: 'git', args, commentsEnabled, files, endpoints, displayArgs }
+    return { vcs: 'git', args, toWorkingCopy, files, endpoints, displayArgs }
   }
 }
 

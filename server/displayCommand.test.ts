@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import type { DiffArgs } from '../shared/types.ts'
 import { displayCommand } from './displayCommand.ts'
 
-const base = { commentsEnabled: true, files: [], endpoints: null }
+const base = { toWorkingCopy: true, files: [], endpoints: null }
 
 describe('displayCommand', () => {
   it('leaves plain args unquoted', () => {
@@ -40,6 +40,16 @@ describe('displayCommand', () => {
       ...base,
     }
     expect(displayCommand(src)).toBe('git diff --merge-base origin/main')
+  })
+
+  it('shows jj interdiff as such', () => {
+    const src: DiffArgs = {
+      vcs: 'jj',
+      interdiff: true,
+      args: ['--from', 'a', '--to', 'b'],
+      ...base,
+    }
+    expect(displayCommand(src)).toBe('jj interdiff --from a --to b')
   })
 
   it('quotes file paths after --', () => {

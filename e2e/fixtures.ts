@@ -6,12 +6,11 @@
  * Copyright Oxide Computer Company
  */
 
-import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test as base, type Page } from '@playwright/test'
-import { exec } from '../server/testUtil.ts'
+import { exec, startCli } from '../server/testUtil.ts'
 
 export * from '@playwright/test'
 
@@ -52,45 +51,10 @@ export const WORKING: Record<string, string> = {
   'b.txt': 'hello\nworld\n',
 }
 
-const CLI = join(import.meta.dirname, '..', 'cli.ts')
-
 const writeFiles = (dir: string, files: Record<string, string>) =>
   Promise.all(
     Object.entries(files).map(([name, contents]) => writeFile(join(dir, name), contents)),
   )
-
-/** Spawn the CLI in `dir` and resolve with the URL it prints on startup. */
-function startCli(
-  dir: string,
-  home: string,
-  args: string[],
-): Promise<{ proc: ChildProcess; url: string }> {
-  return new Promise((resolve, reject) => {
-    // No --port means an ephemeral one, so parallel tests can't collide.
-    const proc = spawn('node', [CLI, '--git', '--no-open', ...args], {
-      cwd: dir,
-      env: {
-        ...process.env,
-        // Viewed state and settings live under HOME; keep them out of the
-        // real ones. Git config is isolated so the user's can't leak in.
-        HOME: home,
-        GIT_CONFIG_SYSTEM: '/dev/null',
-        GIT_CONFIG_GLOBAL: join(home, 'gitconfig'),
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let out = ''
-    proc.stdout!.on('data', (chunk: Buffer) => {
-      out += chunk.toString()
-      const m = out.match(/skepsis on (http:\/\/[^\s]+)/)
-      if (m) resolve({ proc, url: m[1]! })
-    })
-    let err = ''
-    proc.stderr!.on('data', (chunk: Buffer) => (err += chunk.toString()))
-    proc.on('error', reject)
-    proc.on('exit', (code) => reject(new Error(`skepsis exited with ${code}: ${err}`)))
-  })
-}
 
 /** What the temp repo holds: `committed` in its one commit, `working` written
  *  on top. Files only in `working` are added with intent-to-add, so they show
@@ -157,7 +121,14 @@ export const test = base.extend<{
       await writeFiles(dir, repoFiles.working)
       await git('add', '--intent-to-add', '.')
 
-      const { proc, url } = await startCli(dir, home, cliArgs)
+      const { proc, url } = await startCli(dir, ['--git', ...cliArgs], {
+        ...process.env,
+        // Viewed state and settings live under HOME; keep them out of the
+        // real ones. Git config is isolated so the user's can't leak in.
+        HOME: home,
+        GIT_CONFIG_SYSTEM: '/dev/null',
+        GIT_CONFIG_GLOBAL: join(home, 'gitconfig'),
+      })
       // The URL ends in the #token= fragment, so the query goes in before it.
       const pageUrl = new URL(url)
       if (pollMs !== undefined) pageUrl.searchParams.set('poll-ms', String(pollMs))

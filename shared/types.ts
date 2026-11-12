@@ -121,7 +121,10 @@ export type DiffEndpoints = {
 } | null
 
 export type DiffArgs = ({ vcs: 'jj'; args: string[] } | { vcs: 'git'; args: string[] }) & {
-  commentsEnabled: boolean
+  /** Run `jj interdiff` rather than `jj diff` (the CLI only allows it with jj) */
+  interdiff?: boolean
+  /** Whether the diff ends at the working copy, which review comments need */
+  toWorkingCopy: boolean
   files: string[]
   endpoints: DiffEndpoints
   /** Args to show in the UI/log command string in place of `args`, for when
@@ -141,6 +144,9 @@ export interface DiffResponse {
   /** The name of the directory skepsis runs in, for the page title */
   repo: string
   vcs: 'jj' | 'git'
+  /** Whether this is a `jj interdiff`, which has no inline comments or hunk
+   *  expansion */
+  interdiff: boolean
   commentsEnabled: boolean
   /** Whether diff endpoints resolved, so /api/file-contents can serve full
    *  file contents for hunk expansion. */

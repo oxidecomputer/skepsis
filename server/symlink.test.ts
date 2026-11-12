@@ -32,7 +32,7 @@ describe('symlinks', () => {
   const src: DiffArgs = {
     vcs: 'git',
     args: ['HEAD'],
-    commentsEnabled: true,
+    toWorkingCopy: true,
     files: [],
     endpoints: { left: 'HEAD', right: 'workingCopy' },
   }

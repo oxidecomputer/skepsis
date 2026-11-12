@@ -15,7 +15,7 @@ import type { DiffArgs } from '../shared/types.ts'
 import { diffCommand, extractFileHashes, normalizeJjRenames } from './diff.ts'
 import { isolateVcsConfig, requireJj, run } from './testUtil.ts'
 
-const base = { commentsEnabled: true, files: [], endpoints: null }
+const base = { toWorkingCopy: true, files: [], endpoints: null }
 
 const home = await isolateVcsConfig()
 afterAll(async () => {
@@ -172,5 +172,61 @@ describe('jj rename headers (integration)', () => {
       ['change', undefined],
       ['change', undefined],
     ])
+  })
+})
+
+// `jj interdiff --git` output for a commit whose description and f.txt both
+// changed. The description block has no index line and no a//b/ prefixes on
+// its ---/+++ lines.
+const INTERDIFF = `diff --git a/JJ-COMMIT-DESCRIPTION b/JJ-COMMIT-DESCRIPTION
+--- JJ-COMMIT-DESCRIPTION
++++ JJ-COMMIT-DESCRIPTION
+@@ -1,1 +1,1 @@
+-feature
++feature, reworded
+diff --git a/f.txt b/f.txt
+index 7be73ce3c1..a7bc997ebe 100644
+--- a/f.txt
++++ b/f.txt
+@@ -1,3 +1,4 @@ a
+ a
+ B
+ c
++d
+`
+
+describe('interdiff file hashes', () => {
+  it('parses the description block under the same name as its hash', () => {
+    const files = parsePatchFiles(INTERDIFF).flatMap((p) => p.files)
+    const hashes = extractFileHashes(INTERDIFF, true)
+    expect(files.map((f) => f.name)).toEqual(Object.keys(hashes))
+  })
+
+  it('changes the description hash when the description does', () => {
+    const before = extractFileHashes(INTERDIFF, true)
+    const after = extractFileHashes(INTERDIFF.replace('reworded', 'reworded again'), true)
+    expect(after['JJ-COMMIT-DESCRIPTION']).not.toBe(before['JJ-COMMIT-DESCRIPTION'])
+  })
+
+  it('hashes an added description', () => {
+    const added = `diff --git a/JJ-COMMIT-DESCRIPTION b/JJ-COMMIT-DESCRIPTION
+--- JJ-COMMIT-DESCRIPTION
++++ JJ-COMMIT-DESCRIPTION
+@@ -0,0 +1,1 @@
++feature
+`
+    expect(extractFileHashes(added, true)['JJ-COMMIT-DESCRIPTION']).toMatch(
+      /^[0-9a-f]{12}$/,
+    )
+    expect(parsePatchFiles(added).flatMap((p) => p.files.map((f) => f.name))).toEqual([
+      'JJ-COMMIT-DESCRIPTION',
+    ])
+  })
+
+  // Keyed on the new blob, marking f.txt viewed here would also mark it
+  // viewed in the commit's own diff, where most of the change is unseen.
+  it("doesn't key files on their new blob", () => {
+    expect(extractFileHashes(INTERDIFF)['f.txt']).toBe('a7bc997ebe')
+    expect(extractFileHashes(INTERDIFF, true)['f.txt']).not.toBe('a7bc997ebe')
   })
 })
