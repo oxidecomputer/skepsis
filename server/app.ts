@@ -10,7 +10,8 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { zValidator } from '@hono/zod-validator'
-import { basename, join } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, join, sep } from 'node:path'
 import type { DiffArgs } from '../shared/types.ts'
 import { getDiff, patchHash } from './diff.ts'
 import { displayCommand } from './displayCommand.ts'
@@ -43,6 +44,12 @@ import type {
   ErrorResponse,
   ThemeResponse,
 } from '../shared/types.ts'
+
+/** `path` with a leading home directory written as `~`. */
+export function tildePath(path: string, home = homedir()): string {
+  if (path === home) return '~'
+  return path.startsWith(home + sep) ? '~' + path.slice(home.length) : path
+}
 
 export interface BuildOptions {
   diffSource: DiffArgs
@@ -137,6 +144,7 @@ export async function buildApp(opts: BuildOptions): Promise<App> {
       patch,
       revset: displayCommand(diffSource),
       repo: basename(cwd),
+      cwd: tildePath(cwd),
       vcs: diffSource.vcs,
       interdiff: !!diffSource.interdiff,
       commentsEnabled,
