@@ -642,7 +642,7 @@ body,
   min-width: 0;
 }
 
-.progress-bar > span {
+.progress-count {
   flex-shrink: 0;
   white-space: nowrap;
   color: var(--fg-dim);
@@ -1262,4 +1262,78 @@ body,
   color: var(--fg-bright);
   min-width: 18px;
   text-align: center;
+}
+
+/* Phone widths. The same breakpoint is narrowQuery in App.tsx, which turns
+   the file tree into a drawer: it starts closed, opens over the diff, and
+   closes when a file is picked. Everything else here makes the header bar
+   and file headers fit a phone without scrolling the page sideways. */
+@media (width < 700px) {
+  .diff-body {
+    position: relative;
+  }
+
+  /* Over the diff rather than beside it, so opening it doesn't reflow the
+     diff. The backdrop sits between the tree and the diff in the DOM, which
+     also keeps the diff's left padding (.file-tree + .codeview-root). */
+  .file-tree {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    width: min(320px, calc(100% - 48px));
+    border-right: 1px solid var(--border);
+    box-shadow: 0 4px 16px light-dark(oklch(0% 0 0 / 0.1), oklch(0% 0 0 / 0.4));
+  }
+
+  .file-tree-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 19;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  /* Header bar: the count and Clear stay, the track and the word "files"
+     go, and the diff command takes whatever room is left. */
+  .progress-bar {
+    gap: 8px;
+  }
+
+  .progress-track,
+  .progress-files {
+    display: none;
+  }
+
+  .progress-count {
+    margin-left: auto;
+  }
+
+  /* File headers: more room for the name. The copy button goes; a long press
+     on the name selects it for copying. */
+  .file-header {
+    gap: 8px;
+    padding: 5px 10px;
+  }
+
+  .copy-name-button {
+    display: none;
+  }
+
+  /* Truncate from the start, keeping the end of the path, which has the
+     file name. The ellipsis goes on the end side of an rtl box; the path
+     inside keeps its own ltr order. */
+  .file-header-name {
+    direction: rtl;
+  }
+
+  .file-header-path {
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  /* iOS zooms the page in on focus of a text field under 16px */
+  .comment-form textarea {
+    font-size: 16px;
+  }
 }

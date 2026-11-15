@@ -129,12 +129,15 @@ const darkQuery = '(prefers-color-scheme: dark)'
 
 const systemDark = () => window.matchMedia(darkQuery).matches
 
-function useSystemDark(): boolean {
-  return useSyncExternalStore((cb) => {
-    const mql = window.matchMedia(darkQuery)
-    mql.addEventListener('change', cb)
-    return () => mql.removeEventListener('change', cb)
-  }, systemDark)
+function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const mql = window.matchMedia(query)
+      mql.addEventListener('change', cb)
+      return () => mql.removeEventListener('change', cb)
+    },
+    () => window.matchMedia(query).matches,
+  )
 }
 
 // The server's per-run token, which every API request carries. It arrives in
@@ -192,18 +195,11 @@ async function apiFetch<T = unknown>(
   return res.json() as Promise<T>
 }
 
+// Wide enough for split diffs
 const wideQuery = '(min-width: 1060px)'
-
-function useIsWide(): boolean {
-  return useSyncExternalStore(
-    (cb) => {
-      const mql = window.matchMedia(wideQuery)
-      mql.addEventListener('change', cb)
-      return () => mql.removeEventListener('change', cb)
-    },
-    () => window.matchMedia(wideQuery).matches,
-  )
-}
+// Phone widths, where the file tree is a drawer over the diff instead of a
+// sidebar beside it. The same width is the breakpoint in styles.css.
+const narrowQuery = '(width < 700px)'
 
 // Handlers take Ctrl wherever they take ⌘, so this only changes the labels.
 // userAgentData is Chromium-only and not in lib.dom yet.
@@ -439,6 +435,13 @@ const TREE_CSS = `
   [data-item-section="decoration"] {
     color: var(--trees-git-added-color);
     flex: 1 0 auto;
+  }
+  /* iOS zooms the page in on focus of a text field under 16px. The width is
+     narrowQuery's. */
+  @media (width < 700px) {
+    input {
+      font-size: 16px;
+    }
   }
 `
 
@@ -1083,10 +1086,14 @@ function FileHeader({
         {'\u25B6'}
       </span>
       <span className="file-header-name">
-        {fileDiff.prevName != null && fileDiff.prevName !== fileDiff.name && (
-          <span className="file-header-prev-name">{fileDiff.prevName} → </span>
-        )}
-        {fileDiff.name}
+        {/* The path gets its own element so a narrow layout can truncate
+            from the start (see styles.css) */}
+        <span className="file-header-path">
+          {fileDiff.prevName != null && fileDiff.prevName !== fileDiff.name && (
+            <span className="file-header-prev-name">{fileDiff.prevName} → </span>
+          )}
+          {fileDiff.name}
+        </span>
       </span>
       {/* closeOnClick={false} so the tooltip stays up and flips to "Copied!". */}
       <Tip text={copied ? 'Copied!' : 'Copy file name to clipboard'} closeOnClick={false}>
@@ -1345,8 +1352,8 @@ function ProgressBar({
           style={{ width: `${(viewedCount / total) * 100}%` }}
         />
       </div>
-      <span>
-        {viewedCount}/{total} files viewed
+      <span className="progress-count">
+        {viewedCount}/{total} <span className="progress-files">files </span>viewed
       </span>
       <Tip text="Mark all files unviewed">
         <button
@@ -1651,18 +1658,28 @@ function topFileName(
 }
 
 function DiffView() {
-  const isWide = useIsWide()
+  const isWide = useMediaQuery(wideQuery)
+  const isNarrow = useMediaQuery(narrowQuery)
   const [splitMode, setSplitMode] = useState<SplitMode>('responsive')
   const diffStyle: 'split' | 'unified' =
     splitMode === 'responsive' && isWide ? 'split' : 'unified'
   const { toast, showToast } = useToast()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
-  const [treeOpen, setTreeOpenState] = useState(loadTreeOpen)
-  // The only writer of treeOpen, so every change is persisted.
-  const setTreeOpen = useCallback((open: boolean) => {
-    saveTreeOpen(open)
-    setTreeOpenState(open)
-  }, [])
+  // The stored sidebar preference applies at wider widths. On a phone the tree
+  // is a drawer that starts closed on every load, and opening it there leaves
+  // the preference alone.
+  const [sidebarOpen, setSidebarOpen] = useState(loadTreeOpen)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const treeOpen = isNarrow ? drawerOpen : sidebarOpen
+  // The only writer of either, so every sidebar change is persisted.
+  const setTreeOpen = useCallback(
+    (open: boolean) => {
+      if (isNarrow) return setDrawerOpen(open)
+      saveTreeOpen(open)
+      setSidebarOpen(open)
+    },
+    [isNarrow],
+  )
   const toggleTree = useCallback(() => setTreeOpen(!treeOpen), [setTreeOpen, treeOpen])
   // Set when Cmd/Ctrl+K had to open the sidebar first; the search box gets
   // focus once the tree has rendered.
@@ -1822,7 +1839,7 @@ function DiffView() {
 
   // What's actually on screen: the override if there is one, else the OS
   // preference, which the hook keeps live so the icon tracks an OS change.
-  const systemIsDark = useSystemDark()
+  const systemIsDark = useMediaQuery(darkQuery)
   const resolvedTheme = theme === 'system' ? (systemIsDark ? 'dark' : 'light') : theme
 
   useEffect(() => applyTheme(theme), [theme])
@@ -2354,12 +2371,14 @@ function DiffView() {
     [markProgrammaticScroll],
   )
 
-  // A click in the file tree: same move as n/p minus the line cursor.
+  // A click in the file tree: same move as n/p minus the line cursor. The
+  // drawer would cover the file, so it closes.
   const onTreeSelect = useCallback(
     (path: string) => {
       if (!itemsRef.current.some((it) => it.id === path)) return
       setFocused(path)
       scrollItemToStart(path)
+      setDrawerOpen(false)
     },
     [setFocused, scrollItemToStart],
   )
@@ -3010,6 +3029,9 @@ function DiffView() {
           } else if (composing) {
             e.preventDefault()
             setComposing(null)
+          } else if (isNarrow && treeOpen) {
+            e.preventDefault()
+            setTreeOpen(false)
           }
           break
         case 'b': {
@@ -3087,6 +3109,8 @@ function DiffView() {
     setFocused,
     markProgrammaticScroll,
     scrollItemToStart,
+    isNarrow,
+    treeOpen,
     setTreeOpen,
     toggleTree,
     toggleTheme,
@@ -3209,6 +3233,10 @@ function DiffView() {
               focusedFile={effectiveFocused}
               onSelectFile={onTreeSelect}
             />
+          )}
+          {/* Under the drawer: dims the diff, and a tap on it closes the drawer */}
+          {isNarrow && treeOpen && (
+            <div className="file-tree-backdrop" onClick={() => setTreeOpen(false)} />
           )}
           <CodeView
             ref={codeViewRef}
