@@ -73,6 +73,56 @@ describe('git mnemonicPrefix override (integration)', () => {
   })
 })
 
+// Diff drivers from .gitattributes: an external command whose output has no
+// git header and no trailing newline, as nbdiff's does, and a textconv.
+describe('git diff drivers (integration)', () => {
+  let dir: string
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'skepsis-diff-test-'))
+    await run('git', ['init', '-q'], dir)
+    await writeFile(join(dir, '.gitattributes'), '*.ext diff=ext\n*.tc diff=tc\n')
+    await run(
+      'git',
+      ['config', 'diff.ext.command', 'printf "\\033[31mEXTERNAL\\033[0m"'],
+      dir,
+    )
+    await run('git', ['config', 'diff.tc.textconv', 'tr a-z A-Z <'], dir)
+    await run('git', ['config', 'color.diff', 'always'], dir)
+    const names = ['a.ext', 'b.tc', 'c.txt']
+    await Promise.all(names.map((f) => writeFile(join(dir, f), 'hello\n')))
+    await run('git', ['add', '.'], dir)
+    await run('git', ['commit', '-qm', 'init'], dir)
+    await Promise.all(names.map((f) => writeFile(join(dir, f), 'hello\nworld\n')))
+  })
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('produces a plain patch of every file', async () => {
+    const { args } = diffCommand({ vcs: 'git', args: ['HEAD'], ...base })
+    const { stdout } = await run('git', args, dir)
+    expect(stdout).not.toContain('EXTERNAL')
+    expect(stdout).not.toContain('\x1b')
+    expect(stdout).toContain('+world')
+    expect(stdout).not.toContain('WORLD')
+    const files = parsePatchFiles(stdout).flatMap((p) => p.files.map((f) => f.name))
+    expect(files).toEqual(['a.ext', 'b.tc', 'c.txt'])
+    expect(Object.keys(extractFileHashes(stdout)).toSorted()).toEqual([
+      'a.ext',
+      'b.tc',
+      'c.txt',
+    ])
+  })
+
+  it('sanity: without the flags, the drivers break the patch', async () => {
+    const { stdout } = await run('git', ['diff', 'HEAD'], dir)
+    expect(stdout).toContain('EXTERNAL\x1b[0m\x1b[1mdiff --git')
+    expect(stdout).toContain('WORLD')
+  })
+})
+
 // Same guard as above for jj: a user config of diff.git.show-path-prefix=false
 // blanks the a//b/ prefixes entirely, breaking the same parsers.
 describe('jj show-path-prefix override (integration)', () => {
@@ -113,6 +163,39 @@ describe('jj show-path-prefix override (integration)', () => {
     const { stdout } = await run(cmd, args, repo)
     expect(stdout).toContain('diff --git a/f.txt b/f.txt')
     expect(stdout).not.toContain('g.txt')
+  })
+})
+
+// jj's analog of color.diff=always: ui.color=always colors piped output.
+describe('jj color override (integration)', () => {
+  let tmp: string
+  let repo: string
+
+  beforeAll(async () => {
+    await requireJj()
+    tmp = await mkdtemp(join(tmpdir(), 'skepsis-jj-color-test-'))
+    await run('jj', ['git', 'init', 'repo'], tmp)
+    repo = join(tmp, 'repo')
+    await run('jj', ['config', 'set', '--repo', 'ui.color', 'always'], repo)
+    await writeFile(join(repo, 'f.txt'), 'hello\n')
+  })
+
+  afterAll(async () => {
+    if (tmp) await rm(tmp, { recursive: true, force: true })
+  })
+
+  it('produces an uncolored patch despite ui.color=always', async () => {
+    const { cmd, args } = diffCommand({ vcs: 'jj', args: ['-r', '@'], ...base })
+    const { stdout } = await run(cmd, args, repo)
+    expect(stdout).not.toContain('\x1b')
+    expect(parsePatchFiles(stdout).flatMap((p) => p.files.map((f) => f.name))).toEqual([
+      'f.txt',
+    ])
+  })
+
+  it('sanity: without the override, jj colors the headers', async () => {
+    const { stdout } = await run('jj', ['diff', '-r', '@', '--git'], repo)
+    expect(stdout).toContain('\x1b[1mdiff --git a/f.txt b/f.txt')
   })
 })
 

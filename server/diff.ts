@@ -50,7 +50,18 @@ const GIT_PREFIX_OVERRIDE = [
   '-c',
   'diff.dstPrefix=b/',
 ]
+/*
+ * The same parsers need a plain patch of the stored content. An external diff
+ * driver (.gitattributes diff=<driver> with diff.<driver>.command) replaces a
+ * file's block with arbitrary output, often without a trailing newline, which
+ * glues the next file's header onto it. A textconv driver numbers lines in
+ * the converted text, but hunk expansion and comments use the raw blob.
+ * color.diff=always adds escape codes even when piped.
+ */
+const GIT_PLAIN_PATCH = ['--no-ext-diff', '--no-textconv', '--no-color']
 const JJ_PREFIX_OVERRIDE = ['--config', 'diff.git.show-path-prefix=true']
+/* jj's --git already bypasses diff tools, but ui.color=always colors piped output. */
+const JJ_NO_COLOR = ['--color=never']
 
 /** `interdiff` or `diff`, the subcommand that produces the patch */
 export function subcommand(src: DiffArgs): string {
@@ -62,12 +73,19 @@ export function diffCommand(src: DiffArgs): { cmd: string; args: string[] } {
   if (src.vcs === 'jj') {
     return {
       cmd: 'jj',
-      args: [...JJ_PREFIX_OVERRIDE, subcommand(src), ...src.args, '--git', ...fileArgs],
+      args: [
+        ...JJ_PREFIX_OVERRIDE,
+        ...JJ_NO_COLOR,
+        subcommand(src),
+        ...src.args,
+        '--git',
+        ...fileArgs,
+      ],
     }
   } else {
     return {
       cmd: 'git',
-      args: [...GIT_PREFIX_OVERRIDE, 'diff', ...src.args, ...fileArgs],
+      args: [...GIT_PREFIX_OVERRIDE, 'diff', ...GIT_PLAIN_PATCH, ...src.args, ...fileArgs],
     }
   }
 }
