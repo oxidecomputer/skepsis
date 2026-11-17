@@ -60,6 +60,8 @@ const GIT_PREFIX_OVERRIDE = [
  */
 const GIT_PLAIN_PATCH = ['--no-ext-diff', '--no-textconv', '--no-color']
 const JJ_PREFIX_OVERRIDE = ['--config', 'diff.git.show-path-prefix=true']
+/* jj's --git already bypasses diff tools, but ui.color=always colors piped output. */
+const JJ_NO_COLOR = ['--color=never']
 
 /** `interdiff` or `diff`, the subcommand that produces the patch */
 export function subcommand(src: DiffArgs): string {
@@ -71,7 +73,14 @@ export function diffCommand(src: DiffArgs): { cmd: string; args: string[] } {
   if (src.vcs === 'jj') {
     return {
       cmd: 'jj',
-      args: [...JJ_PREFIX_OVERRIDE, subcommand(src), ...src.args, '--git', ...fileArgs],
+      args: [
+        ...JJ_PREFIX_OVERRIDE,
+        ...JJ_NO_COLOR,
+        subcommand(src),
+        ...src.args,
+        '--git',
+        ...fileArgs,
+      ],
     }
   } else {
     return {

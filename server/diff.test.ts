@@ -166,6 +166,39 @@ describe('jj show-path-prefix override (integration)', () => {
   })
 })
 
+// jj's analog of color.diff=always: ui.color=always colors piped output.
+describe('jj color override (integration)', () => {
+  let tmp: string
+  let repo: string
+
+  beforeAll(async () => {
+    await requireJj()
+    tmp = await mkdtemp(join(tmpdir(), 'skepsis-jj-color-test-'))
+    await run('jj', ['git', 'init', 'repo'], tmp)
+    repo = join(tmp, 'repo')
+    await run('jj', ['config', 'set', '--repo', 'ui.color', 'always'], repo)
+    await writeFile(join(repo, 'f.txt'), 'hello\n')
+  })
+
+  afterAll(async () => {
+    if (tmp) await rm(tmp, { recursive: true, force: true })
+  })
+
+  it('produces an uncolored patch despite ui.color=always', async () => {
+    const { cmd, args } = diffCommand({ vcs: 'jj', args: ['-r', '@'], ...base })
+    const { stdout } = await run(cmd, args, repo)
+    expect(stdout).not.toContain('\x1b')
+    expect(parsePatchFiles(stdout).flatMap((p) => p.files.map((f) => f.name))).toEqual([
+      'f.txt',
+    ])
+  })
+
+  it('sanity: without the override, jj colors the headers', async () => {
+    const { stdout } = await run('jj', ['diff', '-r', '@', '--git'], repo)
+    expect(stdout).toContain('\x1b[1mdiff --git a/f.txt b/f.txt')
+  })
+})
+
 // jj's git-format diff omits the "similarity index" line, and @pierre/diffs
 // only treats a git diff block as a rename when it has one. Without it, a
 // rename parses as a plain change to the new path and loses the old name.
