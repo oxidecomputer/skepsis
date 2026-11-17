@@ -10,9 +10,10 @@
 import { spawn, execFileSync } from 'child_process'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { Command, InvalidArgumentError } from '@commander-js/extra-typings'
+import { Command, InvalidArgumentError, Option } from '@commander-js/extra-typings'
 import { startServer } from './server/main.ts'
 import { LOOPBACK } from './server/gate.ts'
+import { DEFAULT_TAB_SIZE } from './shared/types.ts'
 import type { DiffArgs, DiffEndpoints } from './shared/types.ts'
 
 function parsePort(value: string): number {
@@ -22,6 +23,15 @@ function parsePort(value: string): number {
     throw new InvalidArgumentError('port must be an integer between 0 and 65535')
   }
   return port
+}
+
+function parseTabSize(value: string): number {
+  const size = /^\d+$/.test(value) ? Number(value) : NaN
+  // The top end is only there to catch typos
+  if (!(size >= 1 && size <= 16)) {
+    throw new InvalidArgumentError('tab size must be an integer between 1 and 16')
+  }
+  return size
 }
 
 const program = new Command()
@@ -44,6 +54,13 @@ const program = new Command()
     'shell command that opens the page, given the URL as its last argument (default: $SKEPSIS_OPEN, else the system opener)',
   )
   .option('--no-poll', "don't check for changes to the diff while the page is open")
+  // commander reads the environment itself here, and the flag wins over it
+  .addOption(
+    new Option('--tab-size <columns>', 'how many columns wide a tab is shown')
+      .env('SKEPSIS_TAB_SIZE')
+      .argParser(parseTabSize)
+      .default(DEFAULT_TAB_SIZE),
+  )
   .option(
     '--send <command>',
     'add a Send button that pipes the comment to this shell command (default: $SKEPSIS_SEND)',
@@ -296,6 +313,7 @@ const { port: apiPort, token } = await startServer({
   port: opts.dev ? undefined : opts.port,
   poll: opts.poll,
   send,
+  tabSize: opts.tabSize,
 }).catch((err: Error) => {
   console.error(err.message)
   return cleanup(1)

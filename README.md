@@ -87,6 +87,13 @@ skepsis --open-cmd 'open -a Firefox'
 
 `--dev` mode ignores it, since Vite opens the page itself.
 
+The diff shows a tab two columns wide. To change that, pass `--tab-size
+<columns>` (or set `SKEPSIS_TAB_SIZE` in the environment):
+
+```
+skepsis --tab-size 8
+```
+
 ### jj examples
 
 The examples use `skepsis`, the installed bin name. An `sk` alias works the

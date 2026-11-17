@@ -58,6 +58,48 @@ afterAll(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
+/** Start the CLI with `args` and fetch its /api/diff. */
+async function fetchDiff(args: string[], env?: NodeJS.ProcessEnv): Promise<DiffResponse> {
+  const { proc, url } = await startCli(repo, ['--no-poll', ...args], env)
+  try {
+    const token = new URL(url).hash.replace('#token=', '')
+    const res = await fetch(new URL('/api/diff', url), {
+      headers: { [TOKEN_HEADER]: token },
+    })
+    return (await res.json()) as DiffResponse
+  } finally {
+    proc.kill()
+  }
+}
+
+describe('--tab-size', () => {
+  it('rejects anything but a width in columns', async () => {
+    const results = await Promise.all(
+      ['wide', '0', '17', '2.5'].map((value) => runCli(['--tab-size', value], repo)),
+    )
+    for (const { code, stderr } of results) {
+      expect(code).toBe(1)
+      expect(stderr).toContain('tab size must be an integer between 1 and 16')
+    }
+  })
+
+  it('takes the flag over SKEPSIS_TAB_SIZE over the default', async () => {
+    // Whatever the developer's own shell sets must not reach the default case
+    const unset = { ...process.env, SKEPSIS_TAB_SIZE: undefined }
+    const set = { ...process.env, SKEPSIS_TAB_SIZE: '4' }
+    expect((await fetchDiff(['-r', '@'], unset)).tabSize).toBe(2)
+    expect((await fetchDiff(['-r', '@'], set)).tabSize).toBe(4)
+    expect((await fetchDiff(['-r', '@', '--tab-size', '8'], set)).tabSize).toBe(8)
+  })
+
+  it('rejects a bad SKEPSIS_TAB_SIZE', async () => {
+    const env = { ...process.env, SKEPSIS_TAB_SIZE: 'wide' }
+    await expect(startCli(repo, ['-r', '@'], env)).rejects.toThrow(
+      'tab size must be an integer between 1 and 16',
+    )
+  })
+})
+
 describe('--interdiff', () => {
   it('needs jj', async () => {
     const { code, stderr } = await runCli(
@@ -79,20 +121,6 @@ describe('--interdiff', () => {
     expect(code).toBe(1)
     expect(stderr).toContain('--interdiff needs -f, -t, or both')
   })
-
-  /** Start the CLI with `args` and fetch its /api/diff. */
-  async function fetchDiff(args: string[]): Promise<DiffResponse> {
-    const { proc, url } = await startCli(repo, ['--no-poll', ...args])
-    try {
-      const token = new URL(url).hash.replace('#token=', '')
-      const res = await fetch(new URL('/api/diff', url), {
-        headers: { [TOKEN_HEADER]: token },
-      })
-      return (await res.json()) as DiffResponse
-    } finally {
-      proc.kill()
-    }
-  }
 
   it("serves the change's interdiff without upstream changes", async () => {
     const data = await fetchDiff(['--interdiff', '-f', oldCommit, '-t', newCommit])
