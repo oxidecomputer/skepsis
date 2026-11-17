@@ -56,7 +56,7 @@ export async function startServer(opts: {
   send?: string | null
   /** Overrides runSend's timeout, for tests */
   sendTimeoutMs?: number
-  /** How many columns a tab is shown as. Default DEFAULT_TAB_SIZE. */
+  /** Tab width in columns (default: DEFAULT_TAB_SIZE) */
   tabSize?: number
 }): Promise<{ port: number; token: string; close: () => void }> {
   const { diffSource, port = 0, hostname = 'localhost', cwd, poll = true, send } = opts

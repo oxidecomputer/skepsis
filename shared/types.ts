@@ -106,8 +106,7 @@ export interface ThemeResponse {
   theme: ThemeMode
 }
 
-/** How many columns a tab is shown as unless --tab-size says otherwise. Also
- *  what the diff library falls back to on its own. */
+/** Tab width in columns, and also the default in @pierre/diffs */
 export const DEFAULT_TAB_SIZE = 2
 
 // --- VCS types ---
@@ -162,7 +161,7 @@ export interface DiffResponse {
   poll: boolean
   /** Whether --send is set, so the comment box can send */
   send: boolean
-  /** How many columns a tab is shown as (--tab-size) */
+  /** Tab width in columns, from --tab-size or SKEPSIS_TAB_SIZE */
   tabSize: number
   viewed: ViewedMap
   /** Per-file comment syntax, shown in the comment form. An empty prefix

@@ -55,8 +55,8 @@ export async function requireJj(): Promise<void> {
   })
 }
 
-/** Clear the SKEPSIS_ variables the CLI reads, so the developer's own
- *  settings can't change what tests see. */
+/** Delete every SKEPSIS_ variable from process.env, so the developer's own
+ *  settings can't affect tests. */
 export function clearSkepsisEnv(): void {
   for (const key of Object.keys(process.env)) {
     if (key.startsWith('SKEPSIS_')) delete process.env[key]

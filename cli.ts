@@ -58,12 +58,14 @@ const program = new Command()
   .addOption(
     new Option(
       '--open-cmd <command>',
-      'shell command that opens the page, given the URL as its last argument (default: the system opener)',
-    ).env('SKEPSIS_OPEN'),
+      'shell command that opens the page, given the URL as its last argument',
+    )
+      .env('SKEPSIS_OPEN')
+      .default('', 'the system opener'),
   )
   .option('--no-poll', "don't check for changes to the diff while the page is open")
   .addOption(
-    new Option('--tab-size <columns>', 'how many columns wide a tab is shown')
+    new Option('--tab-size <columns>', 'tab width in columns')
       .env('SKEPSIS_TAB_SIZE')
       .argParser(parseTabSize)
       .default(DEFAULT_TAB_SIZE),
