@@ -1,6 +1,7 @@
 {
   "name": "@oxide/skepsis",
   "version": "0.9.0",
+  "license": "MPL-2.0",
   "repository": "github:oxidecomputer/skepsis",
   "bin": {
     "skepsis": "dist/cli.js"
