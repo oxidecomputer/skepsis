@@ -55,15 +55,24 @@ export async function requireJj(): Promise<void> {
   })
 }
 
+/** Clear the SKEPSIS_ variables the CLI reads, so the developer's own
+ *  settings can't change what tests see. */
+export function clearSkepsisEnv(): void {
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith('SKEPSIS_')) delete process.env[key]
+  }
+}
+
 /**
  * Point git and jj at test-controlled config (in a temp HOME) so the user's
  * real config can't leak into test repos. Mutates process.env rather than
  * injecting env per spawn so that processes the server spawns itself are
  * isolated too; vitest runs each test file in its own process, so the
  * mutation doesn't leak across files. Both tools get a test identity so
- * commits work. Returns the temp HOME dir for the caller to clean up.
+ * commits work. Also clears the SKEPSIS_ variables. Returns the temp HOME dir for the caller to clean up.
  */
 export async function isolateVcsConfig(): Promise<string> {
+  clearSkepsisEnv()
   const home = await mkdtemp(join(tmpdir(), 'skepsis-test-home-'))
   process.env.HOME = home
   process.env.GIT_CONFIG_SYSTEM = '/dev/null'

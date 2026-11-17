@@ -34,6 +34,12 @@ function parseTabSize(value: string): number {
   return size
 }
 
+// Each SKEPSIS_ variable stands in for a flag (see .env() below). An empty
+// one counts as unset.
+for (const [name, value] of Object.entries(process.env)) {
+  if (name.startsWith('SKEPSIS_') && value === '') delete process.env[name]
+}
+
 const program = new Command()
   .name('skepsis')
   .description('Local diff review UI (auto-detects jj or git)')
@@ -49,21 +55,24 @@ const program = new Command()
   .option('--host <address>', 'address to bind the HTTP server to', 'localhost')
   .option('-p, --port <number>', 'port for the browser UI (default: a free one)', parsePort)
   .option('--no-open', "don't open a browser")
-  .option(
-    '--open-cmd <command>',
-    'shell command that opens the page, given the URL as its last argument (default: $SKEPSIS_OPEN, else the system opener)',
+  .addOption(
+    new Option(
+      '--open-cmd <command>',
+      'shell command that opens the page, given the URL as its last argument (default: the system opener)',
+    ).env('SKEPSIS_OPEN'),
   )
   .option('--no-poll', "don't check for changes to the diff while the page is open")
-  // commander reads the environment itself here, and the flag wins over it
   .addOption(
     new Option('--tab-size <columns>', 'how many columns wide a tab is shown')
       .env('SKEPSIS_TAB_SIZE')
       .argParser(parseTabSize)
       .default(DEFAULT_TAB_SIZE),
   )
-  .option(
-    '--send <command>',
-    'add a Send button that pipes the comment to this shell command (default: $SKEPSIS_SEND)',
+  .addOption(
+    new Option(
+      '--send <command>',
+      'add a Send button that pipes the comment to this shell command',
+    ).env('SKEPSIS_SEND'),
   )
   .argument('[files...]', 'Limit diff to these paths (passed through to jj/git)')
   .addHelpText(
@@ -89,11 +98,10 @@ function fail(message: string): never {
 
 const files = program.processedArgs[0] ?? []
 const hostname = opts.host
-// The flag wins over the environment, and an empty value means the system
-// opener.
-const openCmd = (opts.openCmd ?? process.env['SKEPSIS_OPEN']) || null
-// The flag wins over the environment, and an empty value turns sending off.
-const send = (opts.send ?? process.env['SKEPSIS_SEND']) || null
+// An empty --open-cmd means the system opener. An empty --send turns sending
+// off.
+const openCmd = opts.openCmd || null
+const send = opts.send || null
 if (send && !LOOPBACK.has(hostname === '::1' ? '[::1]' : hostname)) {
   fail(
     `--send runs a command on request from the page, so it needs a loopback\n` +

@@ -84,10 +84,10 @@ describe('--tab-size', () => {
   })
 
   it('takes the flag over SKEPSIS_TAB_SIZE over the default', async () => {
-    // Whatever the developer's own shell sets must not reach the default case
-    const unset = { ...process.env, SKEPSIS_TAB_SIZE: undefined }
     const set = { ...process.env, SKEPSIS_TAB_SIZE: '4' }
-    expect((await fetchDiff(['-r', '@'], unset)).tabSize).toBe(2)
+    expect((await fetchDiff(['-r', '@'])).tabSize).toBe(2)
+    const empty = { ...process.env, SKEPSIS_TAB_SIZE: '' }
+    expect((await fetchDiff(['-r', '@'], empty)).tabSize).toBe(2)
     expect((await fetchDiff(['-r', '@'], set)).tabSize).toBe(4)
     expect((await fetchDiff(['-r', '@', '--tab-size', '8'], set)).tabSize).toBe(8)
   })
