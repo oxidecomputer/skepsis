@@ -33,6 +33,7 @@ import {
   sendRequestSchema,
   fileContentsQuerySchema,
   themeRequestSchema,
+  DEFAULT_TAB_SIZE,
   TOKEN_HEADER,
 } from '../shared/types.ts'
 import type {
@@ -55,8 +56,11 @@ export async function startServer(opts: {
   send?: string | null
   /** Overrides runSend's timeout, for tests */
   sendTimeoutMs?: number
+  /** Tab width in columns (default: DEFAULT_TAB_SIZE) */
+  tabSize?: number
 }): Promise<{ port: number; token: string; close: () => void }> {
   const { diffSource, port = 0, hostname = 'localhost', cwd, poll = true, send } = opts
+  const { tabSize = DEFAULT_TAB_SIZE } = opts
   // Fail fast on bad args by running the exact diff command we'll serve.
   // Result is discarded: /api/diff re-runs it per request to stay fresh.
   await getDiff(diffSource)
@@ -104,6 +108,7 @@ export async function startServer(opts: {
       patchHash: patchHash(patch),
       poll,
       send: !!send,
+      tabSize,
       viewed,
       commentSyntaxes,
       generated,

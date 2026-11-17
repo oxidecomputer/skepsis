@@ -25,7 +25,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import type { ReactElement } from 'react'
+import type { CSSProperties, ReactElement } from 'react'
 import { createPortal } from 'react-dom'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { canUseWASM, parsePatchFiles, parseDiffFromFile } from '@pierre/diffs'
@@ -3186,6 +3186,9 @@ function DiffView() {
         )}
         <div
           className="diff-body"
+          // The diff library reads its tab width from this property, which
+          // inherits into each item's shadow root.
+          style={{ '--diffs-tab-size': String(data.tabSize) } as CSSProperties}
           onPointerDownCapture={(e) => {
             if (e.button !== 0 || !(e.target instanceof Element)) return
             const diff = e.target.closest<HTMLElement>('.codeview-root')

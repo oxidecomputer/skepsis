@@ -106,6 +106,9 @@ export interface ThemeResponse {
   theme: ThemeMode
 }
 
+/** Tab width in columns, and also the default in @pierre/diffs */
+export const DEFAULT_TAB_SIZE = 2
+
 // --- VCS types ---
 
 /**
@@ -158,6 +161,8 @@ export interface DiffResponse {
   poll: boolean
   /** Whether --send is set, so the comment box can send */
   send: boolean
+  /** Tab width in columns, from --tab-size or SKEPSIS_TAB_SIZE */
+  tabSize: number
   viewed: ViewedMap
   /** Per-file comment syntax, shown in the comment form. An empty prefix
    *  means the format has no comment syntax (e.g. plain text); null means the

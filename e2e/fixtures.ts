@@ -10,9 +10,12 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test as base, type Page } from '@playwright/test'
-import { exec, startCli } from '../server/testUtil.ts'
+import { clearSkepsisEnv, exec, startCli } from '../server/testUtil.ts'
 
 export * from '@playwright/test'
+
+// Every server below inherits process.env
+clearSkepsisEnv()
 
 /** A temp git repo with one committed version of each file and uncommitted
  *  working-copy edits, served by a real skepsis process. */
