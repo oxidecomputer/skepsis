@@ -11,7 +11,6 @@ import { HTTPException } from 'hono/http-exception'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { zValidator } from '@hono/zod-validator'
 import { basename, join } from 'node:path'
-import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
 import { getDiff, patchHash } from './diff.ts'
 import { displayCommand } from './displayCommand.ts'
@@ -271,13 +270,9 @@ export async function buildApp(opts: BuildOptions): Promise<App> {
   // package root.
   const distDir = join(import.meta.dirname, '..', 'dist', 'web')
 
+  // No fallback to index.html for other paths: the page's URLs are relative,
+  // so it would load nothing from below the root.
   app.use('*', serveStatic({ root: distDir }))
-
-  // SPA fallback
-  app.get('*', async (c) => {
-    const html = await readFile(join(distDir, 'index.html'), 'utf-8')
-    return c.html(html)
-  })
 
   app.onError((err, c) => {
     const status = err instanceof HTTPException ? err.status : 500

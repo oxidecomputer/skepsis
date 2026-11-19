@@ -13,7 +13,9 @@ import { expect, test } from './fixtures.ts'
 const storedTheme = (page: Page) =>
   page.evaluate(() =>
     fetch('/api/theme', {
-      headers: { 'X-Skepsis-Token': localStorage.getItem('skepsis.token') ?? '' },
+      headers: {
+        'X-Skepsis-Token': localStorage.getItem(`skepsis.token:${location.pathname}`) ?? '',
+      },
     }).then((r) => r.json() as Promise<unknown>),
   )
 

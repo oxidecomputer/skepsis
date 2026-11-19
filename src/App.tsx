@@ -143,8 +143,10 @@ function useMediaQuery(query: string): boolean {
 // The server's per-run token, which every API request carries. It arrives in
 // the `#token=` fragment of the URL skepsis opens; kept in localStorage, which
 // is per origin (this host and port), so reloads and new tabs on the bare URL
-// still work. Dropped from the address bar so it isn't copied or bookmarked.
-const TOKEN_KEY = 'skepsis.token'
+// still work. Keyed by path too, for pages an application mounts at different
+// paths on one origin. Dropped from the address bar so it isn't copied or
+// bookmarked.
+const TOKEN_KEY = `skepsis.token:${window.location.pathname}`
 const token = ((): string | null => {
   const fromUrl = new URLSearchParams(window.location.hash.slice(1)).get('token')
   if (fromUrl) {
@@ -176,6 +178,8 @@ class ApiError extends Error {
 /** The server turned the request away for lacking the run's token. */
 const isTokenError = (error: unknown) => error instanceof ApiError && error.status === 401
 
+/** `url` is relative (`api/diff`), so it resolves against the page's own URL,
+ *  which works wherever an application mounts the page. */
 async function apiFetch<T = unknown>(
   url: string,
   opts: { method: string; body?: unknown } = { method: 'GET' },
@@ -1717,7 +1721,7 @@ function DiffView() {
   const { data, error, errorUpdatedAt, isLoading } = useQuery({
     queryKey: ['diff'],
     queryFn: async () => {
-      const diff = await apiFetch<DiffResponse>('/api/diff')
+      const diff = await apiFetch<DiffResponse>('api/diff')
       // The last poll's hash can predate the page's own writes (a comment),
       // which would raise the banner until the next poll, and a poll still in
       // flight can land after this with the old hash. This diff is at least
@@ -1740,7 +1744,7 @@ function DiffView() {
   // Refresh.
   const { data: hashData } = useQuery({
     queryKey: ['diff-hash'],
-    queryFn: () => apiFetch<DiffHashResponse>('/api/diff-hash'),
+    queryFn: () => apiFetch<DiffHashResponse>('api/diff-hash'),
     enabled: data?.poll === true,
     refetchInterval: POLL_MS,
   })
@@ -1750,7 +1754,7 @@ function DiffView() {
   // without replacing the one on screen.
   const { data: nextDiff } = useQuery({
     queryKey: ['diff-preview', hashData?.hash],
-    queryFn: () => apiFetch<DiffResponse>('/api/diff'),
+    queryFn: () => apiFetch<DiffResponse>('api/diff'),
     enabled: diffChanged,
     // Each new hash is a new key. Keep listing the last preview's files
     // until the new one loads, rather than emptying the list in between.
@@ -1800,14 +1804,14 @@ function DiffView() {
   // moment cross-instance staleness is observable.
   const { data: themeData } = useQuery({
     queryKey: ['theme'],
-    queryFn: () => apiFetch<ThemeResponse>('/api/theme'),
+    queryFn: () => apiFetch<ThemeResponse>('api/theme'),
     initialData: { theme: initialTheme },
   })
   const theme = themeData.theme
 
   const themeMutation = useMutation({
     mutationFn: (next: ThemeMode) =>
-      apiFetch('/api/theme', { method: 'POST', body: { theme: next } }),
+      apiFetch('api/theme', { method: 'POST', body: { theme: next } }),
     // Write the cache up front so the toggle doesn't fight a stale entry.
     onMutate: (next) => qc.setQueryData(['theme'], { theme: next } satisfies ThemeResponse),
   })
@@ -1846,7 +1850,7 @@ function DiffView() {
 
   const markMutation = useMutation({
     mutationFn: ({ file, hash, mark }: { file: string; hash: string; mark: boolean }) =>
-      apiFetch('/api/viewed', {
+      apiFetch('api/viewed', {
         method: mark ? 'POST' : 'DELETE',
         body: { file, hash },
       }),
@@ -1855,13 +1859,12 @@ function DiffView() {
 
   const unviewAllMutation = useMutation({
     mutationFn: (files: { file: string; hash: string }[]) =>
-      apiFetch('/api/viewed-all', { method: 'DELETE', body: { files } }),
+      apiFetch('api/viewed-all', { method: 'DELETE', body: { files } }),
     onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
   })
 
   const commentMutation = useMutation({
-    mutationFn: (body: CommentRequest) =>
-      apiFetch('/api/comment', { method: 'POST', body }),
+    mutationFn: (body: CommentRequest) => apiFetch('api/comment', { method: 'POST', body }),
     onSuccess: () => setComposing(null),
     onSettled: () => qc.invalidateQueries({ queryKey: ['diff'] }),
   })
@@ -1871,7 +1874,7 @@ function DiffView() {
   const sendMutation = useMutation({
     // `quote` is for the sent comment to show
     mutationFn: ({ quote: _, ...body }: SendRequest & { quote: string | null }) =>
-      apiFetch('/api/send', { method: 'POST', body }),
+      apiFetch('api/send', { method: 'POST', body }),
     onSuccess: (_, { file, side, lines, quote, text }) => {
       setComposing(null)
       // The page only sends from a line, so these are always set
@@ -1885,7 +1888,7 @@ function DiffView() {
 
   const resolveMutation = useMutation({
     mutationFn: ({ file, line }: { file: string; line: number }) =>
-      apiFetch('/api/comment', {
+      apiFetch('api/comment', {
         method: 'DELETE',
         body: { file, line },
       }),
@@ -1956,7 +1959,7 @@ function DiffView() {
       if (file.prevName) params.set('oldPath', file.prevName)
       return qc.fetchQuery({
         queryKey: ['file-contents', file.name, data?.fileHashes[file.name]] as const,
-        queryFn: () => apiFetch<FileContentsResponse>(`/api/file-contents?${params}`),
+        queryFn: () => apiFetch<FileContentsResponse>(`api/file-contents?${params}`),
         staleTime: Infinity,
       })
     },
@@ -1978,7 +1981,7 @@ function DiffView() {
       if (f.prevName) params.set('oldPath', f.prevName)
       return {
         queryKey: ['file-contents', f.name, hash] as const,
-        queryFn: () => apiFetch<FileContentsResponse>(`/api/file-contents?${params}`),
+        queryFn: () => apiFetch<FileContentsResponse>(`api/file-contents?${params}`),
         enabled: expandable && f.hunks.length > 0 && (expandedFiles[f.name] ?? false),
         staleTime: Infinity,
       }

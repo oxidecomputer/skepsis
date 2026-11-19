@@ -15,8 +15,8 @@
     <!-- Sets data-theme from the stored preference. Deliberately a classic
          (render-blocking) script so a forced theme applies before first
          paint. Served by the API server; reaches it via the Vite proxy in
-         dev. -->
-    <script src="/api/theme.js"></script>
+         dev. Relative, like every URL the page uses. -->
+    <script src="api/theme.js" vite-ignore></script>
   </head>
   <body>
     <div id="root"></div>

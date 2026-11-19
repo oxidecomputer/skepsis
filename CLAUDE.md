@@ -67,3 +67,7 @@ for the CLI), `src/` is the frontend (`App.tsx` is all of it, plus
   exotic revsets leave them null and expansion is disabled.
 - All styling is in `src/styles.css`: OKLCH tokens with a documented elevation
   ramp at the top. Extend the ramp rather than adding ad hoc colors.
+- The page's URLs are all relative (`base: './'` in `vite.config.ts`, `api/...`
+  in `App.tsx` and `index.html`), so it works under whatever prefix an
+  application mounts it at. Keep new ones relative: a leading `/` breaks the
+  mounted page, and only `e2e/mounted.e2e.ts` catches it.
