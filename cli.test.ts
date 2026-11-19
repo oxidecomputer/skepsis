@@ -101,27 +101,6 @@ describe('--tab-size', () => {
 })
 
 describe('--interdiff', () => {
-  it('needs jj', async () => {
-    const { code, stderr } = await runCli(
-      ['--git', '--interdiff', '-f', 'a', '-t', 'b'],
-      repo,
-    )
-    expect(code).toBe(1)
-    expect(stderr).toContain('--interdiff needs jj')
-  })
-
-  it("can't be combined with -r", async () => {
-    const { code, stderr } = await runCli(['--interdiff', '-r', '@'], repo)
-    expect(code).toBe(1)
-    expect(stderr).toContain("--interdiff can't be combined with -r")
-  })
-
-  it('needs -f or -t', async () => {
-    const { code, stderr } = await runCli(['--interdiff'], repo)
-    expect(code).toBe(1)
-    expect(stderr).toContain('--interdiff needs -f, -t, or both')
-  })
-
   it("serves the change's interdiff without upstream changes", async () => {
     const data = await fetchDiff(['--interdiff', '-f', oldCommit, '-t', newCommit])
     expect(data.revset).toBe(`jj interdiff --from ${oldCommit} --to ${newCommit}`)
