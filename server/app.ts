@@ -10,7 +10,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { zValidator } from '@hono/zod-validator'
-import { basename, join, relative } from 'node:path'
+import { basename, join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
 import { getDiff, patchHash } from './diff.ts'
@@ -69,7 +69,7 @@ export async function buildApp(opts: AppOptions, url: () => string) {
   // anything the process can.
   let diffFiles = new Set<string>()
   const runDiff = async () => {
-    const diff = await getDiff(diffSource)
+    const diff = await getDiff(diffSource, cwd)
     const renamedFrom = [...diff.patch.matchAll(/^rename from (.+)$/gm)].map((m) => m[1]!)
     diffFiles = new Set([...Object.keys(diff.fileHashes), ...renamedFrom])
     return diff
@@ -256,9 +256,7 @@ export async function buildApp(opts: AppOptions, url: () => string) {
   // (`dist/cli.js`): both are one directory below the package root.
   const distDir = join(import.meta.dirname, '..', 'dist', 'web')
 
-  // @hono/node-server resolves `root` relative to cwd. On Windows, this cannot
-  // cross drive letters; installed-package use is expected on Unix-like hosts.
-  app.use('*', serveStatic({ root: relative(cwd, distDir) }))
+  app.use('*', serveStatic({ root: distDir }))
 
   // SPA fallback
   app.get('*', async (c) => {

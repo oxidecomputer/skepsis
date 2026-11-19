@@ -16,9 +16,9 @@ import type { DiffArgs, FileContentsResponse } from '../shared/types.ts'
  * is the normal signal that a path does not exist at a given revision (an added
  * or deleted file), so it's not treated as an error.
  */
-function tryRun(cmd: string, args: string[]): Promise<string | null> {
+function tryRun(cmd: string, args: string[], cwd: string): Promise<string | null> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args)
+    const proc = spawn(cmd, args, { cwd })
     const stdout: Buffer[] = []
     proc.stdout.on('data', (d) => stdout.push(d))
     proc.stderr.on('data', () => {})
@@ -30,12 +30,12 @@ function tryRun(cmd: string, args: string[]): Promise<string | null> {
 }
 
 /** Fetch a file's contents at the diff's left revision. */
-function fetchOld(src: DiffArgs, oldPath: string): Promise<string | null> {
+function fetchOld(src: DiffArgs, oldPath: string, cwd: string): Promise<string | null> {
   if (!src.endpoints) return Promise.resolve(null)
   const { left } = src.endpoints
   return src.vcs === 'jj'
-    ? tryRun('jj', ['file', 'show', '-r', left, '--', oldPath])
-    : tryRun('git', ['show', `${left}:${oldPath}`])
+    ? tryRun('jj', ['file', 'show', '-r', left, '--', oldPath], cwd)
+    : tryRun('git', ['show', `${left}:${oldPath}`], cwd)
 }
 
 /** Fetch a file's contents at the diff's right (new) endpoint. */
@@ -51,8 +51,8 @@ async function fetchNew(src: DiffArgs, path: string, cwd: string): Promise<strin
     return readFile(abs, 'utf-8').catch(() => null)
   }
   return src.vcs === 'jj'
-    ? tryRun('jj', ['file', 'show', '-r', right.rev, '--', path])
-    : tryRun('git', ['show', `${right.rev}:${path}`])
+    ? tryRun('jj', ['file', 'show', '-r', right.rev, '--', path], cwd)
+    : tryRun('git', ['show', `${right.rev}:${path}`], cwd)
 }
 
 /**
@@ -67,7 +67,7 @@ export async function getFileContents(
   oldPath?: string,
 ): Promise<FileContentsResponse> {
   const [oldContents, newContents] = await Promise.all([
-    fetchOld(src, oldPath ?? path),
+    fetchOld(src, oldPath ?? path, cwd),
     fetchNew(src, path, cwd),
   ])
   return { oldContents, newContents }

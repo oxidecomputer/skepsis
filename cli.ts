@@ -111,10 +111,13 @@ if (send && !LOOPBACK.has(hostname === '::1' ? '[::1]' : hostname)) {
   )
 }
 
+const cwd = process.cwd()
+
 let diffSource: DiffArgs
 try {
   diffSource = buildDiffSource({
-    vcs: opts.git ? 'git' : detectVcs(),
+    cwd,
+    vcs: opts.git ? 'git' : detectVcs(cwd),
     revisions: opts.revisions,
     from: opts.from,
     to: opts.to,
@@ -125,7 +128,6 @@ try {
   fail((err as Error).message)
 }
 
-const cwd = process.cwd()
 const children: ReturnType<typeof spawn>[] = []
 
 function findCheckoutRoot(): string | null {

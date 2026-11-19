@@ -37,7 +37,6 @@ afterAll(async () => {
  */
 describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
   let dir: string
-  let origCwd: string
   let close: (() => void) | undefined
   let url: string
   let token: string
@@ -76,11 +75,6 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     // API only serves files in the diff
     if (vcs === 'git') await run('git', ['add', '--intent-to-add', '.'])
 
-    // getDiff and file-contents spawn git/jj in the process cwd (the CLI
-    // always starts the server from inside the target repo), so chdir in.
-    origCwd = process.cwd()
-    process.chdir(dir)
-
     const base = { toWorkingCopy: true, files: [] }
     const diffSource: DiffArgs =
       vcs === 'git'
@@ -104,7 +98,6 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
 
   afterAll(async () => {
     close?.()
-    if (origCwd) process.chdir(origCwd)
     if (dir) await rm(dir, { recursive: true, force: true })
   })
 

@@ -14,13 +14,13 @@
 import { execFileSync } from 'node:child_process'
 import type { DiffArgs, DiffEndpoints } from '../shared/types.ts'
 
-export function detectVcs(): 'jj' | 'git' {
+export function detectVcs(cwd: string): 'jj' | 'git' {
   try {
-    execFileSync('jj', ['root'], { stdio: 'ignore' })
+    execFileSync('jj', ['root'], { cwd, stdio: 'ignore' })
     return 'jj'
   } catch {
     try {
-      execFileSync('git', ['rev-parse', '--git-dir'], { stdio: 'ignore' })
+      execFileSync('git', ['rev-parse', '--git-dir'], { cwd, stdio: 'ignore' })
       return 'git'
     } catch {
       throw new Error('Not in a jj or git repository')
@@ -44,10 +44,11 @@ const GIT_BASE_CANDIDATES = [
 /** Find the trunk-ish base for the default diff, plus its merge base with
  *  HEAD. Probing with `git merge-base` both verifies the candidate exists and
  *  yields the fork-point sha in one step. */
-function resolveGitBase(): { base: string; mergeBase: string } {
+function resolveGitBase(cwd: string): { base: string; mergeBase: string } {
   for (const base of GIT_BASE_CANDIDATES) {
     try {
       const mergeBase = execFileSync('git', ['merge-base', base, 'HEAD'], {
+        cwd,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
       }).trim()
@@ -80,8 +81,10 @@ function parseRange(rev: string): { left: string; right: string } | null {
   return { left, right }
 }
 
-/** The diff the CLI's flags ask for. Throws on a combination it refuses */
+/** The diff the CLI's flags ask for, in the repo at `cwd`. Throws on a
+ *  combination it refuses */
 export function buildDiffSource(flags: {
+  cwd: string
   vcs: 'jj' | 'git'
   /** -r */
   revisions?: string
@@ -92,7 +95,7 @@ export function buildDiffSource(flags: {
   interdiff?: boolean
   files?: string[]
 }): DiffArgs {
-  const { vcs, revisions, from, to, interdiff, files = [] } = flags
+  const { cwd, vcs, revisions, from, to, interdiff, files = [] } = flags
   if (interdiff) {
     if (vcs !== 'jj') throw new Error('--interdiff needs jj')
     if (revisions) throw new Error("--interdiff can't be combined with -r")
@@ -165,7 +168,7 @@ export function buildDiffSource(flags: {
       // avoids --merge-base's hard error when there are multiple merge bases.
       // The sha is unreadable, so show the equivalent symbolic command in the
       // UI and log.
-      const { base, mergeBase } = resolveGitBase()
+      const { base, mergeBase } = resolveGitBase(cwd)
       args = [mergeBase]
       displayArgs = ['--merge-base', base]
       toWorkingCopy = true

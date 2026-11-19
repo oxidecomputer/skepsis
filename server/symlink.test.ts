@@ -27,7 +27,6 @@ afterAll(async () => {
 // target, and when inserting comments, which edited the target file.
 describe('symlinks', () => {
   let dir: string
-  let origCwd: string
 
   const src: DiffArgs = {
     vcs: 'git',
@@ -48,14 +47,9 @@ describe('symlinks', () => {
     // Turn the regular file into a symlink to another tracked file.
     await unlink(join(dir, 'real.txt'))
     await symlink('target.txt', join(dir, 'real.txt'))
-
-    // getFileContents shells out to git in the process cwd.
-    origCwd = process.cwd()
-    process.chdir(dir)
   })
 
   afterAll(async () => {
-    if (origCwd) process.chdir(origCwd)
     if (dir) await rm(dir, { recursive: true, force: true })
   })
 
