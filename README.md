@@ -288,6 +288,67 @@ isn't the page's own.
 
 </details>
 
+## Embedding
+
+A Node server can mount the review page under any URL prefix, serving any
+number of diffs in one process:
+
+```ts
+import { createApp } from '@oxide/skepsis'
+
+const app = await createApp({
+  cwd, // absolute path of the repository root; jj or git runs here
+  revisions: 'abc', // or from and to, as for the CLI's -r, -f, and -t
+  send: async (payload, signal) => { ... }, // payload.prompt is the message; throw to report an error
+})
+
+// In the host's handler for requests under `${prefix}/`, where prefix has no trailing slash
+const url = new URL(request.url)
+url.pathname = url.pathname.slice(prefix.length)
+const res = await app.fetch(new Request(url, request))
+
+// The URL to open in the browser
+const page = `http://localhost:${port}${prefix}/#token=${app.token}`
+```
+
+`createApp` takes the same diff options as the CLI: `revisions`, or `from` and
+`to`, plus `interdiff` and `files`. It uses the CLI's default diff when
+`revisions`, `from`, and `to` are all left out. `vcs` is `'jj'` or `'git'`,
+detected when left out. `cwd` has to be the root of the jj workspace or git
+worktree, not a directory below it. `createApp` rejects if `cwd` isn't a root,
+on a combination of options the CLI refuses, or if a first run of the diff
+command fails.
+
+The page makes every request relative to its own URL, so it works at any path
+ending in `/`. The host removes its prefix before calling `app.fetch`. On Node
+26.11 or later, a host served by `@hono/node-server` older than 2.1.8 gets
+"Illegal invocation" from `new Request(url, request)`
+([honojs/node-server#408](https://github.com/honojs/node-server/issues/408)).
+A host that bundles its own server has to leave `@oxide/skepsis` out of the
+bundle, since the library finds the page's files relative to its own module.
+
+`send` is called with the [JSON payload](#sending-comments-to-another-program)
+and an `AbortSignal`. An error it throws is shown in the page. Sends run one at
+a time, in order. After 10 s (`sendTimeoutMs`), skepsis reports a timeout,
+aborts the signal, and goes on to the next send. It can't stop the function, so
+one that ignores the signal may still deliver its comment, possibly after a
+later one. Pass the signal to `fetch` or whatever else does the delivery.
+Without `send`, the page has no Send button.
+
+The app is guarded the way the CLI's server is unless `guard` is false. Leave
+the guard on unless the host checks requests itself. With it on:
+
+- API requests need `app.token`, which the page reads from `#token=` in the
+  URL it is opened at.
+- `/api/send` also needs a loopback `Host` and an `Origin` of `http://` plus
+  that host. Send only works when the host is reached on loopback over plain
+  http.
+- Each `createApp` call makes a new token. Keep the app for as long as its
+  page may be open, since a page opened with an earlier app's token gets a 401.
+
+A host that checks requests itself passes `guard: false`. `app.token` is then
+null, and the page's URL needs no fragment.
+
 ## Development
 
 Clone the repo when working on skepsis itself:
@@ -325,6 +386,9 @@ npm run ci
   renamed flags, changed flag defaults, changed `<review>` comment or
   viewed-state formats, removed or changed fields in the `--send` JSON
   (adding a field is minor)
+
+While the package is 0.x, the [library API](#embedding) may change in a minor
+version.
 
 ## Releases
 

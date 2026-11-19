@@ -14,25 +14,31 @@ suppresses auto-opening a browser).
 
 ## npm package build
 
-The npm package is a bin-only package named `@oxide/skepsis`. `npm run build`
-removes `dist/`, builds the frontend into `dist/web`, then bundles the CLI and
-server into `dist/cli.js` with tsdown. Runtime dependencies are bundled into
-the CLI output, so the published package has no production dependencies and
-`npx @oxide/skepsis` does not run a build step.
+The npm package `@oxide/skepsis` has the CLI as its bin and a library entry
+(`lib.ts`, for applications that mount the review page in their own server)
+as its export. `npm run build` removes `dist/`, builds the frontend into
+`dist/web`, then bundles the CLI and the library with tsdown into
+`dist/cli.js`, `dist/lib.js`, and `dist/lib.d.ts`. Runtime dependencies are
+bundled into both, so the published package has no production dependencies
+and `npx @oxide/skepsis` does not run a build step. `lib.d.ts` must not
+import anything: hono and zod are devDependencies, so their types can't
+appear in the library's API.
 
 Every package goes in `devDependencies`, never `dependencies` (use `npm install
---save-dev`). tsdown bundles whatever the CLI imports, and vite bundles the
-frontend, so a `dependencies` entry would only add an install step to `npx`.
+--save-dev`). tsdown bundles whatever the CLI and library import, and vite
+bundles the frontend, so a `dependencies` entry would only add an install step
+to `npx`.
 
 `dist/` is ignored build output. Do not edit it by hand or include it in
 reviews; regenerate it with `npm run build` when checking package behavior.
 
 ## Layout
 
-`cli.ts` at the repo root is the entry point. `server/` is the Hono API,
-`src/` is the frontend (`App.tsx` is all of it, plus `styles.css`), `shared/`
-holds types and constants both sides import, `e2e/` is Playwright. Unit tests
-live beside their subject as `*.test.ts`.
+`cli.ts` at the repo root is the CLI's entry point and `lib.ts` the
+library's. `server/` is the Hono API (`app.ts` builds it, `main.ts` serves it
+for the CLI), `src/` is the frontend (`App.tsx` is all of it, plus
+`styles.css`), `shared/` holds types and constants both sides import, and
+`e2e/` is Playwright. Unit tests live beside their subject as `*.test.ts`.
 
 ## Things that aren't obvious from the code
 

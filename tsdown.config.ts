@@ -8,10 +8,29 @@
 
 import { defineConfig } from 'tsdown'
 
-export default defineConfig({
-  entry: ['cli.ts'],
+// Both outputs go directly in dist/, which the server's path to dist/web
+// depends on (see distDir in server/app.ts).
+const common = {
   outDir: 'dist',
   clean: false,
-  dts: false,
   outExtensions: () => ({ js: '.js' }),
-})
+}
+
+export default defineConfig([
+  { ...common, entry: ['cli.ts'], dts: false },
+  {
+    ...common,
+    entry: ['lib.ts'],
+    dts: true,
+    inputOptions: {
+      // The dts build reads zod's declarations, since shared/types.ts imports
+      // it, and warns about each CommonJS one. None of zod's types end up in
+      // lib.d.ts. (Marking zod external instead leaves an `import "zod"`.)
+      onLog(level, log, handler) {
+        if (log.plugin === 'rolldown-plugin-dts:fake-js' && log.message.includes('/zod/'))
+          return
+        handler(level, log)
+      },
+    },
+  },
+])

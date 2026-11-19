@@ -13,7 +13,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DiffArgs, ErrorResponse, SendRequest } from '../shared/types.ts'
 import { TOKEN_HEADER } from '../shared/types.ts'
 import { isolateVcsConfig } from './testUtil.ts'
-import { buildPayload, renderPrompt, runSend } from './send.ts'
+import { buildPayload, callSend, renderPrompt, runSend } from './send.ts'
 import type { SendPayload } from './send.ts'
 import type * as DiffModule from './diff.ts'
 
@@ -305,4 +305,54 @@ it('/api/send, guard off, calls send for a request the guard would turn away', a
   )
   expect(res.status).toBe(200)
   expect(got).toEqual([buildPayload(jj, dir, comment)])
+})
+
+describe('callSend', () => {
+  it('reports a rejection as an error', async () => {
+    expect(await callSend(() => Promise.reject(new Error('no agent')), payload())).toEqual({
+      ok: false,
+      error: 'no agent',
+    })
+  })
+
+  it('reports a synchronous throw as an error, and nothing more at the timeout', async () => {
+    const result = await callSend(
+      () => {
+        throw new Error('offline')
+      },
+      payload(),
+      15,
+    )
+    expect(result).toEqual({ ok: false, error: 'offline' })
+    // Past the timeout, where a rejection nothing handles fails the run
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  })
+
+  it('aborts the signal and fails a send that never settles', async () => {
+    let signal: AbortSignal | undefined
+    const hang = (_: SendPayload, s: AbortSignal) => {
+      signal = s
+      return new Promise<void>(() => {})
+    }
+    expect(await callSend(hang, payload(), 50)).toEqual({
+      ok: false,
+      error: 'send timed out after 0.05 s',
+    })
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it('reports the timeout, not the error from aborted work', async () => {
+    const result = await callSend(
+      (_, signal) =>
+        new Promise((_resolve, reject) =>
+          signal.addEventListener('abort', () => reject(new Error('aborted'))),
+        ),
+      payload(),
+      50,
+    )
+    expect(result).toEqual({
+      ok: false,
+      error: 'send timed out after 0.05 s',
+    })
+  })
 })

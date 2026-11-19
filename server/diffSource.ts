@@ -28,6 +28,21 @@ export function detectVcs(cwd: string): 'jj' | 'git' {
   }
 }
 
+/** The root of the jj workspace or git worktree `cwd` is in */
+export function repoRoot(cwd: string, vcs: 'jj' | 'git'): string {
+  const [cmd, args] =
+    vcs === 'jj' ? ['jj', ['root']] : ['git', ['rev-parse', '--show-toplevel']]
+  try {
+    return execFileSync(cmd, args, {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    throw new Error(`Not in a ${vcs} repository: ${cwd}`)
+  }
+}
+
 /* Base rev candidates for the default git diff. A remote's default branch
  * (origin/HEAD) is optional — "Having a default branch for a remote is not
  * required" (https://git-scm.com/docs/git-remote, set-head) — so fall back to

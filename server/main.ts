@@ -8,14 +8,14 @@
 
 import { serve } from '@hono/node-server'
 import { buildApp } from './app.ts'
-import type { AppOptions } from './app.ts'
+import type { BuildOptions } from './app.ts'
 import { displayCommand } from './displayCommand.ts'
 import { runSend } from './send.ts'
 import type { SendPayload } from './send.ts'
 
 /** The CLI's server: the app on its own port, with the guard on */
 export async function startServer(
-  opts: Omit<AppOptions, 'guard' | 'send'> & {
+  opts: Omit<BuildOptions, 'guard' | 'send'> & {
     port?: number
     hostname?: string
     /** The --send command. Unset, /api/send doesn't exist. */

@@ -45,7 +45,7 @@ import type {
   ThemeResponse,
 } from '../shared/types.ts'
 
-export interface AppOptions {
+export interface BuildOptions {
   diffSource: DiffArgs
   /** Absolute. Where jj/git run, and what comment and file paths are relative to */
   cwd: string
@@ -72,7 +72,7 @@ export interface App {
 
 /** The page and its API for one diff. Runs the diff once and rejects if it
  *  fails. */
-export async function buildApp(opts: AppOptions): Promise<App> {
+export async function buildApp(opts: BuildOptions): Promise<App> {
   const { diffSource, cwd, poll = true, send, guard = true } = opts
   const { tabSize = DEFAULT_TAB_SIZE } = opts
   // The paths in the latest diff, including the old names of renames. A
@@ -266,8 +266,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     return c.json({ ok: true } satisfies OkResponse)
   })
 
-  // Keep this path valid from source (`server/`) and from the published bundle
-  // (`dist/cli.js`): both are one directory below the package root.
+  // Keep this path valid from source (`server/`) and from the published
+  // bundles (`dist/cli.js`, `dist/lib.js`): all are one directory below the
+  // package root.
   const distDir = join(import.meta.dirname, '..', 'dist', 'web')
 
   app.use('*', serveStatic({ root: distDir }))
