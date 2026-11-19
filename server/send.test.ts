@@ -13,7 +13,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DiffArgs, ErrorResponse, SendRequest } from '../shared/types.ts'
 import { TOKEN_HEADER } from '../shared/types.ts'
 import { isolateVcsConfig } from './testUtil.ts'
-import { buildPayload, renderPrompt, runSend } from './send.ts'
+import { buildPayload, callSend, renderPrompt, runSend } from './send.ts'
 import type { SendPayload } from './send.ts'
 import type * as DiffModule from './diff.ts'
 
@@ -27,6 +27,7 @@ vi.mock('./diff.ts', async (importOriginal) => ({
 // See main.test.ts: HOME must be isolated before main.ts loads.
 const home = await isolateVcsConfig()
 const { startServer } = await import('./main.ts')
+const { buildApp } = await import('./app.ts')
 const dir = await mkdtemp(join(tmpdir(), 'skepsis-send-'))
 
 afterAll(async () => {
@@ -279,5 +280,79 @@ describe('/api/send', () => {
     await Promise.all([first, second])
     expect(await readFile(log, 'utf8')).toBe('one\ntwo\n')
     close()
+  })
+})
+
+it('/api/send, guard off, calls send for a request the guard would turn away', async () => {
+  getDiff.mockResolvedValue({ patch: '', fileHashes: {} })
+  const got: SendPayload[] = []
+  const app = await buildApp({
+    diffSource: jj,
+    cwd: dir,
+    guard: false,
+    send: async (p) => {
+      got.push(p)
+      return { ok: true, output: '' }
+    },
+  })
+  // No token, and a Host and Origin that aren't loopback
+  const res = await app.fetch(
+    new Request('https://example.ts.net/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://example.ts.net' },
+      body: JSON.stringify(comment),
+    }),
+  )
+  expect(res.status).toBe(200)
+  expect(got).toEqual([buildPayload(jj, dir, comment)])
+})
+
+describe('callSend', () => {
+  it('reports a rejection as an error', async () => {
+    expect(await callSend(() => Promise.reject(new Error('no agent')), payload())).toEqual({
+      ok: false,
+      error: 'no agent',
+    })
+  })
+
+  it('reports a synchronous throw as an error, and nothing more at the timeout', async () => {
+    const result = await callSend(
+      () => {
+        throw new Error('offline')
+      },
+      payload(),
+      15,
+    )
+    expect(result).toEqual({ ok: false, error: 'offline' })
+    // Past the timeout, where a rejection nothing handles fails the run
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  })
+
+  it('aborts the signal and fails a send that never settles', async () => {
+    let signal: AbortSignal | undefined
+    const hang = (_: SendPayload, s: AbortSignal) => {
+      signal = s
+      return new Promise<void>(() => {})
+    }
+    expect(await callSend(hang, payload(), 50)).toEqual({
+      ok: false,
+      error: 'send timed out after 0.05 s',
+    })
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it('reports the timeout, not the error from aborted work', async () => {
+    const result = await callSend(
+      (_, signal) =>
+        new Promise((_resolve, reject) =>
+          signal.addEventListener('abort', () => reject(new Error('aborted'))),
+        ),
+      payload(),
+      50,
+    )
+    expect(result).toEqual({
+      ok: false,
+      error: 'send timed out after 0.05 s',
+    })
   })
 })

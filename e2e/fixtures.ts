@@ -67,18 +67,37 @@ export type RepoFiles = {
   working: Record<string, string>
 }
 
-export const test = base.extend<{
-  repo: Repo
-  repoFiles: RepoFiles
-  /** Extra CLI arguments. */
-  cliArgs: string[]
-  /** How often the page polls for diff changes, in ms. Unset, the app's own
-   *  interval, which is too slow to wait for in a test. */
-  pollMs: number | undefined
-}>({
-  repoFiles: [{ committed: COMMITTED, working: WORKING }, { option: true }],
-  cliArgs: [[], { option: true }],
-  pollMs: [undefined, { option: true }],
+/** A temp git repo holding `files`, and a temp HOME for the process that
+ *  serves it. `env` is the environment for that process: viewed state and
+ *  settings live under HOME, so this keeps them out of the real ones, and git
+ *  config is isolated so the user's can't leak in. */
+export async function makeRepo(files: RepoFiles) {
+  const dir = await mkdtemp(join(tmpdir(), 'skepsis-e2e-repo-'))
+  const home = await mkdtemp(join(tmpdir(), 'skepsis-e2e-home-'))
+  await writeFile(
+    join(home, 'gitconfig'),
+    '[user]\nemail = test@example.com\nname = Test\n',
+  )
+  const env = {
+    ...process.env,
+    HOME: home,
+    GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_CONFIG_GLOBAL: join(home, 'gitconfig'),
+  }
+  const git = (...args: string[]) => exec('git', args, { cwd: dir, env })
+
+  // A `main` branch is what the CLI's default diff resolves as trunk.
+  await git('init', '-q', '-b', 'main')
+  await writeFiles(dir, files.committed)
+  await git('add', '.')
+  await git('commit', '-qm', 'init', '--allow-empty')
+  await writeFiles(dir, files.working)
+  await git('add', '--intent-to-add', '.')
+  return { dir, home, env }
+}
+
+/** A browser that works on macOS 27, with no skepsis server started */
+export const browserTest = base.extend({
   launchOptions: async ({ browserName, launchOptions }, provide) => {
     if (browserName !== 'firefox') {
       await provide(launchOptions)
@@ -96,42 +115,25 @@ export const test = base.extend<{
       await rm(appData, { recursive: true, force: true })
     }
   },
+})
+
+export const test = browserTest.extend<{
+  repo: Repo
+  repoFiles: RepoFiles
+  /** Extra CLI arguments. */
+  cliArgs: string[]
+  /** How often the page polls for diff changes, in ms. Unset, the app's own
+   *  interval, which is too slow to wait for in a test. */
+  pollMs: number | undefined
+}>({
+  repoFiles: [{ committed: COMMITTED, working: WORKING }, { option: true }],
+  cliArgs: [[], { option: true }],
+  pollMs: [undefined, { option: true }],
   // auto: every test gets a server even if it never touches `repo`.
   repo: [
     async ({ page, repoFiles, cliArgs, pollMs }, use) => {
-      const dir = await mkdtemp(join(tmpdir(), 'skepsis-e2e-repo-'))
-      const home = await mkdtemp(join(tmpdir(), 'skepsis-e2e-home-'))
-      await writeFile(
-        join(home, 'gitconfig'),
-        '[user]\nemail = test@example.com\nname = Test\n',
-      )
-      const git = (...args: string[]) =>
-        exec('git', args, {
-          cwd: dir,
-          env: {
-            ...process.env,
-            HOME: home,
-            GIT_CONFIG_SYSTEM: '/dev/null',
-            GIT_CONFIG_GLOBAL: join(home, 'gitconfig'),
-          },
-        })
-
-      // A `main` branch is what the CLI's default diff resolves as trunk.
-      await git('init', '-q', '-b', 'main')
-      await writeFiles(dir, repoFiles.committed)
-      await git('add', '.')
-      await git('commit', '-qm', 'init', '--allow-empty')
-      await writeFiles(dir, repoFiles.working)
-      await git('add', '--intent-to-add', '.')
-
-      const { proc, url } = await startCli(dir, ['--git', ...cliArgs], {
-        ...process.env,
-        // Viewed state and settings live under HOME; keep them out of the
-        // real ones. Git config is isolated so the user's can't leak in.
-        HOME: home,
-        GIT_CONFIG_SYSTEM: '/dev/null',
-        GIT_CONFIG_GLOBAL: join(home, 'gitconfig'),
-      })
+      const { dir, home, env } = await makeRepo(repoFiles)
+      const { proc, url } = await startCli(dir, ['--git', ...cliArgs], env)
       // The URL ends in the #token= fragment, so the query goes in before it.
       const pageUrl = new URL(url)
       if (pollMs !== undefined) pageUrl.searchParams.set('poll-ms', String(pollMs))

@@ -28,6 +28,9 @@ export default defineConfig({
     // Output is still shown for failing tests.
     silent: 'passed-only',
   },
+  // Relative asset URLs, so the built page works under any path that ends in
+  // `/`, as when an application mounts it under a prefix.
+  base: './',
   build: {
     outDir: 'dist/web',
   },

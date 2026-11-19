@@ -201,3 +201,41 @@ export function runSend(
     child.stdin.end(JSON.stringify(payload) + '\n')
   })
 }
+
+/** What a host application passes for `send`. `signal` aborts when the send
+ *  times out. The timeout only ends the wait: a function that ignores the
+ *  signal keeps running, and what it delivers late can arrive after the next
+ *  send. Pass the signal on (to `fetch`, say) where delivery can be
+ *  cancelled */
+export type SendFunction = (
+  payload: SendPayload,
+  signal: AbortSignal,
+) => void | Promise<void>
+
+/** Call a host's send function, with runSend's timeout and a throw as the
+ *  error */
+export async function callSend(
+  fn: SendFunction,
+  payload: SendPayload,
+  timeoutMs = TIMEOUT_MS,
+): Promise<SendResult> {
+  const signal = AbortSignal.timeout(timeoutMs)
+  // Settles the send at the timeout even when the function ignores the signal
+  const timedOut = new Promise<never>((_, reject) =>
+    signal.addEventListener(
+      'abort',
+      () => reject(new Error(`send timed out after ${timeoutMs / 1000} s`)),
+      { once: true },
+    ),
+  )
+  try {
+    // Called from a promise, so a synchronous throw joins the race as a
+    // rejection. Thrown here instead, it would skip the race and leave
+    // timedOut's rejection with nothing to handle it.
+    const called = Promise.resolve().then(() => fn(payload, signal))
+    await Promise.race([called, timedOut])
+    return { ok: true, output: '' }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}

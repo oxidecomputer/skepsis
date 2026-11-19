@@ -16,16 +16,18 @@ export const exec = promisify(execFile)
 
 const CLI = join(import.meta.dirname, '..', 'cli.ts')
 
-/** Spawn the CLI in `dir` with --no-open and resolve with the URL it prints
- *  on startup. `env` replaces the environment when given. */
-export function startCli(
-  dir: string,
+/** Spawn `node script ...args` in `dir`, wait until its stdout so far matches
+ *  `ready`, and resolve with the match's first capture group and a getter for
+ *  all of stdout. `env` replaces the environment when given. */
+export function startNode(
+  script: string,
   args: string[],
+  dir: string,
+  ready: RegExp,
   env?: NodeJS.ProcessEnv,
-): Promise<{ proc: ChildProcess; url: string }> {
+): Promise<{ proc: ChildProcess; match: string; output: () => string }> {
   return new Promise((resolve, reject) => {
-    // No --port means an ephemeral one, so parallel tests can't collide.
-    const proc = spawn('node', [CLI, '--no-open', ...args], {
+    const proc = spawn('node', [script, ...args], {
       cwd: dir,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -33,14 +35,27 @@ export function startCli(
     let out = ''
     proc.stdout!.on('data', (chunk: Buffer) => {
       out += chunk.toString()
-      const m = out.match(/skepsis on (http:\/\/[^\s]+)/)
-      if (m) resolve({ proc, url: m[1]! })
+      const m = out.match(ready)
+      if (m) resolve({ proc, match: m[1]!, output: () => out })
     })
     let err = ''
     proc.stderr!.on('data', (chunk: Buffer) => (err += chunk.toString()))
     proc.on('error', reject)
-    proc.on('exit', (code) => reject(new Error(`skepsis exited with ${code}: ${err}`)))
+    proc.on('exit', (code) => reject(new Error(`${script} exited with ${code}: ${err}`)))
   })
+}
+
+/** Spawn the CLI in `dir` with --no-open and resolve with the URL it prints
+ *  on startup. `env` replaces the environment when given. */
+export async function startCli(
+  dir: string,
+  args: string[],
+  env?: NodeJS.ProcessEnv,
+): Promise<{ proc: ChildProcess; url: string }> {
+  // No --port means an ephemeral one, so parallel tests can't collide.
+  const ready = /skepsis on (http:\/\/[^\s]+)/
+  const { proc, match } = await startNode(CLI, ['--no-open', ...args], dir, ready, env)
+  return { proc, url: match }
 }
 
 /** Run a command in a repo dir, rejecting on nonzero exit. */

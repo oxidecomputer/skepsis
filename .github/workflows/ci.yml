@@ -24,6 +24,10 @@ jobs:
         run: npm ci
       - name: Install jj
         uses: ./.github/actions/install-jj
+      # First, because e2e/mountHost.ts imports the package by name, which the
+      # type-check and the E2E tests resolve to dist/
+      - name: Build
+        run: npm run build
       - name: Typecheck
         run: npm run tsc
       - name: Lint
@@ -32,13 +36,11 @@ jobs:
         run: npm run fmt:check
       - name: Test
         run: npm test
-      - name: Build
-        run: npm run build
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium firefox
       # Runs against the built UI in dist/web, so this must follow Build
       - name: E2E tests
         run: npm run e2e
-      # Nothing else executes the tsdown bundle, so catch broken output here
+      # Nothing else executes the CLI bundle, so catch broken output here
       - name: Smoke-test bundle
         run: node dist/cli.js --help

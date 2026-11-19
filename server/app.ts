@@ -11,7 +11,6 @@ import { HTTPException } from 'hono/http-exception'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { zValidator } from '@hono/zod-validator'
 import { basename, join } from 'node:path'
-import { readFile } from 'node:fs/promises'
 import type { DiffArgs } from '../shared/types.ts'
 import { getDiff, patchHash } from './diff.ts'
 import { displayCommand } from './displayCommand.ts'
@@ -22,8 +21,8 @@ import { insertComment, removeComment } from './comment.ts'
 import { getCommentSyntaxes } from './commentSyntax.ts'
 import { loadTheme, saveTheme, themeBootScript } from './settings.ts'
 import { newToken, sendGate, tokenMatches } from './gate.ts'
-import { buildPayload, runSend } from './send.ts'
-import type { SendResult } from './send.ts'
+import { buildPayload } from './send.ts'
+import type { SendPayload, SendResult } from './send.ts'
 import {
   viewedRequestSchema,
   viewedDeleteSchema,
@@ -45,23 +44,35 @@ import type {
   ThemeResponse,
 } from '../shared/types.ts'
 
-export interface AppOptions {
+export interface BuildOptions {
   diffSource: DiffArgs
+  /** Absolute. Where jj/git run, and what comment and file paths are relative to */
   cwd: string
   /** Serve /api/diff-hash for the page's change polling. Default true. */
   poll?: boolean
-  /** The --send command. Unset, /api/send doesn't exist. */
-  send?: string | null
-  /** Overrides runSend's timeout, for tests */
-  sendTimeoutMs?: number
+  /** Delivers a comment the page sends. Unset, /api/send doesn't exist and
+   *  the page has no Send button. */
+  send?: ((payload: SendPayload) => Promise<SendResult>) | null
+  /** Default true: API requests need the per-run token, and /api/send needs
+   *  a loopback Host and a matching Origin. False when a host application
+   *  checks requests before they get here */
+  guard?: boolean
   /** Tab width in columns (default: DEFAULT_TAB_SIZE) */
   tabSize?: number
 }
 
-/** The page and its API. `url` is the page's address once known, for the
- *  send command's SKEPSIS_URL. */
-export async function buildApp(opts: AppOptions, url: () => string) {
-  const { diffSource, cwd, poll = true, send } = opts
+/** A fetch handler for the page and its API, rooted at `/` */
+export interface App {
+  fetch(request: Request): Response | Promise<Response>
+  /** The value API requests must send in the token header, or null when
+   *  `guard` is false */
+  token: string | null
+}
+
+/** The page and its API for one diff. Runs the diff once and rejects if it
+ *  fails. */
+export async function buildApp(opts: BuildOptions): Promise<App> {
+  const { diffSource, cwd, poll = true, send, guard = true } = opts
   const { tabSize = DEFAULT_TAB_SIZE } = opts
   // The paths in the latest diff, including the old names of renames. A
   // request's path is joined onto the repo directory, so the routes that read
@@ -88,13 +99,17 @@ export async function buildApp(opts: AppOptions, url: () => string) {
   await runDiff()
 
   const app = new Hono()
-  const token = newToken()
+  const token = guard ? newToken() : null
 
   // Every API call must carry the token (see tokenMatches). The theme boot
   // script is the exception: a <script src> can't send a header, and all it
   // gives away is the theme.
   app.use('/api/*', async (c, next) => {
-    if (c.req.path === '/api/theme.js' || tokenMatches(c.req.header(TOKEN_HEADER), token))
+    if (
+      token === null ||
+      c.req.path === '/api/theme.js' ||
+      tokenMatches(c.req.header(TOKEN_HEADER), token)
+    )
       return next()
     return c.json(
       {
@@ -192,9 +207,9 @@ export async function buildApp(opts: AppOptions, url: () => string) {
     return c.json({ ok: true } satisfies OkResponse)
   })
 
-  // Runs the --send command, so only the page may call it (see gate.ts).
-  // Sends run one at a time in arrival order, so two quick ones can't reach
-  // the far end swapped.
+  // Calls `send`, which for the CLI runs a command, so only the page may call
+  // it (see gate.ts). Sends run one at a time in arrival order, so two quick
+  // ones can't reach the far end swapped.
   let sendQueue: Promise<SendResult> = Promise.resolve({ ok: true, output: '' })
   if (send) {
     app.post(
@@ -204,7 +219,7 @@ export async function buildApp(opts: AppOptions, url: () => string) {
           host: c.req.header('host'),
           origin: c.req.header('origin'),
         }
-        if (!sendGate(headers))
+        if (guard && !sendGate(headers))
           return c.json({ error: 'forbidden' } satisfies ErrorResponse, 403)
         await next()
       },
@@ -214,9 +229,7 @@ export async function buildApp(opts: AppOptions, url: () => string) {
         // three describe the version on screen even if the file has changed
         // since. Nothing here awaits, so sends join the queue as they arrive.
         const payload = buildPayload(diffSource, cwd, c.req.valid('json'))
-        const env = { SKEPSIS_URL: url(), SKEPSIS_ROOT: cwd }
-        const run = () =>
-          runSend(send, payload, { cwd, env, timeoutMs: opts.sendTimeoutMs })
+        const run = () => send(payload)
         const result = sendQueue.then(run, run)
         sendQueue = result
         const r = await result
@@ -252,17 +265,14 @@ export async function buildApp(opts: AppOptions, url: () => string) {
     return c.json({ ok: true } satisfies OkResponse)
   })
 
-  // Keep this path valid from source (`server/`) and from the published bundle
-  // (`dist/cli.js`): both are one directory below the package root.
+  // Keep this path valid from source (`server/`) and from the published
+  // bundles (`dist/cli.js`, `dist/lib.js`): all are one directory below the
+  // package root.
   const distDir = join(import.meta.dirname, '..', 'dist', 'web')
 
+  // No fallback to index.html for other paths: the page's URLs are relative,
+  // so it would load nothing from below the root.
   app.use('*', serveStatic({ root: distDir }))
-
-  // SPA fallback
-  app.get('*', async (c) => {
-    const html = await readFile(join(distDir, 'index.html'), 'utf-8')
-    return c.html(html)
-  })
 
   app.onError((err, c) => {
     const status = err instanceof HTTPException ? err.status : 500

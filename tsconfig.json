@@ -25,5 +25,8 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  // Build output: with allowJs it would otherwise be type-checked, and the
+  // declaration build for lib.ts fails on it
+  "exclude": ["dist", "node_modules"]
 }
