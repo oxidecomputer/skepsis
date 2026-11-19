@@ -7,6 +7,7 @@
  */
 
 import { Hono } from 'hono'
+import { HTTPException } from 'hono/http-exception'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { zValidator } from '@hono/zod-validator'
@@ -61,9 +62,29 @@ export async function startServer(opts: {
 }): Promise<{ port: number; token: string; close: () => void }> {
   const { diffSource, port = 0, hostname = 'localhost', cwd, poll = true, send } = opts
   const { tabSize = DEFAULT_TAB_SIZE } = opts
+  // The paths in the latest diff, including the old names of renames. A
+  // request's path is joined onto the repo directory, so the routes that read
+  // or write files only take one of these: `../` could otherwise reach
+  // anything the process can.
+  let diffFiles = new Set<string>()
+  const runDiff = async () => {
+    const diff = await getDiff(diffSource)
+    const renamedFrom = [...diff.patch.matchAll(/^rename from (.+)$/gm)].map((m) => m[1]!)
+    diffFiles = new Set([...Object.keys(diff.fileHashes), ...renamedFrom])
+    return diff
+  }
+  /** Throws unless `file` is in the diff, running it again first if the last
+   *  one didn't have it */
+  const requireInDiff = async (file: string) => {
+    if (diffFiles.has(file)) return
+    await runDiff()
+    if (!diffFiles.has(file))
+      throw new HTTPException(400, { message: `Not a file in this diff: ${file}` })
+  }
+
   // Fail fast on bad args by running the exact diff command we'll serve.
-  // Result is discarded: /api/diff re-runs it per request to stay fresh.
-  await getDiff(diffSource)
+  // /api/diff re-runs it per request to stay fresh.
+  await runDiff()
 
   const app = new Hono()
   const token = newToken()
@@ -89,7 +110,7 @@ export async function startServer(opts: {
   const commentsEnabled = diffSource.toWorkingCopy && !diffSource.interdiff
 
   app.get('/api/diff', async (c) => {
-    const { patch, fileHashes } = await getDiff(diffSource)
+    const { patch, fileHashes } = await runDiff()
     const files = Object.keys(fileHashes)
     const [viewed, generated, commentSyntaxes] = await Promise.all([
       loadViewed(cwd, fileHashes),
@@ -126,7 +147,7 @@ export async function startServer(opts: {
     if (!poll)
       return c.json({ error: 'polling is off (--no-poll)' } satisfies ErrorResponse, 404)
     if (!hashInFlight) {
-      const run = getDiff(diffSource)
+      const run = runDiff()
         .then(({ patch }) => patchHash(patch))
         .finally(() => {
           if (hashInFlight === run) hashInFlight = null
@@ -138,6 +159,8 @@ export async function startServer(opts: {
 
   app.get('/api/file-contents', zValidator('query', fileContentsQuerySchema), async (c) => {
     const { path, oldPath } = c.req.valid('query')
+    await requireInDiff(path)
+    if (oldPath) await requireInDiff(oldPath)
     const contents = await getFileContents(diffSource, cwd, path, oldPath)
     return c.json(contents satisfies FileContentsResponse)
   })
@@ -162,6 +185,7 @@ export async function startServer(opts: {
 
   app.post('/api/comment', zValidator('json', commentRequestSchema), async (c) => {
     const { file, afterLine, lineText, text, lineCount, quote } = c.req.valid('json')
+    await requireInDiff(file)
     await insertComment(cwd, file, afterLine, lineText, text, lineCount, quote)
     hashInFlight = null
     return c.json({ ok: true } satisfies OkResponse)
@@ -205,6 +229,7 @@ export async function startServer(opts: {
 
   app.delete('/api/comment', zValidator('json', commentDeleteSchema), async (c) => {
     const { file, line } = c.req.valid('json')
+    await requireInDiff(file)
     await removeComment(cwd, file, line)
     hashInFlight = null
     return c.json({ ok: true } satisfies OkResponse)
@@ -243,7 +268,8 @@ export async function startServer(opts: {
   })
 
   app.onError((err, c) => {
-    return c.json({ error: err.message } satisfies ErrorResponse, 500)
+    const status = err instanceof HTTPException ? err.status : 500
+    return c.json({ error: err.message } satisfies ErrorResponse, status)
   })
 
   return new Promise((resolve, reject) => {
