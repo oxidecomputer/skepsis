@@ -11,16 +11,18 @@ import { buildApp } from './app.ts'
 import type { AppOptions } from './app.ts'
 import { displayCommand } from './displayCommand.ts'
 
+/** The CLI's server: the app on its own port, with the guard on */
 export async function startServer(
-  opts: AppOptions & { port?: number; hostname?: string },
+  opts: Omit<AppOptions, 'guard'> & { port?: number; hostname?: string },
 ): Promise<{ port: number; token: string; close: () => void }> {
   const { port = 0, hostname = 'localhost' } = opts
   // Known once listening; for SKEPSIS_URL.
   let serverUrl = ''
-  const { fetch, token } = await buildApp(opts, () => serverUrl)
+  const app = await buildApp(opts, () => serverUrl)
+  const token = app.token!
 
   return new Promise((resolve, reject) => {
-    const server = serve({ fetch, port, hostname }, (info) => {
+    const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
       const assignedPort = typeof info === 'string' ? port : info.port
       serverUrl = `http://${hostname}:${assignedPort}`
       console.info(

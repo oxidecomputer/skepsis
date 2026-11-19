@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import type { DiffArgs, DiffResponse, FileContentsResponse } from '../shared/types.ts'
-import { TOKEN_HEADER } from '../shared/types.ts'
+import type { App } from './app.ts'
 import { isolateVcsConfig, run } from './testUtil.ts'
 
 // See main.test.ts: HOME must be isolated before app.ts loads.
@@ -48,19 +48,20 @@ const diffSource: DiffArgs = {
   endpoints: { left: 'HEAD', right: 'workingCopy' },
 }
 
-type App = Awaited<ReturnType<typeof buildApp>>
-
+/** A request as a host passes it on, with no token and its prefix removed */
 async function json(app: App, path: string): Promise<unknown> {
-  const headers = { [TOKEN_HEADER]: app.token }
-  return (await app.fetch(new Request(`http://localhost${path}`, { headers }))).json()
+  return (await app.fetch(new Request(`https://example.ts.net${path}`))).json()
 }
 
-it('serves several diffs in one process, each from its own directory', async () => {
+it('serves several diffs in one process, each from its own directory, guard off', async () => {
   const dirs = [await repo('a', 'a1\n', 'a2\n'), await repo('b', 'b1\n', 'b2\n')]
-  const apps = await Promise.all(dirs.map((cwd) => buildApp({ cwd, diffSource }, () => '')))
+  const apps = await Promise.all(
+    dirs.map((cwd) => buildApp({ cwd, diffSource, guard: false }, () => '')),
+  )
   const diffs = (await Promise.all(
     apps.map((app) => json(app, '/api/diff')),
   )) as DiffResponse[]
+  expect(apps.map((app) => app.token)).toEqual([null, null])
   expect(diffs.map((d) => d.repo)).toEqual(['a', 'b'])
   expect(diffs[0]!.patch).toContain('-a1\n+a2')
   expect(diffs[1]!.patch).toContain('-b1\n+b2')

@@ -47,21 +47,35 @@ import type {
 
 export interface AppOptions {
   diffSource: DiffArgs
+  /** Absolute. Where jj/git run, and what comment and file paths are relative to */
   cwd: string
   /** Serve /api/diff-hash for the page's change polling. Default true. */
   poll?: boolean
   /** The --send command. Unset, /api/send doesn't exist. */
   send?: string | null
-  /** Overrides runSend's timeout, for tests */
+  /** Default true: API requests need the per-run token, and /api/send needs
+   *  a loopback Host and a matching Origin. False when a host application
+   *  checks requests before they get here */
+  guard?: boolean
+  /** How long a send may take. Default 10 s */
   sendTimeoutMs?: number
   /** Tab width in columns (default: DEFAULT_TAB_SIZE) */
   tabSize?: number
 }
 
-/** The page and its API. `url` is the page's address once known, for the
- *  send command's SKEPSIS_URL. */
-export async function buildApp(opts: AppOptions, url: () => string) {
-  const { diffSource, cwd, poll = true, send } = opts
+/** A fetch handler for the page and its API, rooted at `/` */
+export interface App {
+  fetch(request: Request): Response | Promise<Response>
+  /** The value API requests must send in the token header, or null when
+   *  `guard` is false */
+  token: string | null
+}
+
+/** The page and its API for one diff. Runs the diff once and rejects if it
+ *  fails. `url` is the page's address once known, for the send command's
+ *  SKEPSIS_URL. */
+export async function buildApp(opts: AppOptions, url: () => string): Promise<App> {
+  const { diffSource, cwd, poll = true, send, guard = true, sendTimeoutMs } = opts
   const { tabSize = DEFAULT_TAB_SIZE } = opts
   // The paths in the latest diff, including the old names of renames. A
   // request's path is joined onto the repo directory, so the routes that read
@@ -88,13 +102,17 @@ export async function buildApp(opts: AppOptions, url: () => string) {
   await runDiff()
 
   const app = new Hono()
-  const token = newToken()
+  const token = guard ? newToken() : null
 
   // Every API call must carry the token (see tokenMatches). The theme boot
   // script is the exception: a <script src> can't send a header, and all it
   // gives away is the theme.
   app.use('/api/*', async (c, next) => {
-    if (c.req.path === '/api/theme.js' || tokenMatches(c.req.header(TOKEN_HEADER), token))
+    if (
+      token === null ||
+      c.req.path === '/api/theme.js' ||
+      tokenMatches(c.req.header(TOKEN_HEADER), token)
+    )
       return next()
     return c.json(
       {
@@ -204,7 +222,7 @@ export async function buildApp(opts: AppOptions, url: () => string) {
           host: c.req.header('host'),
           origin: c.req.header('origin'),
         }
-        if (!sendGate(headers))
+        if (guard && !sendGate(headers))
           return c.json({ error: 'forbidden' } satisfies ErrorResponse, 403)
         await next()
       },
@@ -215,8 +233,7 @@ export async function buildApp(opts: AppOptions, url: () => string) {
         // since. Nothing here awaits, so sends join the queue as they arrive.
         const payload = buildPayload(diffSource, cwd, c.req.valid('json'))
         const env = { SKEPSIS_URL: url(), SKEPSIS_ROOT: cwd }
-        const run = () =>
-          runSend(send, payload, { cwd, env, timeoutMs: opts.sendTimeoutMs })
+        const run = () => runSend(send, payload, { cwd, env, timeoutMs: sendTimeoutMs })
         const result = sendQueue.then(run, run)
         sendQueue = result
         const r = await result
