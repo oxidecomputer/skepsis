@@ -13,9 +13,10 @@ import type { DiffArgs, FileHashes } from '../shared/types.ts'
 function run(
   cmd: string,
   args: string[],
+  cwd: string,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args)
+    const proc = spawn(cmd, args, { cwd })
     const stdout: Buffer[] = []
     const stderr: Buffer[] = []
     proc.stdout.on('data', (d) => stdout.push(d))
@@ -125,11 +126,13 @@ export function normalizeJjRenames(patch: string): string {
   return out.join('\n')
 }
 
+/** Run the diff in `cwd`, the repo it's of */
 export async function getDiff(
   src: DiffArgs,
+  cwd: string,
 ): Promise<{ patch: string; fileHashes: FileHashes }> {
   const { cmd, args } = diffCommand(src)
-  const { stdout, stderr, code } = await run(cmd, args)
+  const { stdout, stderr, code } = await run(cmd, args, cwd)
   if (code !== 0) {
     throw new Error(`${cmd} ${subcommand(src)} failed (exit ${code}): ${stderr}`)
   }
