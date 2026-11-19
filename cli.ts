@@ -98,7 +98,6 @@ function fail(message: string): never {
   process.exit(1)
 }
 
-const files = program.processedArgs[0] ?? []
 const hostname = opts.host
 // An empty --open-cmd means the system opener. An empty --send turns sending
 // off.
@@ -123,15 +122,6 @@ function detectVcs(): 'jj' | 'git' {
       throw new Error('Not in a jj or git repository')
     }
   }
-}
-
-const vcs = opts.git ? 'git' : detectVcs()
-
-if (opts.interdiff) {
-  if (vcs !== 'jj') fail('--interdiff needs jj')
-  if (opts.revisions) fail("--interdiff can't be combined with -r")
-  // Without this, jj's own usage error shows up as "jj interdiff failed"
-  if (!opts.from && !opts.to) fail('--interdiff needs -f, -t, or both')
 }
 
 /* Base rev candidates for the default git diff. A remote's default branch
@@ -165,11 +155,11 @@ function resolveGitBase(): { base: string; mergeBase: string } {
       // found" that suggests -r/-f flags that would also fail.
       const { code, stderr } = error as { code?: string; stderr?: string }
       if (code === 'ENOENT' || stderr?.includes('not a git repository')) {
-        fail(stderr?.trim() || (error as Error).message)
+        throw new Error(stderr?.trim() || (error as Error).message, { cause: error })
       }
     }
   }
-  fail(
+  throw new Error(
     `No base revision found for the default diff (tried ${GIT_BASE_CANDIDATES.join(', ')}).\n` +
       'Specify a range explicitly with -r or -f/-t.',
   )
@@ -186,32 +176,49 @@ function parseRange(rev: string): { left: string; right: string } | null {
   return { left, right }
 }
 
-function buildDiffSource(): DiffArgs {
+/** The diff the CLI's flags ask for. Throws on a combination it refuses */
+function buildDiffSource(flags: {
+  vcs: 'jj' | 'git'
+  /** -r */
+  revisions?: string
+  /** -f */
+  from?: string
+  /** -t */
+  to?: string
+  interdiff?: boolean
+  files?: string[]
+}): DiffArgs {
+  const { vcs, revisions, from, to, interdiff, files = [] } = flags
+  if (interdiff) {
+    if (vcs !== 'jj') throw new Error('--interdiff needs jj')
+    if (revisions) throw new Error("--interdiff can't be combined with -r")
+    // Without this, jj's own usage error shows up as "jj interdiff failed"
+    if (!from && !to) throw new Error('--interdiff needs -f, -t, or both')
+  }
+
   if (vcs === 'jj') {
     const args: string[] = []
     let toWorkingCopy: boolean
     let endpoints: DiffEndpoints
-    if (opts.from || opts.to || !opts.revisions) {
+    if (from || to || !revisions) {
       // With no range flags at all, --from defaults to a GitHub-PR-style diff
       // from the fork point of trunk and @. Same output as `-r 'trunk()..@'`
       // for a linear branch, but still works after trunk has been merged into
       // the branch, where jj rejects `trunk()..@` ("Cannot diff revsets with
       // gaps in"). fork_point() requires jj >= 0.24
       // (https://github.com/jj-vcs/jj/releases/tag/v0.24.0).
-      const from = opts.from ?? (opts.to ? undefined : 'fork_point(trunk() | @)')
-      if (from) args.push('--from', from)
-      if (opts.to) args.push('--to', opts.to)
+      const left = from ?? (to ? undefined : 'fork_point(trunk() | @)')
+      if (left) args.push('--from', left)
+      if (to) args.push('--to', to)
       // jj defaults both --from and --to to @
-      toWorkingCopy = !opts.to || opts.to === '@'
+      toWorkingCopy = !to || to === '@'
       // An interdiff's left side is --from rebased onto --to's parents, which
       // isn't a revision `jj file show` can read, so there's no hunk
       // expansion. Rebuilding the left file by applying the file's patch in
       // reverse to the right one would make it work.
-      endpoints = opts.interdiff
-        ? null
-        : { left: from ?? '@', right: { rev: opts.to ?? '@' } }
+      endpoints = interdiff ? null : { left: left ?? '@', right: { rev: to ?? '@' } }
     } else {
-      const rev = opts.revisions
+      const rev = revisions
       args.push('-r', rev)
       toWorkingCopy = rev === '@' || rev.endsWith('..@')
       const range = parseRange(rev)
@@ -224,25 +231,25 @@ function buildDiffSource(): DiffArgs {
         endpoints = null
       }
     }
-    return { vcs: 'jj', interdiff: opts.interdiff, args, toWorkingCopy, files, endpoints }
+    return { vcs: 'jj', interdiff, args, toWorkingCopy, files, endpoints }
   } else {
     let args: string[]
     let toWorkingCopy: boolean
     let endpoints: DiffEndpoints
     let displayArgs: string[] | undefined
-    if (opts.from || opts.to) {
-      if (opts.to) {
+    if (from || to) {
+      if (to) {
         // Explicit --to: commit-to-commit diff, no working copy
-        args = [opts.from ?? 'HEAD', opts.to]
+        args = [from ?? 'HEAD', to]
         toWorkingCopy = false
-        endpoints = { left: opts.from ?? 'HEAD', right: { rev: opts.to } }
+        endpoints = { left: from ?? 'HEAD', right: { rev: to } }
       } else {
         // --from only: git diff <from> includes working tree
-        args = [opts.from!]
+        args = [from!]
         toWorkingCopy = true
-        endpoints = { left: opts.from!, right: 'workingCopy' }
+        endpoints = { left: from!, right: 'workingCopy' }
       }
-    } else if (!opts.revisions) {
+    } else if (!revisions) {
       // Default: the git translation of the jj default — diff the working
       // tree against the branch's fork point from trunk (the merge base of
       // the resolved base and HEAD). Using the merge base keeps upstream
@@ -260,7 +267,7 @@ function buildDiffSource(): DiffArgs {
       toWorkingCopy = true
       endpoints = { left: mergeBase, right: 'workingCopy' }
     } else {
-      const rev = opts.revisions
+      const rev = revisions
       // No .. means single ref, which diffs against working tree
       toWorkingCopy = !rev.includes('..')
       args = [rev]
@@ -277,7 +284,19 @@ function buildDiffSource(): DiffArgs {
   }
 }
 
-const diffSource = buildDiffSource()
+let diffSource: DiffArgs
+try {
+  diffSource = buildDiffSource({
+    vcs: opts.git ? 'git' : detectVcs(),
+    revisions: opts.revisions,
+    from: opts.from,
+    to: opts.to,
+    interdiff: opts.interdiff,
+    files: program.processedArgs[0],
+  })
+} catch (err) {
+  fail((err as Error).message)
+}
 
 const cwd = process.cwd()
 const children: ReturnType<typeof spawn>[] = []
