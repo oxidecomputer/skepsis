@@ -27,6 +27,7 @@ vi.mock('./diff.ts', async (importOriginal) => ({
 // See main.test.ts: HOME must be isolated before main.ts loads.
 const home = await isolateVcsConfig()
 const { startServer } = await import('./main.ts')
+const { buildApp } = await import('./app.ts')
 const dir = await mkdtemp(join(tmpdir(), 'skepsis-send-'))
 
 afterAll(async () => {
@@ -280,4 +281,28 @@ describe('/api/send', () => {
     expect(await readFile(log, 'utf8')).toBe('one\ntwo\n')
     close()
   })
+})
+
+it('/api/send, guard off, calls send for a request the guard would turn away', async () => {
+  getDiff.mockResolvedValue({ patch: '', fileHashes: {} })
+  const got: SendPayload[] = []
+  const app = await buildApp({
+    diffSource: jj,
+    cwd: dir,
+    guard: false,
+    send: async (p) => {
+      got.push(p)
+      return { ok: true, output: '' }
+    },
+  })
+  // No token, and a Host and Origin that aren't loopback
+  const res = await app.fetch(
+    new Request('https://example.ts.net/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://example.ts.net' },
+      body: JSON.stringify(comment),
+    }),
+  )
+  expect(res.status).toBe(200)
+  expect(got).toEqual([buildPayload(jj, dir, comment)])
 })

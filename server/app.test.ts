@@ -56,7 +56,7 @@ async function json(app: App, path: string): Promise<unknown> {
 it('serves several diffs in one process, each from its own directory, guard off', async () => {
   const dirs = [await repo('a', 'a1\n', 'a2\n'), await repo('b', 'b1\n', 'b2\n')]
   const apps = await Promise.all(
-    dirs.map((cwd) => buildApp({ cwd, diffSource, guard: false }, () => '')),
+    dirs.map((cwd) => buildApp({ cwd, diffSource, guard: false })),
   )
   const diffs = (await Promise.all(
     apps.map((app) => json(app, '/api/diff')),

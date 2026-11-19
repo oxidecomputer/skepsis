@@ -22,8 +22,8 @@ import { insertComment, removeComment } from './comment.ts'
 import { getCommentSyntaxes } from './commentSyntax.ts'
 import { loadTheme, saveTheme, themeBootScript } from './settings.ts'
 import { newToken, sendGate, tokenMatches } from './gate.ts'
-import { buildPayload, runSend } from './send.ts'
-import type { SendResult } from './send.ts'
+import { buildPayload } from './send.ts'
+import type { SendPayload, SendResult } from './send.ts'
 import {
   viewedRequestSchema,
   viewedDeleteSchema,
@@ -51,14 +51,13 @@ export interface AppOptions {
   cwd: string
   /** Serve /api/diff-hash for the page's change polling. Default true. */
   poll?: boolean
-  /** The --send command. Unset, /api/send doesn't exist. */
-  send?: string | null
+  /** Delivers a comment the page sends. Unset, /api/send doesn't exist and
+   *  the page has no Send button. */
+  send?: ((payload: SendPayload) => Promise<SendResult>) | null
   /** Default true: API requests need the per-run token, and /api/send needs
    *  a loopback Host and a matching Origin. False when a host application
    *  checks requests before they get here */
   guard?: boolean
-  /** How long a send may take. Default 10 s */
-  sendTimeoutMs?: number
   /** Tab width in columns (default: DEFAULT_TAB_SIZE) */
   tabSize?: number
 }
@@ -72,10 +71,9 @@ export interface App {
 }
 
 /** The page and its API for one diff. Runs the diff once and rejects if it
- *  fails. `url` is the page's address once known, for the send command's
- *  SKEPSIS_URL. */
-export async function buildApp(opts: AppOptions, url: () => string): Promise<App> {
-  const { diffSource, cwd, poll = true, send, guard = true, sendTimeoutMs } = opts
+ *  fails. */
+export async function buildApp(opts: AppOptions): Promise<App> {
+  const { diffSource, cwd, poll = true, send, guard = true } = opts
   const { tabSize = DEFAULT_TAB_SIZE } = opts
   // The paths in the latest diff, including the old names of renames. A
   // request's path is joined onto the repo directory, so the routes that read
@@ -210,9 +208,9 @@ export async function buildApp(opts: AppOptions, url: () => string): Promise<App
     return c.json({ ok: true } satisfies OkResponse)
   })
 
-  // Runs the --send command, so only the page may call it (see gate.ts).
-  // Sends run one at a time in arrival order, so two quick ones can't reach
-  // the far end swapped.
+  // Calls `send`, which for the CLI runs a command, so only the page may call
+  // it (see gate.ts). Sends run one at a time in arrival order, so two quick
+  // ones can't reach the far end swapped.
   let sendQueue: Promise<SendResult> = Promise.resolve({ ok: true, output: '' })
   if (send) {
     app.post(
@@ -232,8 +230,7 @@ export async function buildApp(opts: AppOptions, url: () => string): Promise<App
         // three describe the version on screen even if the file has changed
         // since. Nothing here awaits, so sends join the queue as they arrive.
         const payload = buildPayload(diffSource, cwd, c.req.valid('json'))
-        const env = { SKEPSIS_URL: url(), SKEPSIS_ROOT: cwd }
-        const run = () => runSend(send, payload, { cwd, env, timeoutMs: sendTimeoutMs })
+        const run = () => send(payload)
         const result = sendQueue.then(run, run)
         sendQueue = result
         const r = await result
