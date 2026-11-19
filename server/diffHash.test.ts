@@ -39,7 +39,8 @@ const diffSource: DiffArgs = {
   endpoints: null,
 }
 
-const result = (patch: string) => ({ patch, fileHashes: {} })
+// a.ts is the file the comment test writes to, which has to be in the diff
+const result = (patch: string) => ({ patch, fileHashes: { 'a.ts': 'abc123' } })
 
 async function serve(poll: boolean, cwd = process.cwd()) {
   getDiff.mockResolvedValueOnce(result('startup'))

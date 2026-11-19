@@ -8,12 +8,13 @@
 
 import { appendFile, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type {
   DiffArgs,
   DiffHashResponse,
   DiffResponse,
+  ErrorResponse,
   FileContentsResponse,
 } from '../shared/types.ts'
 import { TOKEN_HEADER } from '../shared/types.ts'
@@ -56,6 +57,7 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     await writeFile(join(dir, 'r.txt'), 'rename me\n')
     await writeFile(join(dir, 'c.ts'), 'const one = 1\n')
     await writeFile(join(dir, '-dash.txt'), 'old\n')
+    await writeFile(join(dir, 'same.txt'), 'unchanged\n')
     if (vcs === 'git') {
       await run('git', ['add', '.'])
       await run('git', ['commit', '-qm', 'init'])
@@ -70,6 +72,9 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
     await appendFile(join(dir, 'r2.txt'), 'plus\n')
     await appendFile(join(dir, 'c.ts'), 'const two = 2\n')
     await writeFile(join(dir, '-dash.txt'), 'new\n')
+    // git leaves untracked files out of a diff until they're added, and the
+    // API only serves files in the diff
+    if (vcs === 'git') await run('git', ['add', '--intent-to-add', '.'])
 
     // getDiff and file-contents spawn git/jj in the process cwd (the CLI
     // always starts the server from inside the target repo), so chdir in.
@@ -116,6 +121,31 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
       body: JSON.stringify(body),
     })
   }
+
+  it("refuses a path the diff doesn't list", async () => {
+    const outside = `${dir}-outside.txt`
+    await writeFile(outside, 'secret\n')
+    const escape = `../${basename(outside)}`
+    // Outside the repo, and in it but unchanged
+    const refused = await Promise.all(
+      [escape, 'same.txt'].map(async (path) => {
+        const query = new URLSearchParams({ path })
+        const res = await authed(`${url}/api/file-contents?${query}`)
+        return { status: res.status, body: (await res.json()) as ErrorResponse }
+      }),
+    )
+    expect(refused).toEqual([
+      { status: 400, body: { error: `Not a file in this diff: ${escape}` } },
+      { status: 400, body: { error: 'Not a file in this diff: same.txt' } },
+    ])
+    const comment = { file: escape, afterLine: 1, lineText: 'secret', text: 'hi' }
+    expect((await api('POST', '/api/comment', comment)).status).toBe(400)
+    expect((await api('DELETE', '/api/comment', { file: escape, line: 1 })).status).toBe(
+      400,
+    )
+    expect(await readFile(outside, 'utf8')).toBe('secret\n')
+    await rm(outside)
+  })
 
   it('rejects API requests without the token, except the theme script', async () => {
     expect((await fetch(`${url}/api/diff`)).status).toBe(401)
