@@ -24,9 +24,22 @@ import { exec, isolateVcsConfig, requireJj } from './testUtil.ts'
 // so isolation must run before main.ts is imported, hence the dynamic import.
 const home = await isolateVcsConfig()
 const { startServer } = await import('./main.ts')
+const { tildePath } = await import('./app.ts')
 
 afterAll(async () => {
   await rm(home, { recursive: true, force: true })
+})
+
+describe('tildePath', () => {
+  it('writes paths in the home directory with ~', () => {
+    expect(tildePath('/home/me/code/repo', '/home/me')).toBe('~/code/repo')
+    expect(tildePath('/home/me', '/home/me')).toBe('~')
+  })
+
+  it('leaves other paths alone', () => {
+    expect(tildePath('/home/meow/repo', '/home/me')).toBe('/home/meow/repo')
+    expect(tildePath('/srv/repo', '/home/me')).toBe('/srv/repo')
+  })
 })
 
 /**
@@ -153,6 +166,7 @@ describe.each(['git', 'jj'] as const)('startServer (%s integration)', (vcs) => {
   it('serves the diff with content-addressed file hashes', async () => {
     const diff = await getDiffResponse()
     expect(diff.vcs).toBe(vcs)
+    expect(diff.cwd).toBe(dir)
     expect(diff.commentsEnabled).toBe(true)
     expect(diff.expandable).toBe(true)
     expect(diff.patch).toContain('diff --git a/f.txt b/f.txt')

@@ -146,6 +146,8 @@ export interface DiffResponse {
   revset: string
   /** The name of the directory skepsis runs in, for the page title */
   repo: string
+  /** The full path of that directory, with `~` for the home directory */
+  cwd: string
   vcs: 'jj' | 'git'
   /** Whether this is a `jj interdiff`, which has no inline comments or hunk
    *  expansion */
