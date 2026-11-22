@@ -215,9 +215,14 @@ body,
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
+  /* Trap the library's search panel (z-index: 100) inside the diff pane so it
+     never paints over the phone file-tree drawer or header toasts. */
+  isolation: isolate;
   padding: 0 12px 16px;
   --diffs-font-size: 12px;
   --diffs-font-family: var(--font-mono);
+  /* Clear the 40px sticky file header (default 16px floats over it). */
+  --diffs-search-panel-inset-top: 48px;
   --diffs-bg-separator-override: var(--bg-panel);
   --diffs-modified-color-override: var(--blue);
   /* Selected-line highlight. The library builds it by color-mix()ing this
