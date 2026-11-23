@@ -212,6 +212,7 @@ const isMac = /mac/i.test(
     navigator.platform,
 )
 const SEARCH_KEYS = isMac ? '⌘K' : 'Ctrl+K'
+const FIND_KEYS = isMac ? '⌘F' : 'Ctrl+F'
 const SUBMIT_KEYS = isMac ? '⌘⏎' : 'Ctrl+Enter'
 const INLINE_KEYS = isMac ? '⌥⌘⏎' : 'Ctrl+Alt+Enter'
 
@@ -542,6 +543,12 @@ const DIFF_CSS = `
         color-mix(in lab, var(--diffs-computed-diff-line-bg) var(--mix-selection-light), var(--diffs-selection-mix-target)),
         color-mix(in lab, var(--diffs-computed-diff-line-bg) var(--mix-selection-dark), var(--diffs-selection-mix-target))
       );
+    }
+  }
+  /* iOS zooms the page in on focus of a text field under 16px (search panel). */
+  @media (width < 700px) {
+    [data-input-box] input {
+      font-size: 16px;
     }
   }
 `
@@ -1440,6 +1447,7 @@ const SHORTCUTS: [string, string, 'send'?][] = [
   ['t', 'Toggle light / dark'],
   ['b', 'Toggle file tree'],
   [SEARCH_KEYS, 'Search files'],
+  [FIND_KEYS, 'Find in diff'],
   ['c', 'Comment on line'],
   [SUBMIT_KEYS, 'Send the comment to the --send command', 'send'],
   [INLINE_KEYS, 'Comment in the file (review marker)', 'send'],
@@ -2770,6 +2778,17 @@ function DiffView() {
       // gap 12 (default 8) separates file cards; 8 read as too tight.
       // paddingBottom is the library default.
       layout: { paddingTop: 0, paddingBottom: 8, gap: 12 },
+      // We bind Cmd/Ctrl+F globally on window so it works before the diff is
+      // focused and from the file tree or a comment box.
+      searchOptions: { disableShortcuts: true },
+      // Find opens a collapsed file when jumping to a match inside it; mirror
+      // that into React state so the header chevron and later renders agree.
+      onItemCollapsedChange: (_item, nextItem) => {
+        const next = nextItem.collapsed ?? false
+        setCollapsed((prev) =>
+          (prev[nextItem.id] ?? false) === next ? prev : { ...prev, [nextItem.id]: next },
+        )
+      },
       enableGutterUtility: commentsEnabled || send,
       // Hydrates a partial diff with full file contents on the first expand
       // click, then re-renders the item itself. Setting it is also what makes
@@ -2910,6 +2929,37 @@ function DiffView() {
         }
         return
       }
+      // Cmd/Ctrl+F: find across the diff (searchOptions.disableShortcuts turns
+      // off CodeView's root-scoped listener so this one owns it everywhere).
+      if (
+        !e.defaultPrevented &&
+        (e.key === 'f' || e.key === 'F') &&
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
+        !showHelp &&
+        !showCommentsInfo &&
+        codeViewRef.current
+      ) {
+        e.preventDefault()
+        codeViewRef.current.openSearch()
+        return
+      }
+      // Cmd/Ctrl+G / Cmd/Ctrl+Shift+G: step matches while search is open and
+      // focus is outside .codeview-root (inside, CodeView handles it first).
+      if (
+        !e.defaultPrevented &&
+        (e.key === 'g' || e.key === 'G') &&
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        !showHelp &&
+        !showCommentsInfo &&
+        codeViewRef.current?.isSearchOpen()
+      ) {
+        e.preventDefault()
+        codeViewRef.current.navigateSearch(e.shiftKey ? 'previous' : 'next')
+        return
+      }
       // Events from the tree's shadow root are retargeted to its host.
       const origin = e.composedPath()[0]
       if (origin instanceof HTMLTextAreaElement || origin instanceof HTMLInputElement)
@@ -3029,12 +3079,18 @@ function DiffView() {
           if (showHelp) {
             e.preventDefault()
             setShowHelp(false)
+          } else if (showCommentsInfo) {
+            e.preventDefault()
+            setShowCommentsInfo(false)
           } else if (composing) {
             e.preventDefault()
             setComposing(null)
           } else if (isNarrow && treeOpen) {
             e.preventDefault()
             setTreeOpen(false)
+          } else if (codeViewRef.current?.isSearchOpen()) {
+            e.preventDefault()
+            codeViewRef.current.closeSearch()
           }
           break
         case 'b': {
@@ -3081,22 +3137,61 @@ function DiffView() {
       }
     }
 
-    // Escape in the tree's search box. The tree's own handler closes the
-    // search but stops propagation and leaves the (now empty) input focused,
-    // where every diff shortcut is swallowed. Catch it in the capture phase,
-    // ahead of that handler, and hand focus back to the diff.
-    function escapeFromSearch(e: KeyboardEvent) {
-      if (e.key !== 'Escape' || e.composedPath()[0] !== treeSearchInput()) return
-      document.querySelector<HTMLElement>('.codeview-root')?.focus({ preventScroll: true })
+    // Capture-phase intercepts that must run ahead of @pierre/trees and
+    // @pierre/diffs listeners.
+    function captureKeyDown(e: KeyboardEvent) {
+      if (e.isComposing || e.keyCode === 229) return
+      const path = e.composedPath()
+      // Escape in the tree's search box: the tree's own handler closes the
+      // search but stops propagation and leaves the (now empty) input focused,
+      // where every diff shortcut is swallowed. Hand focus back to the diff.
+      if (e.key === 'Escape' && path[0] === treeSearchInput()) {
+        document
+          .querySelector<HTMLElement>('.codeview-root')
+          ?.focus({ preventScroll: true })
+        return
+      }
+      // Escape inside a comment box: CodeView's capture listener on
+      // .codeview-root would otherwise close an open find panel first and stop
+      // propagation before the comment form sees Escape.
+      if (
+        e.key === 'Escape' &&
+        !e.defaultPrevented &&
+        composing &&
+        path.some((n) => n instanceof Element && n.matches('.comment-form'))
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+        setComposing(null)
+        return
+      }
+      // A second Cmd/Ctrl+F while focus is already in CodeView's find input
+      // hands off to native browser find. Stopping propagation (without
+      // preventDefault) keeps SearchPanelWidget's input handler from swallowing
+      // it, and closing CodeView's panel avoids stacking two find bars.
+      if (
+        !e.defaultPrevented &&
+        (e.key === 'f' || e.key === 'F') &&
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
+        path[0] instanceof HTMLInputElement &&
+        'search' in path[0].dataset &&
+        path.some((n) => n instanceof Element && n.matches('[data-search-panel]'))
+      ) {
+        e.stopPropagation()
+        codeViewRef.current?.closeSearch()
+      }
     }
-    window.addEventListener('keydown', escapeFromSearch, true)
+    window.addEventListener('keydown', captureKeyDown, true)
     window.addEventListener('keydown', handler)
     return () => {
-      window.removeEventListener('keydown', escapeFromSearch, true)
+      window.removeEventListener('keydown', captureKeyDown, true)
       window.removeEventListener('keydown', handler)
     }
   }, [
     showHelp,
+    showCommentsInfo,
     composing,
     files,
     collapsed,

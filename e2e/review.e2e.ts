@@ -457,15 +457,18 @@ test('cmd/ctrl+k focuses the file search, opening the tree if needed', async ({ 
   await expect(page.locator('.file-tree input')).toBeFocused()
 })
 
-for (const [platform, search, submit] of [
-  ['macOS', '⌘K', '⌘⏎'],
-  ['Windows', 'Ctrl+K', 'Ctrl+Enter'],
+for (const [platform, search, find, submit] of [
+  ['macOS', '⌘K', '⌘F', '⌘⏎'],
+  ['Windows', 'Ctrl+K', 'Ctrl+F', 'Ctrl+Enter'],
 ] as const) {
   test(`shortcut labels on ${platform}`, async ({ page }) => {
     await setPlatform(page, platform)
     await page.keyboard.press('?')
     await expect(page.getByRole('row', { name: /Search files/ }).locator('kbd')).toHaveText(
       search,
+    )
+    await expect(page.getByRole('row', { name: /Find in diff/ }).locator('kbd')).toHaveText(
+      find,
     )
     await page.keyboard.press('Escape')
     await page.keyboard.press('j')
@@ -540,4 +543,102 @@ test('expanded context survives an unrelated re-render', async ({ page, repo }) 
   await expect(focused('long.ts')).toBeVisible()
   await expect(line10).toBeVisible()
   expect(errors).toEqual([])
+})
+
+test('cmd/ctrl+f finds across files, clears the sticky header, and expands collapsed matches', async ({
+  page,
+}) => {
+  // Collapse b.txt so a match inside it has to open the file.
+  const bHeader = page.locator('.file-header', { hasText: 'b.txt' })
+  await bHeader.click()
+  await expect(bHeader.locator('.collapse-chevron')).toHaveClass(/collapsed/)
+
+  // Works from the file tree search too, not only when .codeview-root has focus.
+  await page.keyboard.press('ControlOrMeta+k')
+  await expect(page.locator('.file-tree input')).toBeFocused()
+  await page.keyboard.press('ControlOrMeta+f')
+
+  const input = page.locator('[data-search-panel] input[data-search]')
+  await expect(input).toBeFocused()
+
+  // The search widget clears the sticky file header instead of floating over it.
+  const headerBox = await page.locator('.file-header').first().boundingBox()
+  const widgetBox = await page
+    .locator('[data-search-panel] [data-editor-widget]')
+    .boundingBox()
+  expect(headerBox).not.toBeNull()
+  expect(widgetBox).not.toBeNull()
+  expect(widgetBox!.y).toBeGreaterThanOrEqual(headerBox!.y + headerBox!.height)
+
+  // Typing "world" (in collapsed b.txt) opens b.txt and syncs its header state.
+  await input.pressSequentially('world')
+  await expect(page.locator('[data-search-panel] [data-matches]')).toHaveText('1/1')
+  await expect(bHeader.locator('.collapse-chevron')).not.toHaveClass(/collapsed/)
+
+  // Escape closes the panel and returns focus so diff shortcuts work again.
+  await page.keyboard.press('Escape')
+  await expect(input).toHaveCount(0)
+  // An unrelated controlled re-render (collapsing a.ts) must keep b.txt open.
+  await page.locator('.file-header', { hasText: 'a.ts' }).click()
+  await expect(bHeader.locator('.collapse-chevron')).not.toHaveClass(/collapsed/)
+
+  // Escape also closes the panel when focus has moved outside .codeview-root.
+  await page.keyboard.press('ControlOrMeta+f')
+  await expect(input).toBeFocused()
+  await page.locator('.progress-bar').click()
+  await page.keyboard.press('Escape')
+  await expect(input).toHaveCount(0)
+})
+
+test('find panel escape order with comments and second cmd/ctrl+f fallthrough', async ({
+  page,
+}) => {
+  const input = page.locator('[data-search-panel] input[data-search]')
+  const textarea = page.locator('.comment-form textarea')
+
+  // Open find, then click the diff and open a comment box with j + c.
+  await page.keyboard.press('ControlOrMeta+f')
+  await expect(input).toBeFocused()
+  await input.pressSequentially('hello')
+  await page
+    .locator('diffs-container [data-line]')
+    .first()
+    .click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press('j')
+  await page.keyboard.press('c')
+  await expect(textarea).toBeFocused()
+
+  // Escape from the comment box closes the comment box first, leaving find open.
+  await page.keyboard.press('Escape')
+  await expect(textarea).toHaveCount(0)
+  await expect(input).toHaveCount(1)
+
+  // Cmd/Ctrl+F while focus is outside the find input re-focuses and selects it.
+  await page.keyboard.press('ControlOrMeta+f')
+  await expect(input).toBeFocused()
+  await expect
+    .poll(() =>
+      input.evaluate(
+        (el: HTMLInputElement) => (el.selectionEnd ?? 0) - (el.selectionStart ?? 0),
+      ),
+    )
+    .toBe(5)
+
+  // A second Cmd/Ctrl+F while already in the find input closes CodeView's bar
+  // and leaves defaultPrevented false so native browser find can open.
+  await page.evaluate(() => {
+    delete document.documentElement.dataset.secondFindPrevented
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if ((e.key === 'f' || e.key === 'F') && (e.metaKey || e.ctrlKey)) {
+          document.documentElement.dataset.secondFindPrevented = String(e.defaultPrevented)
+        }
+      },
+      true,
+    )
+  })
+  await page.keyboard.press('ControlOrMeta+f')
+  await expect(input).toHaveCount(0)
+  await expect(page.locator('html')).toHaveAttribute('data-second-find-prevented', 'false')
 })
